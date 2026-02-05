@@ -1,0 +1,167 @@
+import { Router } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { getDb, memoryStore } from '../db.js';
+import { addScanJob } from '../services/queue.js';
+import { logActivity } from './activity.js';
+
+export const scanRoutes = Router();
+
+function parseUrls(text) {
+  const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
+  const seen = new Set();
+  const urls = [];
+  for (const s of raw) {
+    let u = s;
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try {
+      const parsed = new URL(u);
+      if (!seen.has(parsed.origin)) {
+        seen.add(parsed.origin);
+        urls.push(parsed.origin);
+      }
+    } catch (_) {}
+  }
+  return urls.slice(0, 1000);
+}
+
+scanRoutes.post('/start', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rawUrls = body.rawUrls ?? body.raw_urls;
+    const emailFilters = body.emailFilters ?? body.email_filters ?? {};
+    const excludeStoreUrls = body.excludeStoreUrls ?? body.exclude_store_urls ?? [];
+    const previousScanId = body.previousScanId ?? body.previous_scan_id ?? null;
+    const allUrls = parseUrls(typeof rawUrls === 'string' ? rawUrls : (Array.isArray(rawUrls) ? rawUrls.join('\n') : ''));
+    if (allUrls.length === 0) {
+      return res.status(400).json({ error: 'No valid URLs provided' });
+    }
+    if (allUrls.length > 1000) {
+      return res.status(400).json({ error: 'Maximum 1000 URLs per scan' });
+    }
+    const excludeSet = new Set([...excludeStoreUrls].map((u) => (u || '').trim()).filter(Boolean));
+    let previousRows = [];
+    const db = getDb();
+    if (previousScanId) {
+      if (db) {
+        const r = await db.query('SELECT store_url, email, source_page, has_email FROM scan_results WHERE scan_id = $1', [previousScanId]);
+        previousRows = r.rows || [];
+      } else {
+        previousRows = memoryStore.results.get(previousScanId) || [];
+      }
+      for (const row of previousRows) {
+        const u = row.store_url || row.storeUrl;
+        if (u) excludeSet.add(u);
+      }
+    }
+    const urlsToScan = allUrls.filter((u) => !excludeSet.has(u));
+    const totalStores = previousRows.length ? new Set(previousRows.map((r) => r.store_url || r.storeUrl)).size + urlsToScan.length : urlsToScan.length;
+    const scanId = uuidv4();
+    if (db) {
+      await db.query(
+        `INSERT INTO scans (id, status, total_urls, processed, found_count) VALUES ($1, 'pending', $2, 0, 0)`,
+        [scanId, totalStores]
+      );
+    } else {
+      memoryStore.scans.set(scanId, {
+        status: 'pending',
+        total_urls: totalStores,
+        processed: 0,
+        found_count: 0,
+        created_at: new Date(),
+      });
+      memoryStore.results.set(scanId, []);
+    }
+    await addScanJob({
+      scanId,
+      rawInput: urlsToScan.join('\n'),
+      emailFilters: emailFilters || {},
+      previousScanId: previousScanId || undefined,
+      previousRows: previousRows.length ? previousRows : undefined,
+    });
+    logActivity('scan_start', { scanId, totalUrls: totalStores, newUrls: urlsToScan.length });
+    res.json({ scanId, totalUrls: totalStores, skipped: allUrls.length - urlsToScan.length });
+  } catch (e) {
+    const msg = e?.message || String(e);
+    console.error('[scan/start]', msg);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: msg });
+  }
+});
+
+scanRoutes.get('/status/:scanId', async (req, res) => {
+  try {
+    const db = getDb();
+    if (db) {
+      const result = await db.query('SELECT * FROM scans WHERE id = $1', [req.params.scanId]);
+      const row = result?.rows?.[0];
+      if (!row) return res.status(404).json({ error: 'Scan not found' });
+      return res.json({
+        scanId: row.id,
+        status: row.status ?? 'unknown',
+        totalUrls: row.total_urls ?? 0,
+        processed: row.processed ?? 0,
+        foundCount: row.found_count ?? 0,
+        createdAt: row.created_at,
+      });
+    }
+    const row = memoryStore.scans.get(req.params.scanId);
+    if (!row) return res.status(404).json({ error: 'Scan not found' });
+    res.json({
+      scanId: req.params.scanId,
+      status: row.status ?? 'unknown',
+      totalUrls: row.total_urls ?? 0,
+      processed: row.processed ?? 0,
+      foundCount: row.found_count ?? 0,
+      createdAt: row.created_at,
+    });
+  } catch (e) {
+    console.error('[scan status]', e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: 'Server error', message: e?.message || String(e) });
+  }
+});
+
+function buildStoresFromRows(rows) {
+  const stores = [];
+  const byStore = new Map();
+  for (const r of rows) {
+    if (!byStore.has(r.store_url)) {
+      byStore.set(r.store_url, { storeUrl: r.store_url, emails: [], sourcePages: new Set(), hasEmail: false });
+    }
+    const rec = byStore.get(r.store_url);
+    if (r.email) {
+      rec.emails.push({ email: r.email, sourcePage: r.source_page });
+      rec.hasEmail = true;
+      if (r.source_page) rec.sourcePages.add(r.source_page);
+    }
+  }
+  for (const [url, rec] of byStore) {
+    stores.push({
+      storeUrl: url,
+      emails: rec.emails,
+      sourcePages: [...rec.sourcePages],
+      hasEmail: rec.hasEmail,
+    });
+  }
+  return stores;
+}
+
+scanRoutes.get('/results/:scanId', async (req, res) => {
+  try {
+    const db = getDb();
+    if (db) {
+      const result = await db.query(
+        'SELECT store_url, email, source_page, has_email FROM scan_results WHERE scan_id = $1 ORDER BY has_email DESC, store_url',
+        [req.params.scanId]
+      );
+      const rows = result?.rows ?? [];
+      return res.json({ results: buildStoresFromRows(rows) });
+    }
+    const rows = memoryStore.results.get(req.params.scanId) ?? [];
+    res.json({ results: buildStoresFromRows(rows) });
+  } catch (e) {
+    console.error('[scan results]', e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: 'Server error', message: e?.message || String(e) });
+  }
+});

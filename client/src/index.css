@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+  --bg-base: #f0f4f8;
+  --text-primary: #1a202c;
+  --text-secondary: #4a5568;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+}
+
+.dark {
+  --glass-bg: rgba(0, 0, 0, 0.2);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  --bg-base: #0f172a;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent: #818cf8;
+  --accent-hover: #6366f1;
+}
+
+body {
+  @apply font-sans antialiased;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-subtle {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dark .glass-subtle {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+input, textarea, select {
+  @apply rounded-lg transition;
+}
+input:focus, textarea:focus {
+  @apply outline-none ring-2 ring-indigo-500/50;
+}
+
+.btn-primary {
+  @apply px-4 py-2 rounded-lg font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition;
+}
+.btn-secondary {
+  @apply px-4 py-2 rounded-lg font-medium bg-white/10 dark:bg-white/5 border border-white/20 hover:bg-white/20 transition;
+}
+.btn-danger {
+  @apply px-4 py-2 rounded-lg font-medium bg-red-600/90 text-white hover:bg-red-500 transition;
+}
+
+/* Blaster landing & app */
+.btn-blaster-cta {
+  @apply px-5 py-2.5 rounded-lg font-semibold bg-blaster-cta text-white hover:bg-blaster-cta-hover transition;
+}
+.btn-blaster-accent {
+  @apply px-5 py-2.5 rounded-lg font-semibold bg-blaster-accent text-white hover:bg-blaster-accent-hover transition;
+}
+.input:focus, textarea:focus {
+  @apply outline-none ring-2 ring-blaster-accent/30;
+}

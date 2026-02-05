@@ -1,0 +1,10 @@
+# Railway deployment for Blaster API server
+# Set "Root Directory" to "server" in Railway project settings
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
