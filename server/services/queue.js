@@ -5,7 +5,11 @@ const inMemoryJobs = new Map();
 export async function addScanJob(data) {
   const id = data.scanId || uuidv4();
   inMemoryJobs.set(id, { type: 'scan', data, status: 'waiting' });
-  setImmediate(() => runInMemoryScan(id));
+  setImmediate(() => {
+    runInMemoryScan(id).catch((err) => {
+      console.error('[queue] scan job error:', id, err?.message || err);
+    });
+  });
   return id;
 }
 

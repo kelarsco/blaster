@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UrlInput } from '../components/UrlInput';
 import { ResultsDashboard } from '../components/ResultsDashboard';
 import { useToolState } from '../context/ToolStateContext';
@@ -14,14 +15,15 @@ export function ScannerPage() {
     setResults,
     setAutomationOpen,
   } = useToolState();
+  const navigate = useNavigate();
 
   return (
-    <div className="p-6 sm:p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-blaster-fg">Store Scanner</h1>
-        <p className="text-blaster-muted mt-0.5">Extract contact emails from store privacy and contact pages</p>
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="mb-4 md:mb-6">
+        <h1 className="page-title-mobile">Store Scanner</h1>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Extract contact emails from store privacy and contact pages</p>
       </div>
-      <div className="space-y-6">
+      <div className="space-y-4 md:space-y-6">
         <UrlInput
           onScanStart={(id) => {
             setScanId(id);
@@ -29,6 +31,7 @@ export function ScannerPage() {
           }}
           onScanStatus={setScanStatus}
           scanId={scanId}
+          scanStatus={scanStatus}
           existingResults={results}
           existingScanId={scanId}
         />
@@ -38,8 +41,17 @@ export function ScannerPage() {
             scanStatus={scanStatus}
             results={results}
             onResults={setResults}
-            onExportXml={() => window.open(`${API}/export/xml/${scanId}`, '_blank')}
-            onStartAutomation={() => setAutomationOpen(true)}
+            onExportExcel={(fields) => {
+              const params = new URLSearchParams();
+              if (fields && fields.length) params.set('fields', fields.join(','));
+              const qs = params.toString();
+              const url = `${API}/export/excel/${scanId}${qs ? `?${qs}` : ''}`;
+              window.open(url, '_blank');
+            }}
+            onStartAutomation={() => {
+              navigate('/app/campaigns');
+              setAutomationOpen(true);
+            }}
             onClearResults={() => {
               setScanId(null);
               setResults([]);

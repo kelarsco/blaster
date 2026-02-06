@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb, memoryStore } from '../db.js';
 import { addScanJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 
 export const scanRoutes = Router();
 
@@ -24,7 +25,7 @@ function parseUrls(text) {
   return urls.slice(0, 1000);
 }
 
-scanRoutes.post('/start', async (req, res) => {
+scanRoutes.post('/start', requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
     const rawUrls = body.rawUrls ?? body.raw_urls;
@@ -41,9 +42,13 @@ scanRoutes.post('/start', async (req, res) => {
     const excludeSet = new Set([...excludeStoreUrls].map((u) => (u || '').trim()).filter(Boolean));
     let previousRows = [];
     const db = getDb();
+    const userId = req.user?.id;
     if (previousScanId) {
       if (db) {
-        const r = await db.query('SELECT store_url, email, source_page, has_email FROM scan_results WHERE scan_id = $1', [previousScanId]);
+        const r = await db.query(
+          'SELECT store_url, email, source_page, has_email FROM scan_results sr JOIN scans s ON s.id = sr.scan_id WHERE sr.scan_id = $1 AND s.user_id = $2',
+          [previousScanId, userId]
+        );
         previousRows = r.rows || [];
       } else {
         previousRows = memoryStore.results.get(previousScanId) || [];
@@ -58,8 +63,8 @@ scanRoutes.post('/start', async (req, res) => {
     const scanId = uuidv4();
     if (db) {
       await db.query(
-        `INSERT INTO scans (id, status, total_urls, processed, found_count) VALUES ($1, 'pending', $2, 0, 0)`,
-        [scanId, totalStores]
+        `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count) VALUES ($1, $2, 'pending', $3, 0, 0)`,
+        [scanId, userId, totalStores]
       );
     } else {
       memoryStore.scans.set(scanId, {
@@ -73,12 +78,17 @@ scanRoutes.post('/start', async (req, res) => {
     }
     await addScanJob({
       scanId,
+      userId: userId || undefined,
       rawInput: urlsToScan.join('\n'),
       emailFilters: emailFilters || {},
+      forceRefresh: !!(body.forceRefresh ?? body.force_refresh),
+      stealthMode: !!(body.stealthMode ?? body.stealth_mode),
+      maxConcurrentCrawlers: body.maxConcurrentCrawlers ?? body.max_concurrent_crawlers,
+      maxUrlsPerScan: body.maxUrlsPerScan ?? body.max_urls_per_scan,
       previousScanId: previousScanId || undefined,
       previousRows: previousRows.length ? previousRows : undefined,
     });
-    logActivity('scan_start', { scanId, totalUrls: totalStores, newUrls: urlsToScan.length });
+    logActivity('scan_start', { scanId, totalUrls: totalStores, newUrls: urlsToScan.length }, userId);
     res.json({ scanId, totalUrls: totalStores, skipped: allUrls.length - urlsToScan.length });
   } catch (e) {
     const msg = e?.message || String(e);
@@ -88,11 +98,11 @@ scanRoutes.post('/start', async (req, res) => {
   }
 });
 
-scanRoutes.get('/status/:scanId', async (req, res) => {
+scanRoutes.get('/status/:scanId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     if (db) {
-      const result = await db.query('SELECT * FROM scans WHERE id = $1', [req.params.scanId]);
+      const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [req.params.scanId, req.user.id]);
       const row = result?.rows?.[0];
       if (!row) return res.status(404).json({ error: 'Scan not found' });
       return res.json({
@@ -146,13 +156,15 @@ function buildStoresFromRows(rows) {
   return stores;
 }
 
-scanRoutes.get('/results/:scanId', async (req, res) => {
+scanRoutes.get('/results/:scanId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     if (db) {
       const result = await db.query(
-        'SELECT store_url, email, source_page, has_email FROM scan_results WHERE scan_id = $1 ORDER BY has_email DESC, store_url',
-        [req.params.scanId]
+        `SELECT sr.store_url, sr.email, sr.source_page, sr.has_email FROM scan_results sr
+         JOIN scans s ON s.id = sr.scan_id WHERE sr.scan_id = $1 AND s.user_id = $2
+         ORDER BY sr.has_email DESC, sr.store_url`,
+        [req.params.scanId, req.user.id]
       );
       const rows = result?.rows ?? [];
       return res.json({ results: buildStoresFromRows(rows) });

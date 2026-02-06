@@ -11,7 +11,7 @@ export function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 font-bold text-xl text-blaster-fg">
             <span className="text-blaster-accent">⚡</span>
-            Blaster
+            wiblaster
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-blaster-muted">
             <a href="#features">Solutions</a>
@@ -25,10 +25,7 @@ export function LandingPage() {
             <Link to="/login" className="text-sm font-medium text-blaster-fg hover:text-blaster-accent transition">
               Login
             </Link>
-            <Link to="/signup" className="text-sm font-medium text-blaster-fg hover:text-blaster-accent transition">
-              Sign up
-            </Link>
-            <Link to="/login" className="btn-blaster-cta text-sm">
+            <Link to="/signup" className="btn-blaster-cta text-sm">
               Get Started Free
             </Link>
           </div>
@@ -43,7 +40,7 @@ export function LandingPage() {
             Extract emails from any site. Send automated outreach at scale.
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-blaster-muted max-w-2xl mx-auto">
-            From smart scanning to personalized campaigns, Blaster helps you find contact emails on store sites and reach them with multiple senders—so you save time and scale outreach without breaking a sweat.
+            From smart scanning to personalized campaigns, wiblaster helps you find contact emails on store sites and reach them with multiple senders—so you save time and scale outreach without breaking a sweat.
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
             <input
@@ -150,7 +147,7 @@ export function LandingPage() {
           </h2>
           <p className="mt-3 text-blaster-muted">Extract emails from any website. Send automated campaigns with multiple senders.</p>
           <Link to="/login" className="inline-flex items-center gap-2 mt-6 text-blaster-accent font-semibold hover:text-blaster-accent-hover">
-            Try Blaster →
+            Try wiblaster →
           </Link>
         </div>
       </section>
@@ -158,10 +155,10 @@ export function LandingPage() {
       {/* Footer */}
       <footer className="py-8 px-4 border-t border-blaster-border text-center text-sm text-blaster-muted">
         <div className="flex items-center justify-center gap-2">
-          <span className="text-blaster-fg font-medium">Blaster</span>
+          <span className="text-blaster-fg font-medium">wiblaster</span>
           <span>– Extract emails & automated outreach.</span>
         </div>
-        <p className="mt-2">© {new Date().getFullYear()} Blaster. All rights reserved.</p>
+        <p className="mt-2">© {new Date().getFullYear()} wiblaster. All rights reserved.</p>
       </footer>
     </div>
   );

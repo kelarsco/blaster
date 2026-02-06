@@ -14,12 +14,42 @@ function formatDate(iso) {
 function typeLabel(type) {
   const labels = {
     scan_start: 'Scan started',
+    scan_complete: 'Scan completed',
     campaign_start: 'Campaign started',
     sender_add: 'Sender added',
-    export_xml: 'Export XML',
+    sender_remove: 'Sender removed',
+    sender_group_add: 'Sender group added',
+    sender_group_remove: 'Sender group removed',
+    export_excel: 'Data exported',
     preset_save: 'Preset saved',
   };
   return labels[type] || type;
+}
+
+function payloadSummary(type, payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const p = payload;
+  switch (type) {
+    case 'scan_start':
+    case 'scan_complete':
+      if (p.totalUrls != null) return `${p.totalUrls} store${p.totalUrls === 1 ? '' : 's'} scanned`;
+      break;
+    case 'campaign_start':
+      if (p.totalQueued != null) return `${p.totalQueued} recipient${p.totalQueued === 1 ? '' : 's'} in queue`;
+      break;
+    case 'sender_add':
+      if (p.email) return p.email;
+      break;
+    case 'sender_group_add':
+    case 'preset_save':
+      if (p.name) return p.name;
+      break;
+    case 'export_excel':
+      return 'Results exported to Excel';
+    default:
+      return '';
+  }
+  return '';
 }
 
 function typeColor(type) {
@@ -65,10 +95,8 @@ export function ActivityLog({ onClose }) {
                   </span>
                   <span className="text-slate-500 dark:text-slate-400 text-xs">{formatDate(log.createdAt)}</span>
                 </div>
-                {log.payload && Object.keys(log.payload).length > 0 && (
-                  <pre className="mt-2 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700/50 rounded-lg p-2 overflow-x-auto border border-slate-100 dark:border-slate-600">
-                    {JSON.stringify(log.payload, null, 2)}
-                  </pre>
+                {payloadSummary(log.type, log.payload) && (
+                  <p className="mt-2 text-slate-600 dark:text-slate-300 text-sm">{payloadSummary(log.type, log.payload)}</p>
                 )}
               </li>
             ))

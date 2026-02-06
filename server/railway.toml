@@ -1,4 +1,4 @@
-# Railway deployment for Blaster API server
+# Railway deployment for wiblaster API server
 # Set "Root Directory" to "server" in Railway project settings
 
 [build]

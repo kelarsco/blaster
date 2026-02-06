@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -19,41 +20,63 @@ function parseUrls(text) {
   return urls.slice(0, 1000);
 }
 
-export function UrlInput({ onScanStart, onScanStatus, scanId, existingResults = [], existingScanId }) {
+export function UrlInput({
+  onScanStart,
+  onScanStatus,
+  scanId,
+  scanStatus,
+  existingResults = [],
+  existingScanId,
+}) {
+  const { authFetch } = useAuth();
   const [rawUrls, setRawUrls] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
   const [emailFilters, setEmailFilters] = useState({
-    includeSupport: true,
-    includeInfo: true,
-    includeContact: true,
-    includeNoreply: false,
+    includeGmail: true,
+    includeOutlook: true,
+    includeYahoo: true,
+    includeHotmail: true,
+    includeProtonmail: true,
+    includeDomain: true,
   });
 
   const urlCount = parseUrls(rawUrls).length;
-  const isValid = urlCount >= 1 && urlCount <= 1000;
+  const hasProvider = Object.values(emailFilters).some(Boolean);
+  const isScanRunning = isScanning || (scanStatus && scanStatus.status === 'running');
+  const isValid = urlCount >= 1 && urlCount <= 1000 && hasProvider && !isScanRunning;
 
   const startScan = async () => {
     setError('');
     setIsScanning(true);
     try {
-      const excludeStoreUrls = (existingResults || []).map((s) => s.storeUrl).filter(Boolean);
-      const res = await fetch(`${API}/scan/start`, {
+      let paths, maxConcurrentCrawlers, maxUrlsPerScan;
+      try {
+        const rawSettings = localStorage.getItem('blaster-settings');
+        if (rawSettings) {
+          const parsed = JSON.parse(rawSettings);
+          if (Array.isArray(parsed.crawledPaths)) paths = parsed.crawledPaths.filter(Boolean);
+          if (typeof parsed.maxConcurrentCrawlers === 'number') maxConcurrentCrawlers = parsed.maxConcurrentCrawlers;
+          if (typeof parsed.maxUrlsPerScan === 'number') maxUrlsPerScan = parsed.maxUrlsPerScan;
+        }
+      } catch (_) {}
+
+      const res = await authFetch(`${API}/scan/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rawUrls,
-          excludeStoreUrls,
-          previousScanId: existingScanId || undefined,
+          maxConcurrentCrawlers,
+          maxUrlsPerScan,
           emailFilters: {
-            includeTypes: [
-              ...(emailFilters.includeSupport ? ['contact'] : []),
-              ...(emailFilters.includeInfo ? ['contact'] : []),
-              ...(emailFilters.includeContact ? ['contact'] : []),
-              ...(emailFilters.includeNoreply ? ['noreply'] : []),
-              'other',
-            ].filter((_, i, a) => a.indexOf(_) === i),
-            excludeTypes: emailFilters.includeNoreply ? [] : ['noreply'],
+            includeProviders: [
+              ...(emailFilters.includeGmail ? ['gmail'] : []),
+              ...(emailFilters.includeOutlook ? ['outlook'] : []),
+              ...(emailFilters.includeYahoo ? ['yahoo'] : []),
+              ...(emailFilters.includeHotmail ? ['hotmail'] : []),
+              ...(emailFilters.includeProtonmail ? ['protonmail'] : []),
+              ...(emailFilters.includeDomain ? ['domain'] : []),
+            ],
           },
         }),
       });
@@ -74,7 +97,7 @@ export function UrlInput({ onScanStart, onScanStatus, scanId, existingResults = 
       }
 
       onScanStart(data.scanId);
-      pollStatus(data.scanId);
+      setRawUrls('');
     } catch (e) {
       const msg = e?.message ?? '';
       const isNetworkError =
@@ -89,109 +112,86 @@ export function UrlInput({ onScanStart, onScanStatus, scanId, existingResults = 
     }
   };
 
-  const POLL_MAX_FAILURES = 5;
-
-  const pollStatus = async (id) => {
-    let failures = 0;
-    const tick = async () => {
-      try {
-        const res = await fetch(`${API}/scan/status/${id}`);
-        const data = res.ok ? await res.json() : null;
-        if (!res.ok) {
-          failures += 1;
-          if (res.status === 404) {
-            setIsScanning(false);
-            setError('Scan not found.');
-            return;
-          }
-          if (failures >= POLL_MAX_FAILURES) {
-            setIsScanning(false);
-            setError('Cannot reach server. From project root run: npm run dev');
-            return;
-          }
-          setTimeout(tick, 3000);
-          return;
-        }
-        failures = 0;
-        onScanStatus(data);
-        if (data.status === 'completed' || data.status === 'failed') {
-          setIsScanning(false);
-          return;
-        }
-      } catch (_) {
-        failures += 1;
-        if (failures >= POLL_MAX_FAILURES) {
-          setIsScanning(false);
-          setError('Cannot reach server. From project root run: npm run dev');
-          return;
-        }
-        setTimeout(tick, 3000);
-        return;
-      }
-      setTimeout(tick, 2000);
-    };
-    tick();
-  };
-
   useEffect(() => {
-    if (scanId && isScanning) pollStatus(scanId);
-  }, [scanId]);
+    if (scanStatus?.status === 'completed' || scanStatus?.status === 'failed') {
+      setIsScanning(false);
+    }
+  }, [scanStatus?.status]);
 
   return (
-    <section className="bg-blaster-bg-card rounded-2xl border border-blaster-border shadow-sm p-6">
-      <h2 className="text-lg font-semibold text-blaster-fg mb-4">
-        Bulk Store URLs
+    <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-sm card-body-mobile">
+      <h2 className="card-title-mobile mb-3 md:mb-4">
+        Bulk Website URLs
       </h2>
-      <p className="text-sm text-blaster-muted mb-3">
-        Paste store links (one per line or comma-separated). 100–1000 URLs per scan.
+      <p className="text-xs md:text-sm text-blaster-muted mb-2 md:mb-3">
+        Paste website links (one per line or comma-separated). 100–1000 URLs per scan.
       </p>
       <textarea
         value={rawUrls}
         onChange={(e) => setRawUrls(e.target.value)}
-        placeholder={"https://store1.com\nhttps://store2.com\n..."}
+        placeholder={"https://site1.com\nhttps://site2.com\n..."}
         rows={6}
         className="w-full px-4 py-3 rounded-xl bg-blaster-input-bg border border-blaster-input-border text-blaster-fg placeholder-blaster-muted focus:outline-none focus:ring-2 focus:ring-blaster-accent/40 focus:border-blaster-accent transition"
         disabled={isScanning}
       />
+      <p className="text-xs text-blaster-muted mt-2 mb-1">Extract emails from:</p>
       <div className="flex flex-wrap items-center gap-4 mt-3">
         <span className="text-sm text-blaster-muted">
           Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>
         </span>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg">
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
           <input
             type="checkbox"
-            checked={emailFilters.includeSupport}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeSupport: e.target.checked }))}
+            checked={emailFilters.includeGmail}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeGmail: e.target.checked }))}
             className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
           />
-          support@
+          Gmail
         </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg">
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
           <input
             type="checkbox"
-            checked={emailFilters.includeInfo}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeInfo: e.target.checked }))}
+            checked={emailFilters.includeOutlook}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeOutlook: e.target.checked }))}
             className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
           />
-          info@
+          Outlook
         </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg">
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
           <input
             type="checkbox"
-            checked={emailFilters.includeContact}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeContact: e.target.checked }))}
+            checked={emailFilters.includeYahoo}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeYahoo: e.target.checked }))}
             className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
           />
-          contact@
+          Yahoo Mail
         </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg">
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
           <input
             type="checkbox"
-            checked={emailFilters.includeNoreply}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeNoreply: e.target.checked }))}
+            checked={emailFilters.includeHotmail}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeHotmail: e.target.checked }))}
             className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
           />
-          noreply@
+          Hotmail
+        </label>
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
+          <input
+            type="checkbox"
+            checked={emailFilters.includeProtonmail}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeProtonmail: e.target.checked }))}
+            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
+          />
+          ProtonMail
+        </label>
+        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
+          <input
+            type="checkbox"
+            checked={emailFilters.includeDomain}
+            onChange={(e) => setEmailFilters((f) => ({ ...f, includeDomain: e.target.checked }))}
+            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
+          />
+          Domain mail
         </label>
       </div>
       {error && (
@@ -201,7 +201,7 @@ export function UrlInput({ onScanStart, onScanStatus, scanId, existingResults = 
         <button
           type="button"
           onClick={startScan}
-          disabled={!isValid || isScanning}
+          disabled={!isValid || isScanRunning}
           className="btn-blaster-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isScanning ? 'Scanning…' : 'Start Scan'}

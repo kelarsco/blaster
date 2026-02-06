@@ -1,4 +1,4 @@
-# Email sending setup (StoreReach)
+# Email sending setup (wiblaster)
 
 If campaigns show **0 Sent** or **Failed**, follow these steps.
 
@@ -45,7 +45,7 @@ Gmail does not allow "less secure apps" anymore. You must use an **App Passwor
 
 1. Turn on [2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification) for your Google account.
 2. Open [App passwords](https://myaccount.google.com/apppasswords).
-3. Create an app password for "Mail" (or "Other" â†’ "StoreReach").
+3. Create an app password for "Mail" (or "Other" â†’ "wiblaster").
 4. Copy the 16-character password (no spaces).
 5. In Automation Setup, paste it in **SMTP password / app password** (not your normal Gmail password).
 

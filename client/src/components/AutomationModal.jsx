@@ -1,60 +1,79 @@
 import React, { useState, useEffect } from 'react';
 import { API } from '../api.js';
 
-export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
-  const [senders, setSenders] = useState([]);
+function getEmailProvider(email) {
+  if (!email || typeof email !== 'string') return 'domain';
+  const atIndex = email.lastIndexOf('@');
+  if (atIndex === -1) return 'domain';
+  const domain = email.slice(atIndex + 1).toLowerCase();
+  if (!domain) return 'domain';
+  if (domain.includes('gmail.')) return 'gmail';
+  if (domain.includes('outlook.')) return 'outlook';
+  if (domain.includes('yahoo.')) return 'yahoo';
+  if (domain.includes('hotmail.')) return 'hotmail';
+  return 'domain';
+}
+
+export function AutomationModal({ scanId, results, recipientsOverride, onClose, onCampaignStart }) {
+  const [groups, setGroups] = useState([]);
+  const [inUseGroupIds, setInUseGroupIds] = useState(new Set());
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
   const [presets, setPresets] = useState([]);
   const [subjectLines, setSubjectLines] = useState([{ id: 1, value: '{{store_url}}' }]);
   const [templates, setTemplates] = useState([
     { id: 1, body: 'Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards' },
   ]);
-  const [delayMin, setDelayMin] = useState(2);
-  const [delayMax, setDelayMax] = useState(5);
+  const [delayMin, setDelayMin] = useState(() => {
+    try {
+      const raw = localStorage.getItem('blaster-settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const d = Number(parsed.delayBetweenEmails);
+        if (d >= 0.5 && d <= 60) return Math.max(1, Math.round(d));
+      }
+    } catch (_) {}
+    return 2;
+  });
+  const [delayMax, setDelayMax] = useState(() => {
+    try {
+      const raw = localStorage.getItem('blaster-settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const d = Number(parsed.delayBetweenEmails);
+        if (d >= 0.5 && d <= 60) return Math.max(1, Math.round(d));
+      }
+    } catch (_) {}
+    return 5;
+  });
+  const [autoDelay, setAutoDelay] = useState(() => {
+    try {
+      const raw = localStorage.getItem('blaster-settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.autoSafeSending === 'boolean') return parsed.autoSafeSending;
+      }
+    } catch (_) {}
+    return true;
+  });
   const [onePerStore, setOnePerStore] = useState(true);
+  const [providerFilter, setProviderFilter] = useState({
+    includeGmail: true,
+    includeOutlook: true,
+    includeYahoo: true,
+    includeHotmail: true,
+    includeDomain: true,
+  });
   const [confirmCompliance, setConfirmCompliance] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showAddSender, setShowAddSender] = useState(false);
-  const [newSender, setNewSender] = useState({ email: '', host: 'smtp.gmail.com', port: 587, secure: false, user: '', pass: '', maxPerMinute: 10 });
   const [presetName, setPresetName] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/automation/senders`).then((r) => r.json()).then((d) => setSenders(d.senders || []));
+    fetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => setGroups(d.groups || []));
+    fetch(`${API}/automation/senders/groups/in-use`).then((r) => r.json()).then((d) => setInUseGroupIds(new Set(d.groupIds || [])));
     fetch(`${API}/automation/presets`).then((r) => r.json()).then((d) => setPresets(d.presets || []));
   }, []);
-
-  const addSender = async () => {
-    if (!newSender.email) return;
-    try {
-      const res = await fetch(`${API}/automation/senders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newSender.email,
-          config: { host: newSender.host, port: Number(newSender.port), secure: newSender.secure, auth: { user: newSender.user, pass: newSender.pass } },
-          maxPerMinute: Number(newSender.maxPerMinute) || 10,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      setSenders((prev) => [...prev, { id: data.id, email: data.email, maxPerMinute: data.maxPerMinute }]);
-      setNewSender({ email: '', host: 'smtp.gmail.com', port: 587, secure: false, user: '', pass: '', maxPerMinute: 10 });
-      setShowAddSender(false);
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  const removeSender = async (senderId) => {
-    try {
-      const res = await fetch(`${API}/automation/senders/${senderId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed to remove');
-      setSenders((prev) => prev.filter((s) => s.id !== senderId));
-    } catch (e) {
-      setError(e.message);
-    }
-  };
 
   const savePreset = async () => {
     if (!presetName.trim()) return;
@@ -66,7 +85,7 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: presetName.trim(),
-          senders: senders.map((s) => s.id),
+          senders: selectedGroupId ? [selectedGroupId] : [],
           subjects: subjectLines.map((s) => s.value),
           templates: templates.map((t) => ({ body: t.body })),
           delayMin,
@@ -84,9 +103,41 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
     }
   };
 
-  const recipients = results
-    .filter((s) => s.emails?.length)
-    .flatMap((s) => s.emails.map((e) => ({ storeUrl: s.storeUrl, email: e.email })));
+  const recipients = recipientsOverride != null && Array.isArray(recipientsOverride)
+    ? recipientsOverride
+    : (results || [])
+        .filter((s) => s.emails?.length)
+        .flatMap((s) => s.emails.map((e) => ({ storeUrl: s.storeUrl || s.store_url, email: e.email })));
+
+  const filteredRecipients = recipients.filter((r) => {
+    const type = getEmailProvider(r.email);
+    if (type === 'gmail') return providerFilter.includeGmail;
+    if (type === 'outlook') return providerFilter.includeOutlook;
+    if (type === 'yahoo') return providerFilter.includeYahoo;
+    if (type === 'hotmail') return providerFilter.includeHotmail;
+    return providerFilter.includeDomain;
+  });
+
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
+
+  // Compute conservative automatic delays based on sender count and typical Gmail-style limits.
+  useEffect(() => {
+    if (!autoDelay || !selectedGroup) return;
+    const senderCount = (selectedGroup.senders?.length || 0) || 1;
+    if (!filteredRecipients.length) return;
+
+    // Assume a safe ceiling of ~350 emails/day per sender.
+    const SAFE_PER_SENDER_PER_DAY = 350;
+    const totalSafePerDay = SAFE_PER_SENDER_PER_DAY * senderCount;
+    const safePerMinute = Math.max(1, Math.floor(totalSafePerDay / (24 * 60))); // floor to be extra safe
+    const secondsBetween = Math.max(5, Math.round(60 / safePerMinute));
+
+    const nextMin = Math.max(5, secondsBetween);
+    const nextMax = Math.max(nextMin + 5, Math.round(secondsBetween * 1.5));
+
+    setDelayMin(nextMin);
+    setDelayMax(nextMax);
+  }, [autoDelay, selectedGroup, filteredRecipients.length]);
 
   const addSubject = () => {
     setSubjectLines((prev) => [...prev, { id: Date.now(), value: '{{store_url}}' }]);
@@ -108,6 +159,9 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
     if (preset.templates?.length) setTemplates(preset.templates.map((t, i) => ({ id: i + 1, body: typeof t === 'string' ? t : t.body || t.text })));
     if (preset.delayMin != null) setDelayMin(preset.delayMin);
     if (preset.delayMax != null) setDelayMax(preset.delayMax);
+    if (preset.senders?.length === 1 && groups.some((g) => g.id === preset.senders[0])) {
+      setSelectedGroupId(preset.senders[0]);
+    }
   };
 
   const startCampaign = async () => {
@@ -116,12 +170,16 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
       setError('Please confirm compliance with outreach regulations.');
       return;
     }
-    if (senders.length === 0) {
-      setError('Add at least one sender email.');
+    if (!selectedGroupId) {
+      setError('Select a sender group.');
       return;
     }
-    if (recipients.length === 0) {
-      setError('No recipients. Run a scan first.');
+    if (!selectedGroup || (selectedGroup.senders?.length || 0) === 0) {
+      setError('Selected group has no senders. Add senders to the group on the Senders page.');
+      return;
+    }
+    if (!filteredRecipients.length) {
+      setError('No recipients to send to. Check your email type filters or run a scan first.');
       return;
     }
     setLoading(true);
@@ -131,8 +189,8 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scanId,
-          recipients,
-          senders: senders.map((s) => s.id),
+          recipients: filteredRecipients,
+          senderGroupId: selectedGroupId,
           subjects: subjectLines.map((s) => s.value),
           templates: templates.map((t) => ({ body: t.body })),
           delayMin,
@@ -194,40 +252,49 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
             </div>
           </section>
 
-          {/* Sender pool */}
+          {/* Sender group selection */}
           <section className={sectionClass}>
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Sender pool ({senders.length})</h3>
-            {senders.length > 0 && (
-              <ul className="text-sm text-slate-600 dark:text-slate-300 mb-3 space-y-2">
-                {senders.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
-                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{s.email} <span className="font-normal text-slate-500">(max {s.maxPerMinute}/min)</span></span>
-                    <button type="button" onClick={() => removeSender(s.id)} className="shrink-0 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 text-xs font-medium" title="Remove from sender pool">Remove</button>
-                  </li>
-                ))}
-              </ul>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Sender group</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Select one group. All senders in that group will rotate for this campaign. Groups in use by running campaigns cannot be selected.</p>
+            {selectedGroupId && filteredRecipients.length > 500 && (groups.find((g) => g.id === selectedGroupId)?.senders?.length || 0) === 1 && (
+              <div className="mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-800 dark:text-amber-200">
+                You're sending to {filteredRecipients.length} recipients with 1 sender. Many providers (e.g. Gmail) limit ~500 emails/day per account. Add more senders to this group on the Senders page.
+              </div>
             )}
-            {senders.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">No senders. Add one below.</p>}
-            {!showAddSender ? (
-              <button type="button" onClick={() => setShowAddSender(true)} className="btn-secondary text-sm">+ Add sender</button>
+            {groups.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No groups yet. Create groups and add senders on the Senders page.</p>
             ) : (
-              <div className="space-y-3 pt-2">
-                <input type="email" placeholder="Sender email" value={newSender.email} onChange={(e) => setNewSender((s) => ({ ...s, email: e.target.value }))} className={inputClass} />
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" placeholder="SMTP host" value={newSender.host} onChange={(e) => setNewSender((s) => ({ ...s, host: e.target.value }))} className={inputClass} />
-                  <input type="number" placeholder="Port" value={newSender.port} onChange={(e) => setNewSender((s) => ({ ...s, port: e.target.value }))} className={inputClass} />
-                </div>
-                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <input type="checkbox" checked={newSender.secure} onChange={(e) => setNewSender((s) => ({ ...s, secure: e.target.checked }))} className="rounded border-slate-300" />
-                  TLS/SSL
-                </label>
-                <input type="text" placeholder="SMTP user" value={newSender.user} onChange={(e) => setNewSender((s) => ({ ...s, user: e.target.value }))} className={inputClass} />
-                <input type="password" placeholder="SMTP password / app password" value={newSender.pass} onChange={(e) => setNewSender((s) => ({ ...s, pass: e.target.value }))} className={inputClass} />
-                <input type="number" min={1} max={60} placeholder="Max per minute" value={newSender.maxPerMinute} onChange={(e) => setNewSender((s) => ({ ...s, maxPerMinute: e.target.value }))} className={inputClass} />
-                <div className="flex gap-2 pt-1">
-                  <button type="button" onClick={addSender} className="btn-primary text-sm">Save sender</button>
-                  <button type="button" onClick={() => setShowAddSender(false)} className="btn-secondary text-sm">Cancel</button>
-                </div>
+              <div className="space-y-2">
+                {groups.map((g) => {
+                  const inUse = inUseGroupIds.has(g.id);
+                  const count = g.senders?.length || 0;
+                  const isSelected = selectedGroupId === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      disabled={inUse || count === 0}
+                      onClick={() => !inUse && count > 0 && setSelectedGroupId(isSelected ? null : g.id)}
+                      className={`w-full flex items-center justify-between py-2.5 px-3 rounded-lg border text-left transition ${
+                        inUse
+                          ? 'border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700/50 opacity-60 cursor-not-allowed'
+                          : count === 0
+                            ? 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 opacity-60 cursor-not-allowed'
+                            : isSelected
+                              ? 'border-indigo-500 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                              : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-600/50'
+                      }`}
+                    >
+                      <div>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{g.name}</span>
+                        <span className="ml-2 text-sm text-slate-500">({count} sender{count !== 1 ? 's' : ''})</span>
+                      </div>
+                      {inUse && <span className="text-xs text-amber-600 dark:text-amber-400">In use</span>}
+                      {!inUse && count === 0 && <span className="text-xs text-slate-400">Empty</span>}
+                      {!inUse && count > 0 && isSelected && <span className="text-indigo-600 dark:text-indigo-400 text-sm font-medium">✓ Selected</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -282,9 +349,63 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
 
           {/* Recipients & compliance */}
           <section className={sectionClass}>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
-              <strong className="text-slate-800 dark:text-slate-100">{recipients.length}</strong> recipients from current scan
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
+              <strong className="text-slate-800 dark:text-slate-100">{filteredRecipients.length}</strong> recipients will be emailed
+              {recipientsOverride != null ? ' from CSV' : ' from current scan'}
+              {filteredRecipients.length !== recipients.length && (
+                <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                  ({recipients.length} total before email type filters)
+                </span>
+              )}
             </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Choose which email types to include in this campaign:</p>
+            <div className="flex flex-wrap gap-3 mb-3">
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerFilter.includeGmail}
+                  onChange={(e) => setProviderFilter((f) => ({ ...f, includeGmail: e.target.checked }))}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Gmail
+              </label>
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerFilter.includeOutlook}
+                  onChange={(e) => setProviderFilter((f) => ({ ...f, includeOutlook: e.target.checked }))}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Outlook
+              </label>
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerFilter.includeYahoo}
+                  onChange={(e) => setProviderFilter((f) => ({ ...f, includeYahoo: e.target.checked }))}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Yahoo Mail
+              </label>
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerFilter.includeHotmail}
+                  onChange={(e) => setProviderFilter((f) => ({ ...f, includeHotmail: e.target.checked }))}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Hotmail
+              </label>
+              <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={providerFilter.includeDomain}
+                  onChange={(e) => setProviderFilter((f) => ({ ...f, includeDomain: e.target.checked }))}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Domain mail
+              </label>
+            </div>
             <label className="flex items-start gap-3 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
               <input type="checkbox" checked={confirmCompliance} onChange={(e) => setConfirmCompliance(e.target.checked)} className="rounded mt-0.5 border-slate-300 shrink-0" />
               <span>I confirm I am responsible for complying with outreach regulations.</span>
@@ -296,7 +417,7 @@ export function AutomationModal({ scanId, results, onClose, onCampaignStart }) {
 
         {/* Sticky footer */}
         <div className="shrink-0 px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 rounded-b-2xl flex gap-2">
-          <button type="button" onClick={startCampaign} disabled={loading || senders.length === 0} className="btn-primary">
+          <button type="button" onClick={startCampaign} disabled={loading || !selectedGroupId} className="btn-primary">
             {loading ? 'Starting…' : 'Start campaign'}
           </button>
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>

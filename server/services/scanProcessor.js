@@ -1,11 +1,17 @@
+/**
+ * Scan processor: cache check, priority crawler, one-email-per-store, enrichment.
+ */
 import { crawlStore } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY) || 10;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 4, 8);
+const DELAY_BETWEEN_STORES_MS = 200;
+const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 55000;
 
 function parseUrls(text) {
-  const raw = text.replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
+  const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
   const urls = [];
   const seen = new Set();
   for (const s of raw) {
@@ -24,139 +30,191 @@ function parseUrls(text) {
 }
 
 export async function processScan(payload) {
-  const { scanId, rawInput, emailFilters = {}, previousRows } = payload;
+  const {
+    scanId,
+    rawInput,
+    userId,
+    emailFilters: rawEmailFilters = {},
+    maxConcurrentCrawlers,
+    maxUrlsPerScan,
+    forceRefresh = false,
+    stealthMode = false,
+  } = payload;
+
+  const emailFilters = {
+    includeProviders: Array.isArray(rawEmailFilters.includeProviders)
+      ? rawEmailFilters.includeProviders
+      : Array.isArray(rawEmailFilters.include_providers)
+        ? rawEmailFilters.include_providers
+        : [],
+  };
+
   const db = getDb();
-  const urls = parseUrls(rawInput || '');
-  const total = Math.min(Math.max(urls.length, 0), 1000);
+  let urls = parseUrls(rawInput || '');
+  const cap = typeof maxUrlsPerScan === 'number' && maxUrlsPerScan > 0 ? Math.min(maxUrlsPerScan, 5000) : 1000;
+  urls = urls.slice(0, cap);
+
+  if (urls.length === 0) {
+    if (db) await db.query(`UPDATE scans SET status = 'completed', processed = 0, found_count = 0, updated_at = NOW() WHERE id = $1`, [scanId]);
+    else {
+      const rec = memoryStore.scans.get(scanId);
+      if (rec) { rec.status = 'completed'; rec.processed = 0; rec.found_count = 0; memoryStore.scans.set(scanId, rec); }
+    }
+    return;
+  }
 
   let processed = 0;
   let foundCount = 0;
   const memoryResults = db ? null : (memoryStore.results.get(scanId) || []);
 
-  if (previousRows && previousRows.length > 0) {
-    const byStore = new Map();
-    for (const r of previousRows) {
-      const storeUrl = r.store_url || r.storeUrl;
-      if (!byStore.has(storeUrl)) byStore.set(storeUrl, []);
-      byStore.get(storeUrl).push(r);
-    }
-    for (const [storeUrl, rows] of byStore) {
-      let hasAny = false;
-      if (db) {
-        for (const r of rows) {
-          if (r.email) {
-            await db.query(
-              `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, $3, $4, 1)`,
-              [scanId, storeUrl, r.email || '', r.source_page || r.sourcePage || '', 1]
-            );
-            foundCount++;
-            hasAny = true;
-          }
-        }
-        if (!hasAny) {
-          await db.query(
-            `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, NULL, 0)`,
-            [scanId, storeUrl]
-          );
-        }
-      } else {
-        for (const r of rows) {
-          memoryResults.push({
-            store_url: storeUrl,
-            email: r.email || null,
-            source_page: (r.source_page || r.sourcePage) || null,
-            has_email: r.email ? 1 : 0,
-          });
-          if (r.email) foundCount++;
-        }
-        memoryStore.results.set(scanId, memoryResults);
-      }
-      processed++;
-    }
-    if (db) {
-      await db.query(
-        `UPDATE scans SET status = 'running', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
-        [processed, foundCount, scanId]
-      );
-    } else {
-      const rec = memoryStore.scans.get(scanId);
-      if (rec) {
-        rec.status = 'running';
-        rec.processed = processed;
-        rec.found_count = foundCount;
-        memoryStore.scans.set(scanId, rec);
-      }
-    }
+  if (db) {
+    await db.query(
+      `UPDATE scans SET total_urls = $1, status = 'running', updated_at = NOW() WHERE id = $2`,
+      [urls.length, scanId]
+    );
   } else {
-    if (db) {
-      await db.query(
-        `UPDATE scans SET total_urls = $1, status = 'running', updated_at = NOW() WHERE id = $2`,
-        [urls.length, scanId]
-      );
-    } else {
-      const rec = memoryStore.scans.get(scanId);
-      if (rec) {
-        rec.status = 'running';
-        rec.total_urls = urls.length;
-        memoryStore.scans.set(scanId, rec);
-      }
+    const rec = memoryStore.scans.get(scanId);
+    if (rec) {
+      rec.status = 'running';
+      rec.total_urls = urls.length;
+      memoryStore.scans.set(scanId, rec);
     }
   }
 
-  async function processOne(storeUrl) {
+  const cacheUserId = userId || null;
+  const cacheCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  async function getCachedResult(storeUrl) {
+    if (!db || !cacheUserId || forceRefresh) return null;
     try {
-      const pages = await crawlStore(storeUrl);
-      const results = extractEmailsFromPages(storeUrl, pages, emailFilters);
-      return { storeUrl, results };
-    } catch {
-      return { storeUrl, results: [] };
+      const r = await db.query(
+        `SELECT email, source_page, source_type, platform FROM scan_cache
+         WHERE store_url = $1 AND user_id = $2 AND cached_at > $3`,
+        [storeUrl, cacheUserId, cacheCutoff]
+      );
+      const row = r.rows?.[0];
+      return row ? { email: row.email, source_page: row.source_page, source_type: row.source_type, platform: row.platform } : null;
+    } catch (_) {
+      return null;
     }
   }
 
-  for (let i = 0; i < urls.length; i += CONCURRENCY) {
-    const batch = urls.slice(i, i + CONCURRENCY);
-    const outcomes = await Promise.all(batch.map((storeUrl) => processOne(storeUrl)));
+  async function setCachedResult(storeUrl, email, sourcePage, sourceType, platform) {
+    if (!db || !cacheUserId) return;
+    try {
+      await db.query(
+        `INSERT INTO scan_cache (store_url, user_id, email, source_page, source_type, platform, cached_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (store_url, user_id) DO UPDATE SET
+           email = EXCLUDED.email, source_page = EXCLUDED.source_page,
+           source_type = EXCLUDED.source_type, platform = EXCLUDED.platform, cached_at = NOW()`,
+        [storeUrl, cacheUserId, email || null, sourcePage || null, sourceType || null, platform || null]
+      );
+    } catch (_) {}
+  }
+
+  function processOneWithTimeout(storeUrl) {
+    const timeoutPromise = new Promise((resolve) => {
+      const t = setTimeout(() => {
+        resolve({ storeUrl, results: [], timedOut: true });
+      }, PER_STORE_TIMEOUT_MS);
+      t.unref?.();
+    });
+    const workPromise = (async () => {
+      try {
+        const cached = await getCachedResult(storeUrl);
+        if (cached) {
+          const results = cached.email
+            ? [{ email: cached.email, storeUrl, sourcePage: cached.source_page || '', sourceType: cached.source_type, platform: cached.platform }]
+            : [];
+          return { storeUrl, results };
+        }
+
+        const pages = await crawlStore(storeUrl, {
+          stealthMode,
+          maxPages: 10,
+        });
+        const results = await extractEmailsFromPages(storeUrl, pages, emailFilters);
+        const best = results[0];
+        if (best) {
+          await setCachedResult(storeUrl, best.email, best.sourcePage, best.sourceType || null, best.platform || null);
+        } else {
+          await setCachedResult(storeUrl, null, null, null, null);
+        }
+        return { storeUrl, results };
+      } catch (err) {
+        console.error('[scanProcessor] store error:', storeUrl, err?.message || err);
+        return { storeUrl, results: [] };
+      }
+    })();
+    return Promise.race([workPromise, timeoutPromise]).then((r) => (r.timedOut ? { storeUrl: r.storeUrl, results: [] } : r));
+  }
+
+  const concurrency =
+    typeof maxConcurrentCrawlers === 'number' && maxConcurrentCrawlers >= 1 && maxConcurrentCrawlers <= 20
+      ? maxConcurrentCrawlers
+      : DEFAULT_CONCURRENCY;
+
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  for (let i = 0; i < urls.length; i += concurrency) {
+    if (i > 0) await delay(DELAY_BETWEEN_STORES_MS);
+    const batch = urls.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(batch.map((storeUrl) => processOneWithTimeout(storeUrl)));
+    const outcomes = settled.map((s, idx) => {
+      if (s.status === 'fulfilled') return s.value;
+      console.error('[scanProcessor] store failed:', batch[idx], s.reason?.message || s.reason);
+      return { storeUrl: batch[idx], results: [] };
+    });
 
     for (const { storeUrl, results } of outcomes) {
-      if (db) {
-        for (const r of results) {
-          await db.query(
-            `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, $3, $4, 1)`,
-            [scanId, r.storeUrl, r.email, r.sourcePage || '']
-          );
-          foundCount++;
+      try {
+        if (db) {
+          for (const r of results) {
+            await db.query(
+              `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, $3, $4, 1)`,
+              [scanId, r.storeUrl, r.email, r.sourcePage || '']
+            );
+            foundCount++;
+          }
+          if (results.length === 0) {
+            await db.query(
+              `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, NULL, 0)`,
+              [scanId, storeUrl]
+            );
+          }
+        } else {
+          for (const r of results) {
+            memoryResults.push({ store_url: r.storeUrl, email: r.email, source_page: r.sourcePage || '', has_email: 1 });
+            foundCount++;
+          }
+          if (results.length === 0) {
+            memoryResults.push({ store_url: storeUrl, email: null, source_page: null, has_email: 0 });
+          }
+          memoryStore.results.set(scanId, memoryResults);
         }
-        if (results.length === 0) {
-          await db.query(
-            `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, NULL, 0)`,
-            [scanId, storeUrl]
-          );
-        }
-      } else {
-        for (const r of results) {
-          memoryResults.push({ store_url: r.storeUrl, email: r.email, source_page: r.sourcePage || '', has_email: 1 });
-          foundCount++;
-        }
-        if (results.length === 0) {
-          memoryResults.push({ store_url: storeUrl, email: null, source_page: null, has_email: 0 });
-        }
-        memoryStore.results.set(scanId, memoryResults);
+      } catch (dbErr) {
+        console.error('[scanProcessor] DB write error:', storeUrl, dbErr?.message || dbErr);
       }
       processed++;
     }
 
-    if (db) {
-      await db.query(
-        `UPDATE scans SET processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
-        [processed, foundCount, scanId]
-      );
-    } else {
-      const rec = memoryStore.scans.get(scanId);
-      if (rec) {
-        rec.processed = processed;
-        rec.found_count = foundCount;
-        memoryStore.scans.set(scanId, rec);
+    try {
+      if (db) {
+        await db.query(
+          `UPDATE scans SET processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
+          [processed, foundCount, scanId]
+        );
+      } else {
+        const rec = memoryStore.scans.get(scanId);
+        if (rec) {
+          rec.processed = processed;
+          rec.found_count = foundCount;
+          memoryStore.scans.set(scanId, rec);
+        }
       }
+    } catch (dbErr) {
+      console.error('[scanProcessor] progress update error:', dbErr?.message || dbErr);
     }
   }
 

@@ -1,8 +1,8 @@
-# StoreReach
+# wiblaster
 
 **Automated Store Email Extraction & Cold Outreach Tool**
 
-StoreReach helps you extract publicly available business emails from eCommerce store websites, organize them by source store, and send automated cold emails at scale with smart sender rotation and timing controls.
+wiblaster helps you extract publicly available business emails from eCommerce store websites, organize them by source store, and send automated cold emails at scale with smart sender rotation and timing controls.
 
 ## Tech Stack
 
@@ -33,19 +33,23 @@ StoreReach helps you extract publicly available business emails from eCommerce s
    ```env
    DATABASE_URL=postgresql://user:password@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
    ```
-   - Install and run the server:
+
+4. **Run both server and client (recommended)**
+   - From the **project root** (so the API and the app both start):
    ```bash
-   cd server
-   npm install
    npm run dev
    ```
-   - You should see: `Neon DB connected and schema ready.` then `StoreReach server running at http://localhost:4000` (or 4001 if 4000 is in use).
+   - This starts the API server first, then the Vite dev server. Open http://localhost:3000.
+   - If you see **ECONNREFUSED** or proxy errors in the client terminal, the API server is not running. Run `npm run dev` from the project root, or in a **separate terminal** start the server:
+   ```bash
+   cd server && npm run dev
+   ```
+   - You should see: `Neon DB connected and schema ready.` and `wiblaster server running at http://localhost:4000` (or 4001 if 4000 is in use).
 
-4. **Client**
-   - In another terminal:
+5. **Client only (optional)**
+   - If you prefer to run the client from its folder, start the **server first** in another terminal, then:
    ```bash
    cd client
-   npm install
    npm run dev
    ```
    - If the server runs on **4001**, create `client/.env` with:
@@ -54,7 +58,7 @@ StoreReach helps you extract publicly available business emails from eCommerce s
    ```
    - Open http://localhost:3000.
 
-5. **Use the app**
+6. **Use the app**
    - Paste store URLs (one per line or comma-separated), click **Start Scan**. Results and automation (senders, templates, campaigns) use Neon for storage.
 
 ## Scripts
@@ -77,6 +81,11 @@ StoreReach helps you extract publicly available business emails from eCommerce s
 1. Set `DATABASE_URL` in your hosting env to your Neon connection string.
 2. Build client: `cd client && npm run build`.
 3. Deploy the server (serves `client/dist` as static). Schema runs on first request via `initDb()`.
+
+## Troubleshooting
+
+- **`ECONNREFUSED` or "http proxy error: /api/..." in the client terminal**  
+  The Vite dev server proxies `/api` to the backend; if the backend is not running, requests are refused. **Fix:** Start the API server. From the project root run `npm run dev` (starts both server and client), or in a separate terminal run `cd server && npm run dev`, then keep the client running.
 
 ## Compliance
 

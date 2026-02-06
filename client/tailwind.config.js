@@ -22,6 +22,8 @@ export default {
           'cta-hover': '#4f46e5',
           sidebar: '#f8f7f5',
           'sidebar-hover': 'rgba(99, 102, 241, 0.08)',
+          'nav-active': 'rgba(38, 39, 74, 1)',
+          'nav-active-bg': 'rgba(38, 39, 74, 0.13)',
           border: '#e5e5e5',
         },
         glass: {
@@ -40,6 +42,15 @@ export default {
       boxShadow: {
         glass: '0 8px 32px 0 rgba(0, 0, 0, 0.1)',
         'glass-dark': '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+      },
+      keyframes: {
+        'slide-in-right': {
+          '0%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+      },
+      animation: {
+        'slide-in-right': 'slide-in-right 0.3s ease-out',
       },
     },
   },

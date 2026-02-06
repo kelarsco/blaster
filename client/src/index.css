@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Mobile-first card & page typography (smaller on mobile, normal from md+) */
+@layer components {
+  .page-title-mobile {
+    @apply text-lg md:text-xl lg:text-2xl font-bold text-blaster-fg;
+  }
+  .card-title-mobile {
+    @apply text-sm md:text-base font-semibold text-blaster-fg;
+  }
+  .card-header-mobile {
+    @apply px-4 py-3 md:px-6 md:py-4 border-b border-blaster-border;
+  }
+  .card-body-mobile {
+    @apply p-4 md:p-6;
+  }
+}
+
 :root {
   --glass-bg: rgba(255, 255, 255, 0.12);
   --glass-border: rgba(255, 255, 255, 0.25);
@@ -68,13 +84,42 @@ input:focus, textarea:focus {
   @apply px-4 py-2 rounded-lg font-medium bg-red-600/90 text-white hover:bg-red-500 transition;
 }
 
-/* Blaster landing & app */
+/* wiblaster landing & app - clickable links use #6366F1; btn-blaster-accent keeps white text */
+.text-blaster-accent:not(.btn-blaster-accent),
+a.text-blaster-accent:not(.btn-blaster-accent),
+button.text-blaster-accent:not(.btn-blaster-accent),
+a[class*="blaster-accent"]:not(.btn-blaster-accent),
+button[class*="blaster-accent"]:not(.btn-blaster-accent),
+a.font-medium[class*="underline"],
+button.font-medium[class*="underline"],
+.link-accent {
+  color: #6366F1 !important;
+}
+a.text-blaster-accent:hover,
+button.text-blaster-accent:hover:not(.btn-blaster-accent),
+a[class*="blaster-accent"]:hover:not(.btn-blaster-accent),
+button[class*="blaster-accent"]:hover:not(.btn-blaster-accent) {
+  color: #4f46e5 !important;
+}
 .btn-blaster-cta {
   @apply px-5 py-2.5 rounded-lg font-semibold bg-blaster-cta text-white hover:bg-blaster-cta-hover transition;
 }
 .btn-blaster-accent {
-  @apply px-5 py-2.5 rounded-lg font-semibold bg-blaster-accent text-white hover:bg-blaster-accent-hover transition;
+  @apply px-5 py-2.5 rounded-[5px] font-normal bg-[#1a1a21] hover:bg-[#252530] transition;
+  color: #ffffff !important;
+}
+/* Buttons with solid accent background get white text for readability */
+[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
+  color: #ffffff !important;
 }
 .input:focus, textarea:focus {
   @apply outline-none ring-2 ring-blaster-accent/30;
+}
+
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(1440deg); }
+}
+.animate-refresh-spin {
+  animation: refresh-spin 1.2s ease-out forwards;
 }

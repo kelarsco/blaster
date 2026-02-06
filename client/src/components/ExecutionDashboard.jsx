@@ -1,80 +1,179 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'react-feather';
 import { API } from '../api.js';
+
+function RefreshIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  );
+}
+
+const REFRESH_SPIN_MS = 1200;
 
 export function ExecutionDashboard({ campaignId, onClose }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch(`${API}/campaigns/${campaignId}`);
+      const data = await res.json();
+      if (res.ok) setStats(data);
+    } catch (_) {}
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch(`${API}/campaigns/${campaignId}`);
-        const data = await res.json();
-        if (res.ok) setStats(data);
-      } catch (_) {}
-      setLoading(false);
-    };
     fetchStats();
     const id = setInterval(fetchStats, 2000);
     return () => clearInterval(id);
   }, [campaignId]);
 
-  const pause = () => fetch(`${API}/campaigns/${campaignId}/pause`, { method: 'POST' });
-  const resume = () => fetch(`${API}/campaigns/${campaignId}/resume`, { method: 'POST' });
-  const stop = () => fetch(`${API}/campaigns/${campaignId}/stop`, { method: 'POST' });
+  const pause = async () => {
+    await fetch(`${API}/campaigns/${campaignId}/pause`, { method: 'POST' });
+    if (stats) setStats({ ...stats, status: 'paused' });
+  };
+  const resume = async () => {
+    const res = await fetch(`${API}/campaigns/${campaignId}/resume`, { method: 'POST' });
+    if (res.ok && stats) setStats({ ...stats, status: 'running' });
+  };
+  const stop = async () => {
+    await fetch(`${API}/campaigns/${campaignId}/stop`, { method: 'POST' });
+    if (stats) setStats({ ...stats, status: 'stopped' });
+  };
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await resume();
+    setTimeout(() => setRefreshing(false), REFRESH_SPIN_MS);
+  };
+
+  const formatStartedAt = (iso) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  const clearError = async () => {
+    try {
+      const res = await fetch(`${API}/campaigns/${campaignId}/clear-error`, { method: 'POST' });
+      if (res.ok && stats) setStats({ ...stats, lastError: null });
+    } catch (_) {}
+  };
 
   if (loading && !stats) {
     return (
-      <section className="glass rounded-2xl p-6">
-        <p className="text-slate-500 dark:text-slate-400">Loading campaign…</p>
+      <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-sm card-body-mobile">
+        <p className="text-sm text-blaster-muted">Loading campaign…</p>
       </section>
     );
   }
 
   return (
-    <section className="glass rounded-2xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Campaign</h2>
-        <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-          ✕
+    <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-sm card-body-mobile">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="card-title-mobile">Campaign</h2>
+          {stats?.createdAt && (
+            <p className="text-xs text-blaster-muted mt-0.5">Started {formatStartedAt(stats.createdAt)}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-border/50 transition"
+          aria-label="Close"
+        >
+          <span className="text-lg leading-none">×</span>
         </button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-        <div className="glass-subtle rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{stats?.totalQueued ?? 0}</div>
-          <div className="text-sm text-slate-500 dark:text-slate-400">Queued</div>
-        </div>
-        <div className="glass-subtle rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats?.sent ?? 0}</div>
-          <div className="text-sm text-slate-500 dark:text-slate-400">Sent</div>
-        </div>
-        <div className="glass-subtle rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-red-500 dark:text-red-400">{stats?.failed ?? 0}</div>
-          <div className="text-sm text-slate-500 dark:text-slate-400">Failed</div>
-        </div>
-        <div className="glass-subtle rounded-xl p-4 text-center">
-          <div className="text-sm font-medium text-slate-600 dark:text-slate-400 capitalize">{stats?.status ?? '—'}</div>
-          <div className="text-sm text-slate-500 dark:text-slate-400">Status</div>
-        </div>
+      <div className="flex items-center gap-4 mb-3 text-sm">
+        <span className="text-blaster-muted">
+          <span className="font-medium text-blaster-fg">{stats?.totalQueued ?? 0}</span> Queued
+        </span>
+        <span className="text-blaster-muted">
+          <span className="font-medium text-emerald-600">{stats?.sent ?? 0}</span> Sent
+        </span>
+        <span className="text-blaster-muted">
+          <span className="font-medium text-red-500">{stats?.failed ?? 0}</span> Failed
+        </span>
+        <span className="text-blaster-muted capitalize">
+          {stats?.status === 'running' && (stats?.sent ?? 0) >= (stats?.totalQueued ?? 0) ? 'completed' : (stats?.status ?? '—')}
+        </span>
       </div>
       {stats?.lastError && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-          <p className="text-sm font-medium text-red-800 dark:text-red-200">Last error</p>
-          <p className="text-sm text-red-700 dark:text-red-300 mt-1">{stats.lastError}</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Fix the sender in Automation Setup (SMTP user + App Password), then start a new campaign.</p>
+        <div className="mb-3 p-2.5 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-red-800 dark:text-red-200">Last error</p>
+            <p className="text-xs text-red-700 dark:text-red-300 mt-0.5 truncate" title={stats.lastError}>{stats.lastError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={clearError}
+            className="shrink-0 p-0.5 rounded text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+            aria-label="Clear error"
+          >
+            <X className="w-4 h-4" strokeWidth={2} />
+          </button>
         </div>
       )}
-      <div className="flex gap-2">
-        {stats?.status === 'running' && (
-          <button type="button" onClick={pause} className="btn-secondary">Pause</button>
-        )}
-        {stats?.status === 'paused' && (
-          <button type="button" onClick={resume} className="btn-primary">Resume</button>
-        )}
-        {(stats?.status === 'running' || stats?.status === 'paused') && (
-          <button type="button" onClick={stop} className="btn-danger">Stop</button>
-        )}
-      </div>
+      {((stats?.status === 'running' && (stats?.sent ?? 0) < (stats?.totalQueued ?? 1)) || stats?.status === 'paused') && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {stats?.status === 'running' && (
+            <>
+              <button
+                type="button"
+                onClick={pause}
+                className="text-sm text-blaster-muted hover:text-blaster-fg transition"
+              >
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-border/50 transition disabled:opacity-80 disabled:pointer-events-none"
+                title="Continue or retry sending (e.g. after network delay)"
+                aria-label="Refresh / continue sending"
+              >
+                <RefreshIcon key={refreshing ? 'spin' : 'idle'} className={`w-4 h-4 ${refreshing ? 'animate-refresh-spin' : ''}`} />
+              </button>
+            </>
+          )}
+          {stats?.status === 'paused' && (
+            <>
+              <button
+                type="button"
+                onClick={resume}
+                className="text-sm px-3 py-1.5 rounded-lg bg-blaster-accent text-white hover:opacity-90 transition"
+              >
+                Continue Campaign
+              </button>
+              <button
+                type="button"
+                onClick={stop}
+                className="text-sm px-3 py-1.5 rounded-lg border border-blaster-border text-blaster-muted hover:text-red-600 hover:border-red-300 transition"
+              >
+                Stop Campaign
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </section>
   );
 }

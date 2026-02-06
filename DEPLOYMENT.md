@@ -1,10 +1,10 @@
-# Blaster – Deploy to Vercel (frontend), Railway (server), Neon (DB)
+# wiblaster – Deploy to Vercel (frontend), Railway (server), Neon (DB)
 
 ## Overview
 
 | Part        | Host   | Purpose                    |
 |------------|--------|----------------------------|
-| **Frontend** | Vercel | SPA (React), Blaster UI    |
+| **Frontend** | Vercel | SPA (React), wiblaster UI  |
 | **Backend**  | Railway | Node API (scans, campaigns, auth) |
 | **Database** | Neon   | PostgreSQL                 |
 
