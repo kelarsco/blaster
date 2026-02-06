@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 export function BillingMonthlyPlanPage() {
+  const { authFetch } = useAuth();
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/billing/subscription`, { credentials: 'include' })
+    if (!authFetch) return;
+    authFetch(`${API}/billing/subscription`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((d) => setSubscription(d.subscription || null))
       .catch(() => setSubscription(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [authFetch]);
 
   const planName = subscription?.planName || 'Free';
   const planDetail = subscription

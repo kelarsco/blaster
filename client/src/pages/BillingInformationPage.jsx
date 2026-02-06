@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CreditCard, Lock, RefreshCw } from 'react-feather';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 function formatBrand(brand) {
   if (!brand || brand === 'card') return 'Card';
@@ -41,10 +42,11 @@ export function BillingInformationPage() {
   }, []);
 
   const openUpdateCardLink = () => {
+    if (!authFetch) return;
     setLinkLoading(true);
     setError('');
     setMessage('');
-    fetch(`${API}/billing/payment-methods/update-link`, { credentials: 'include' })
+    authFetch(`${API}/billing/payment-methods/update-link`)
       .then((r) => r.json())
       .then((data) => {
         if (!data.link) throw new Error(data.error || 'Could not open update page');

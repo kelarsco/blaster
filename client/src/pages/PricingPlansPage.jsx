@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'react-feather';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 const PLANS = [
   {
@@ -138,10 +139,9 @@ export function PricingPlansPage() {
     const planId = isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
     setSubscribingPlanId(planId);
     try {
-      const res = await fetch(`${API}/billing/initialize`, {
+      const res = await authFetch(`${API}/billing/initialize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ planId }),
       });
       const data = await res.json().catch(() => ({}));
