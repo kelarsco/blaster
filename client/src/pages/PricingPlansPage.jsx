@@ -119,17 +119,19 @@ function storeSelectedPlan(planId) {
 }
 
 export function PricingPlansPage() {
+  const { authFetch } = useAuth();
   const [billingPeriod, setBillingPeriod] = useState('monthly');
   const [subscription, setSubscription] = useState(null);
   const [subscribingPlanId, setSubscribingPlanId] = useState(null);
   const isAnnually = billingPeriod === 'annually';
 
   useEffect(() => {
-    fetch(`${API}/billing/subscription`, { credentials: 'include' })
+    if (!authFetch) return;
+    authFetch(`${API}/billing/subscription`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((d) => setSubscription(d.subscription || null))
       .catch(() => setSubscription(null));
-  }, []);
+  }, [authFetch]);
 
   const handleSubscribe = async (plan) => {
     if (plan.id === 'free') {

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 function DotsIcon({ className }) {
   return (
@@ -12,6 +13,8 @@ function DotsIcon({ className }) {
 const MAX_SENDERS_PER_GROUP = 10;
 
 export function SendersPage() {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const [senders, setSenders] = useState([]);
   const [groups, setGroups] = useState([]);
   const [maxSendersPerGroup, setMaxSendersPerGroup] = useState(MAX_SENDERS_PER_GROUP);
@@ -34,27 +37,22 @@ export function SendersPage() {
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
 
-  const fetchData = () => {
-    fetch(`${API}/automation/senders`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setSenders(d.senders || []));
-    fetch(`${API}/automation/senders/groups`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => {
-        setGroups(d.groups || []);
-        if (d.maxSendersPerGroup != null) setMaxSendersPerGroup(d.maxSendersPerGroup);
-      });
-    fetch(`${API}/automation/senders/limit`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => {
-        setSenderLimit(d.limit ?? 1);
-        setSenderCount(d.count ?? 0);
-      });
-  };
+  const fetchData = useCallback(() => {
+    if (!authFetch) return;
+    authFetch(`${API}/automation/senders`).then((r) => r.json()).then((d) => setSenders(d.senders || []));
+    authFetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => {
+      setGroups(d.groups || []);
+      if (d.maxSendersPerGroup != null) setMaxSendersPerGroup(d.maxSendersPerGroup);
+    });
+    authFetch(`${API}/automation/senders/limit`).then((r) => r.json()).then((d) => {
+      setSenderLimit(d.limit ?? 1);
+      setSenderCount(d.count ?? 0);
+    });
+  }, [authFetch]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -66,13 +64,12 @@ export function SendersPage() {
   }, [openMenuId]);
 
   const addSender = async () => {
-    if (!newSender.email) return;
+    if (!newSender.email || !authFetch) return;
     setError('');
     try {
-      const res = await fetch(`${API}/automation/senders`, {
+      const res = await authFetch(`${API}/automation/senders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           email: newSender.email,
           config: {
@@ -102,8 +99,9 @@ export function SendersPage() {
   };
 
   const removeSender = async (senderId) => {
+    if (!authFetch) return;
     try {
-      const res = await fetch(`${API}/automation/senders/${senderId}`, { method: 'DELETE', credentials: 'include' });
+      const res = await authFetch(`${API}/automation/senders/${senderId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to remove');
       setSenders((prev) => prev.filter((s) => s.id !== senderId));
       fetchData();
@@ -113,13 +111,12 @@ export function SendersPage() {
   };
 
   const addGroup = async () => {
-    if (!newGroupName.trim()) return;
+    if (!newGroupName.trim() || !authFetch) return;
     setError('');
     try {
-      const res = await fetch(`${API}/automation/senders/groups`, {
+      const res = await authFetch(`${API}/automation/senders/groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ name: newGroupName.trim() }),
       });
       const data = await res.json();
@@ -133,8 +130,9 @@ export function SendersPage() {
   };
 
   const removeGroup = async (groupId) => {
+    if (!authFetch) return;
     try {
-      const res = await fetch(`${API}/automation/senders/groups/${groupId}`, { method: 'DELETE', credentials: 'include' });
+      const res = await authFetch(`${API}/automation/senders/groups/${groupId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to remove');
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
       setEditingGroupId(null);
@@ -158,11 +156,11 @@ export function SendersPage() {
 
     if (group.senders?.some((s) => String(s.id) === String(senderId))) return;
     const senderIds = [...(group.senders || []).map((s) => s.id), senderId];
+    if (!authFetch) return;
     try {
-      const res = await fetch(`${API}/automation/senders/groups/${groupId}`, {
+      const res = await authFetch(`${API}/automation/senders/groups/${groupId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ senderIds }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -176,11 +174,11 @@ export function SendersPage() {
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
     const senderIds = (group.senders || []).filter((s) => s.id !== senderId).map((s) => s.id);
+    if (!authFetch) return;
     try {
-      const res = await fetch(`${API}/automation/senders/groups/${groupId}`, {
+      const res = await authFetch(`${API}/automation/senders/groups/${groupId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ senderIds }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');

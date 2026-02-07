@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'react-feather';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 function RefreshIcon({ className }) {
   return (
@@ -13,35 +14,44 @@ function RefreshIcon({ className }) {
 const REFRESH_SPIN_MS = 1200;
 
 export function ExecutionDashboard({ campaignId, onClose }) {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    if (!authFetch) {
+      setLoading(false);
+      return;
+    }
     try {
-      const res = await fetch(`${API}/campaigns/${campaignId}`);
+      const res = await authFetch(`${API}/campaigns/${campaignId}`);
       const data = await res.json();
       if (res.ok) setStats(data);
     } catch (_) {}
     setLoading(false);
-  };
+  }, [authFetch, campaignId]);
 
   useEffect(() => {
     fetchStats();
     const id = setInterval(fetchStats, 2000);
     return () => clearInterval(id);
-  }, [campaignId]);
+  }, [fetchStats]);
 
   const pause = async () => {
-    await fetch(`${API}/campaigns/${campaignId}/pause`, { method: 'POST' });
+    if (!authFetch) return;
+    await authFetch(`${API}/campaigns/${campaignId}/pause`, { method: 'POST' });
     if (stats) setStats({ ...stats, status: 'paused' });
   };
   const resume = async () => {
-    const res = await fetch(`${API}/campaigns/${campaignId}/resume`, { method: 'POST' });
+    if (!authFetch) return;
+    const res = await authFetch(`${API}/campaigns/${campaignId}/resume`, { method: 'POST' });
     if (res.ok && stats) setStats({ ...stats, status: 'running' });
   };
   const stop = async () => {
-    await fetch(`${API}/campaigns/${campaignId}/stop`, { method: 'POST' });
+    if (!authFetch) return;
+    await authFetch(`${API}/campaigns/${campaignId}/stop`, { method: 'POST' });
     if (stats) setStats({ ...stats, status: 'stopped' });
   };
 
@@ -69,8 +79,9 @@ export function ExecutionDashboard({ campaignId, onClose }) {
   };
 
   const clearError = async () => {
+    if (!authFetch) return;
     try {
-      const res = await fetch(`${API}/campaigns/${campaignId}/clear-error`, { method: 'POST' });
+      const res = await authFetch(`${API}/campaigns/${campaignId}/clear-error`, { method: 'POST' });
       if (res.ok && stats) setStats({ ...stats, lastError: null });
     } catch (_) {}
   };

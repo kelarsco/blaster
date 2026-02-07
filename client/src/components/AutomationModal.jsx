@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 function getEmailProvider(email) {
   if (!email || typeof email !== 'string') return 'domain';
@@ -15,6 +16,8 @@ function getEmailProvider(email) {
 }
 
 export function AutomationModal({ scanId, results, recipientsOverride, onClose, onCampaignStart }) {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const [groups, setGroups] = useState([]);
   const [inUseGroupIds, setInUseGroupIds] = useState(new Set());
   const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -70,17 +73,18 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
   const [savingPreset, setSavingPreset] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => setGroups(d.groups || []));
-    fetch(`${API}/automation/senders/groups/in-use`).then((r) => r.json()).then((d) => setInUseGroupIds(new Set(d.groupIds || [])));
-    fetch(`${API}/automation/presets`).then((r) => r.json()).then((d) => setPresets(d.presets || []));
-  }, []);
+    if (!authFetch) return;
+    authFetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => setGroups(d.groups || []));
+    authFetch(`${API}/automation/senders/groups/in-use`).then((r) => r.json()).then((d) => setInUseGroupIds(new Set(d.groupIds || [])));
+    authFetch(`${API}/automation/presets`).then((r) => r.json()).then((d) => setPresets(d.presets || []));
+  }, [authFetch]);
 
   const savePreset = async () => {
-    if (!presetName.trim()) return;
+    if (!presetName.trim() || !authFetch) return;
     setSavingPreset(true);
     setError('');
     try {
-      const res = await fetch(`${API}/automation/presets`, {
+      const res = await authFetch(`${API}/automation/presets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,6 +170,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
 
   const startCampaign = async () => {
     setError('');
+    if (!authFetch) return;
     if (!confirmCompliance) {
       setError('Please confirm compliance with outreach regulations.');
       return;
@@ -184,7 +189,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/campaigns/start`, {
+      const res = await authFetch(`${API}/campaigns/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

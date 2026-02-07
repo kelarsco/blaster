@@ -5,7 +5,9 @@ import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 
 export function UsersPage() {
-  const { user } = useAuth();
+  const auth = useAuth();
+  const user = auth?.user;
+  const authFetch = auth?.authFetch;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
@@ -16,7 +18,8 @@ export function UsersPage() {
   const displayName = user?.name || user?.email?.split('@')[0] || 'You';
 
   const fetchInvites = () => {
-    fetch(`${API}/invites`, { credentials: 'include' })
+    if (!authFetch) return;
+    authFetch(`${API}/invites`)
       .then((r) => (r.ok ? r.json() : { invites: [], members: [] }))
       .then((data) => {
         setInvites(data.invites || []);
@@ -27,17 +30,16 @@ export function UsersPage() {
 
   useEffect(() => {
     fetchInvites();
-  }, [inviteOpen]);
+  }, [inviteOpen, authFetch]);
 
   const sendInvite = async () => {
     const trimmed = (email || '').trim().toLowerCase();
-    if (!trimmed) return;
+    if (!trimmed || !authFetch) return;
     setSending(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API}/invites`, {
+      const res = await authFetch(`${API}/invites`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmed }),
       });

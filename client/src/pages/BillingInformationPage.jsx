@@ -14,6 +14,8 @@ function formatBrand(brand) {
 }
 
 export function BillingInformationPage() {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [linkLoading, setLinkLoading] = useState(false);
@@ -21,9 +23,13 @@ export function BillingInformationPage() {
   const [message, setMessage] = useState('');
 
   const fetchPaymentMethods = () => {
+    if (!authFetch) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
-    fetch(`${API}/billing/payment-methods`, { credentials: 'include' })
+    authFetch(`${API}/billing/payment-methods`)
       .then((r) => r.json())
       .then((data) => {
         setCards(data.cards || []);
@@ -39,7 +45,7 @@ export function BillingInformationPage() {
       setMessage('Your payment method was updated successfully.');
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [authFetch]);
 
   const openUpdateCardLink = () => {
     if (!authFetch) return;

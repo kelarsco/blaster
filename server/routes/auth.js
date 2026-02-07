@@ -357,13 +357,13 @@ authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
   }
 });
 
-/** Refresh access token using refresh token from HttpOnly cookie. */
+/** Refresh access token using refresh token from HttpOnly cookie. Returns 200 with no user when no/invalid cookie (avoids 401 noise for unauthenticated visitors). */
 authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   try {
     const token = req.cookies?.[getRefreshCookieName()];
-    if (!token) return res.status(401).json({ error: 'No refresh token' });
+    if (!token) return res.status(200).json({});
     const found = await findRefreshTokenByToken(token);
-    if (!found) return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    if (!found) return res.status(200).json({});
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable' });
     const r = await db.query('SELECT id, email, name, picture_url FROM users WHERE id = $1', [found.user_id]);

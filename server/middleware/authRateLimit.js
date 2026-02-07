@@ -1,9 +1,10 @@
 /**
- * In-memory rate limit for auth endpoints: max 10 requests per 15 minutes per IP.
- * Prevents brute force and abuse. For production at scale, use Redis.
+ * In-memory rate limit for auth endpoints: max 30 requests per 15 minutes per IP.
+ * Prevents brute force and abuse. Allow enough headroom for token refresh retries (multiple tabs or parallel 401s).
+ * For production at scale, use Redis.
  */
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_PER_WINDOW = 10;
+const MAX_PER_WINDOW = 30;
 
 const store = new Map();
 

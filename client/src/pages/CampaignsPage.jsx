@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useToolState } from '../context/ToolStateContext';
+import { useAuth } from '../context/AuthContext';
 import { AutomationModal } from '../components/AutomationModal';
 import { RecipientSourceModal } from '../components/RecipientSourceModal';
 import { ExecutionDashboard } from '../components/ExecutionDashboard';
@@ -34,6 +35,8 @@ function DotsIcon({ className }) {
 }
 
 export function CampaignsPage() {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const { scanId, results, setScanId, setResults, setScanStatus, automationOpen, setAutomationOpen, activeCampaignId, setActiveCampaignId } = useToolState();
   const [campaigns, setCampaigns] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,13 +82,14 @@ export function CampaignsPage() {
     if (expandedListId === id) setExpandedListId(null);
   };
 
-  const fetchCampaigns = () => {
-    fetch(`${API}/campaigns`).then((r) => (r.ok ? r.json() : { campaigns: [] })).then((d) => setCampaigns(d.campaigns || []));
-  };
+  const fetchCampaigns = useCallback(() => {
+    if (!authFetch) return;
+    authFetch(`${API}/campaigns`).then((r) => (r.ok ? r.json() : { campaigns: [] })).then((d) => setCampaigns(d.campaigns || []));
+  }, [authFetch]);
 
   useEffect(() => {
     fetchCampaigns();
-  }, [activeCampaignId]);
+  }, [activeCampaignId, fetchCampaigns]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -116,10 +120,10 @@ export function CampaignsPage() {
   };
 
   const deleteSelected = async () => {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || !authFetch) return;
     setDeleting(true);
     try {
-      const res = await fetch(`${API}/campaigns/delete`, {
+      const res = await authFetch(`${API}/campaigns/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [...selectedIds] }),

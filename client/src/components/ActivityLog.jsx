@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -60,13 +61,16 @@ function typeColor(type) {
 }
 
 export function ActivityLog({ onClose }) {
+  const auth = useAuth();
+  const authFetch = auth?.authFetch;
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    fetch(`${API}/activity/logs?limit=100`)
+    if (!authFetch) return;
+    authFetch(`${API}/activity/logs?limit=100`)
       .then((r) => r.json())
       .then((d) => setLogs(d.logs || []));
-  }, []);
+  }, [authFetch]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>

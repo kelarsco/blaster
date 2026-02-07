@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Send, Check, X, Mail } from 'react-feather';
 import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 const SKELETON_DURATION_MS = 1500;
 
@@ -10,6 +11,7 @@ function Skeleton({ className = '' }) {
 }
 
 export function DashboardPage() {
+  const { authFetch } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
   const [activity, setActivity] = useState([]);
@@ -207,8 +209,9 @@ export function DashboardPage() {
   };
 
   const fetchDashboardData = React.useCallback(() => {
+    if (!authFetch) return;
     Promise.all([
-      fetch(`${API}/campaigns`, { credentials: 'include' })
+      authFetch(`${API}/campaigns`)
         .then((r) => (r.ok ? r.json() : { campaigns: [] }))
         .then((d) => {
           const list = d.campaigns || [];
@@ -219,11 +222,11 @@ export function DashboardPage() {
             failed: list.reduce((s, c) => s + (c.failed || 0), 0),
           });
         }),
-      fetch(`${API}/activity/logs?limit=20`, { credentials: 'include' })
+      authFetch(`${API}/activity/logs?limit=20`)
         .then((r) => (r.ok ? r.json() : { logs: [] }))
         .then((d) => setActivity(d.logs || [])),
     ]);
-  }, []);
+  }, [authFetch]);
 
   useEffect(() => {
     const minDelay = new Promise((r) => setTimeout(r, SKELETON_DURATION_MS));
