@@ -245,18 +245,27 @@ async function runSchema(p) {
 
       INSERT INTO plans (id, name, amount, interval, features) VALUES
         ('free', 'Free', 0, 'monthly', '{"emails":"500","users":"1 seat","support":"Email (limited)"}'::jsonb),
-        ('essentials_monthly', 'Essentials', 1500, 'monthly', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
-        ('essentials_annual', 'Essentials', 15000, 'annually', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
-        ('standard_monthly', 'Standard', 3500, 'monthly', '{"emails":"15000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
-        ('standard_annual', 'Standard', 35000, 'annually', '{"emails":"15000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
+        ('essentials_monthly', 'Essentials', 1500, 'monthly', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('essentials_annual', 'Essentials', 15000, 'annually', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('standard_monthly', 'Standard', 3500, 'monthly', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
+        ('standard_annual', 'Standard', 35000, 'annually', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
         ('premium_monthly', 'Premium', 16000, 'monthly', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb),
         ('premium_annual', 'Premium', 160000, 'annually', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb)
       ON CONFLICT (id) DO NOTHING;
 
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"1"') WHERE id = 'free';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"3"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"5"') WHERE id LIKE 'essentials%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"10"') WHERE id LIKE 'standard%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"50"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"10000"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"30000"') WHERE id LIKE 'standard%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"150000"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"1000"') WHERE id = 'free';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"15000"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"40000"') WHERE id LIKE 'standard%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'free';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free');
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;

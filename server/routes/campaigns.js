@@ -4,6 +4,7 @@ import { getDb } from '../db.js';
 import { addSendJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { getPlanLimitsForUser } from '../services/planLimits.js';
 
 export const campaignRoutes = Router();
 
@@ -94,6 +95,11 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
         if (!byStore.has(url)) byStore.set(url, r);
       }
       list = [...byStore.values()];
+    }
+    if (limits.emailsLimit < 999999 && limits.emailsUsed + list.length > limits.emailsLimit) {
+      return res.status(403).json({
+        error: `Email send limit reached. Your plan allows ${limits.emailsLimit.toLocaleString()} emails per ${limits.periodEnd ? 'billing period' : 'month'}. You have sent ${limits.emailsUsed.toLocaleString()}. Upgrade to send more.`,
+      });
     }
     const campaignId = uuidv4();
     await db.query(

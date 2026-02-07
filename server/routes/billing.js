@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
-import { syncPaystackPlans } from '../services/paystackSync.js';
+import { syncPaystackPlans, getUsdToNgnRate, amountForPaystack } from '../services/paystackSync.js';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE = 'https://api.paystack.co';
+const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'NGN';
 
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Not signed in' });
@@ -40,6 +41,89 @@ billingRoutes.get('/plans', async (_req, res) => {
   } catch (e) {
     console.error('[billing plans]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to load plans' });
+  }
+});
+
+/** Billing overview: subscription (or null), current plan with features, and usage counts for the overview card. */
+billingRoutes.get('/overview', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ subscription: null, plan: null, usage: null });
+    const userId = req.user.id;
+
+    const subRow = await db.query(
+      `SELECT s.id, s.plan_id, s.status, s.current_period_start, s.current_period_end, p.name AS plan_name, p.amount, p.interval, p.features
+       FROM subscriptions s
+       JOIN plans p ON p.id = s.plan_id
+       WHERE s.user_id = $1 AND s.status IN ('active', 'trialing')
+       ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1`,
+      [userId]
+    );
+    const row = subRow.rows?.[0];
+    let subscription = null;
+    let plan = null;
+    if (row) {
+      subscription = {
+        id: row.id,
+        planId: row.plan_id,
+        planName: row.plan_name,
+        status: row.status,
+        currentPeriodStart: row.current_period_start,
+        currentPeriodEnd: row.current_period_end,
+        amount: row.amount,
+        interval: row.interval,
+      };
+      const features = row.features || {};
+      plan = {
+        name: row.plan_name,
+        amount: row.amount,
+        interval: row.interval,
+        features,
+      };
+    } else {
+      const freeRow = await db.query(`SELECT id, name, amount, interval, features FROM plans WHERE id = 'free' LIMIT 1`);
+      const free = freeRow.rows?.[0];
+      plan = free ? { name: free.name, amount: free.amount, interval: free.interval, features: free.features || {} } : { name: 'Free', amount: 0, interval: 'monthly', features: { emails: '500', users: '1 seat', senders: '1' } };
+    }
+
+    const periodStart = row?.current_period_start ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const periodEnd = row?.current_period_end ?? new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999);
+    const start = new Date(periodStart).toISOString();
+    const end = new Date(periodEnd).toISOString();
+
+    const sendersCount = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
+    const sendersUsed = parseInt(sendersCount.rows?.[0]?.c ?? '0', 10);
+    const emailsResult = await db.query(
+      `SELECT COUNT(*) AS total FROM campaign_sends cs JOIN campaigns c ON c.id = cs.campaign_id AND c.user_id = $1 WHERE cs.status = 'sent' AND cs.sent_at >= $2 AND cs.sent_at <= $3`,
+      [userId, start, end]
+    );
+    const emailsUsed = parseInt(emailsResult.rows?.[0]?.total ?? '0', 10);
+
+    const sendersLimit = (() => {
+      const s = plan?.features?.senders;
+      if (s == null) return 1;
+      const str = String(s).toLowerCase();
+      if (str === 'unlimited' || str === '∞') return 999;
+      const n = parseInt(s, 10);
+      return Number.isNaN(n) || n < 0 ? 1 : Math.min(n, 999);
+    })();
+    const emailsLimit = (() => {
+      const e = plan?.features?.emails;
+      if (e == null) return 500;
+      const str = String(e).toLowerCase();
+      if (str === 'unlimited' || str === '∞') return 999999;
+      const n = parseInt(e, 10);
+      return Number.isNaN(n) || n < 0 ? 500 : n;
+    })();
+
+    res.json({
+      subscription,
+      plan,
+      usage: { sendersUsed, sendersLimit, emailsUsed, emailsLimit },
+    });
+  } catch (e) {
+    console.error('[billing overview]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load billing overview' });
   }
 });
 
@@ -93,26 +177,56 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
       planRow = await db.query('SELECT id, name, amount, paystack_plan_code FROM plans WHERE id = $1', [planId]);
       plan = planRow.rows?.[0];
     }
-    const planCode = plan?.paystack_plan_code;
+    let planCode = plan?.paystack_plan_code;
     if (plan.amount > 0 && !planCode) return res.status(503).json({ error: 'Paystack plans are still being set up. Please try again in a moment.' });
+
     const email = req.user.email;
-    const reference = `sub_${uuidv4().replace(/-/g, '')}`;
-    const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + PAYSTACK_SECRET,
-      },
-      body: JSON.stringify({
-        email,
-        plan: planCode,
-        reference,
-        callback_url: (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/billing?paystack=success',
-      }),
-    });
-    const data = await response.json();
+    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/billing?paystack=success';
+
+    // Paystack requires amount in the body (plan overrides it for the charge). Omitting it can cause "Invalid Amount Sent".
+    const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
+    const amountSubunit = amountForPaystack(plan.amount, PAYSTACK_CURRENCY, usdToNgn);
+
+    const doInitialize = async (code) => {
+      const reference = `sub_${uuidv4().replace(/-/g, '')}`;
+      const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + PAYSTACK_SECRET,
+        },
+        body: JSON.stringify({
+          email,
+          amount: amountSubunit,
+          currency: PAYSTACK_CURRENCY,
+          plan: code,
+          reference,
+          callback_url: callbackUrl,
+        }),
+      });
+      return response.json();
+    };
+
+    let data = await doInitialize(planCode);
     if (!data.status || !data.data?.authorization_url) {
-      return res.status(400).json({ error: data.message || 'Paystack could not create payment link' });
+      const msg = data.message || 'Paystack could not create payment link';
+      if (/invalid amount|Invalid Amount/i.test(msg)) {
+        await db.query('UPDATE plans SET paystack_plan_code = NULL WHERE id = $1', [planId]);
+        await syncPaystackPlans();
+        const planRow2 = await db.query('SELECT paystack_plan_code FROM plans WHERE id = $1', [planId]);
+        const newCode = planRow2.rows?.[0]?.paystack_plan_code;
+        if (newCode) {
+          data = await doInitialize(newCode);
+          if (data.status && data.data?.authorization_url) {
+            return res.json({ authorizationUrl: data.data.authorization_url, reference: data.data.reference });
+          }
+        }
+        console.warn('[billing] Invalid Amount after retry. Paystack:', msg);
+        return res.status(503).json({
+          error: 'Payment setup is updating. Please try again in a moment or contact support.',
+        });
+      }
+      return res.status(400).json({ error: msg });
     }
     res.json({ authorizationUrl: data.data.authorization_url, reference: data.data.reference });
   } catch (e) {
@@ -180,6 +294,61 @@ billingRoutes.get('/payment-methods/update-link', requireAuth, async (req, res) 
   } catch (e) {
     console.error('[billing update-link]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to get update link' });
+  }
+});
+
+/** Verify payment by reference (e.g. after redirect from Paystack). Creates subscription so test and live both work even if webhook is delayed. */
+billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
+  try {
+    const { reference } = req.body || {};
+    if (!reference || typeof reference !== 'string') {
+      return res.status(400).json({ error: 'reference is required' });
+    }
+    if (!PAYSTACK_SECRET) {
+      return res.status(503).json({ error: 'Paystack is not configured' });
+    }
+    const resPayload = await fetch(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference.trim())}`, {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET },
+    });
+    const data = await resPayload.json();
+    if (!data.status || !data.data) {
+      return res.status(400).json({ error: data.message || 'Transaction not found or invalid' });
+    }
+    const tx = data.data;
+    if (tx.status !== 'success') {
+      return res.status(400).json({ error: 'Transaction was not successful' });
+    }
+    const planRef = tx.plan;
+    const planCode = typeof planRef === 'string' ? planRef : (planRef?.plan_code ?? null);
+    if (!planCode) {
+      return res.status(400).json({ error: 'Not a subscription payment' });
+    }
+    const planId = await getPlanIdByPaystackCode(planCode);
+    if (!planId) {
+      return res.status(400).json({ error: 'Plan not recognized' });
+    }
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+    const existing = await db.query(
+      `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = $2 AND status = 'active' ORDER BY current_period_end DESC LIMIT 1`,
+      [userId, planId]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({ ok: true, planId });
+    }
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 31 * 24 * 60 * 60 * 1000);
+    await db.query(
+      `INSERT INTO subscriptions (id, user_id, plan_id, paystack_subscription_code, paystack_customer_code, status, current_period_start, current_period_end, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
+      [uuidv4(), userId, planId, tx.authorization?.subscription_code ?? null, tx.authorization?.customer_code ?? null, now, periodEnd]
+    );
+    return res.json({ ok: true, planId });
+  } catch (e) {
+    console.error('[billing verify-payment]', e?.message || e);
+    return res.status(500).json({ error: e?.message || 'Verification failed' });
   }
 });
 

@@ -4,6 +4,7 @@ import { getDb, memoryStore } from '../db.js';
 import { addScanJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { getPlanLimitsForUser } from '../services/planLimits.js';
 
 export const scanRoutes = Router();
 
@@ -60,6 +61,16 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     }
     const urlsToScan = allUrls.filter((u) => !excludeSet.has(u));
     const totalStores = previousRows.length ? new Set(previousRows.map((r) => r.store_url || r.storeUrl)).size + urlsToScan.length : urlsToScan.length;
+    if (db && userId) {
+      const limits = await getPlanLimitsForUser(userId);
+      const scansUsed = limits.scansUsed ?? 0;
+      const scansLimit = limits.scansLimit ?? 1000;
+      if (scansLimit < 999999 && scansUsed + totalStores > scansLimit) {
+        return res.status(403).json({
+          error: `Scan limit reached. Your plan allows ${scansLimit.toLocaleString()} stores per ${limits.periodEnd ? 'billing period' : 'month'}. You have used ${scansUsed.toLocaleString()}. Upgrade to scan more.`,
+        });
+      }
+    }
     const scanId = uuidv4();
     if (db) {
       await db.query(

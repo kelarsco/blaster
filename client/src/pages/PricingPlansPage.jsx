@@ -35,7 +35,7 @@ const PLANS = [
     period: 'month',
     current: false,
     features: {
-      emails: '5,000',
+      emails: '10,000',
       users: '3 seats',
       audiences: '3 audiences',
       support: '24/7 email & chat support',
@@ -55,7 +55,7 @@ const PLANS = [
     period: 'month',
     current: false,
     features: {
-      emails: '15,000',
+      emails: '30,000',
       users: '5 seats',
       audiences: '5 audiences',
       support: '24/7 email & chat support',
@@ -148,6 +148,11 @@ export function PricingPlansPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.authorizationUrl) {
+        if (data.reference) {
+          try {
+            sessionStorage.setItem('paystack-pending-reference', data.reference);
+          } catch (_) {}
+        }
         window.location.href = data.authorizationUrl;
         return;
       }
@@ -283,17 +288,17 @@ export function PricingPlansPage() {
             </thead>
             <tbody>
               <tr className="border-b border-blaster-border">
-                <td className="px-6 py-3 text-blaster-muted">Weekly email sends</td>
+                <td className="px-6 py-3 text-blaster-muted">Email sends per month</td>
                 <td className="px-6 py-3 text-blaster-fg">500 total</td>
-                <td className="px-6 py-3 text-blaster-fg">5,000</td>
-                <td className="px-6 py-3 text-blaster-fg">15,000</td>
+                <td className="px-6 py-3 text-blaster-fg">10,000</td>
+                <td className="px-6 py-3 text-blaster-fg">30,000</td>
                 <td className="px-6 py-3 text-blaster-fg">150,000</td>
               </tr>
               <tr className="border-b border-blaster-border">
                 <td className="px-6 py-3 text-blaster-muted">Store links extracted</td>
                 <td className="px-6 py-3 text-blaster-fg">1,000</td>
-                <td className="px-6 py-3 text-blaster-fg">10,000</td>
-                <td className="px-6 py-3 text-blaster-fg">30,000</td>
+                <td className="px-6 py-3 text-blaster-fg">15,000</td>
+                <td className="px-6 py-3 text-blaster-fg">40,000</td>
                 <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
               </tr>
               <tr className="border-b border-blaster-border">

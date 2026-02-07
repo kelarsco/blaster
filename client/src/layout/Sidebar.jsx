@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
+import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: DashboardIcon },
@@ -68,18 +70,9 @@ function Skeleton({ className = '' }) {
 
 const DISCOUNT_START_KEY = 'wiblaster-discount-start';
 const DISCOUNT_DAYS = 30;
-const PLAN_KEY = 'wiblaster-plan';
+const RENEWAL_WARNING_DAYS = 7;
 
-function getStoredPlanId() {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(PLAN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function computeDaysLeft() {
+function computePromoDaysLeft() {
   if (typeof window === 'undefined') return DISCOUNT_DAYS;
   try {
     const now = Date.now();
@@ -96,11 +89,53 @@ function computeDaysLeft() {
   }
 }
 
-export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileClose }) {
-  const [planId] = React.useState(() => getStoredPlanId());
-  const [daysLeft] = React.useState(() => computeDaysLeft());
+function daysUntilDate(endDate) {
+  if (!endDate) return null;
+  const end = new Date(endDate).getTime();
+  const now = Date.now();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.ceil((end - now) / msPerDay);
+}
 
-  const hasPaidPlan = planId && planId !== 'free';
+export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileClose }) {
+  const { authFetch } = useAuth();
+  const [subscription, setSubscription] = useState(null);
+  const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
+  const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!authFetch) {
+      setSubscriptionLoaded(true);
+      return;
+    }
+    authFetch(`${API}/billing/subscription`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d) => {
+        setSubscription(d.subscription || null);
+        setSubscriptionLoaded(true);
+      })
+      .catch(() => {
+        setSubscription(null);
+        setSubscriptionLoaded(true);
+      });
+  }, [authFetch]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setPromoDaysLeft(computePromoDaysLeft()), 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const hasPaidPlan = subscription && subscription.planId && subscription.planId !== 'free';
+  const periodEnd = subscription?.currentPeriodEnd;
+  const daysUntilRenewal = useMemo(() => (periodEnd ? daysUntilDate(periodEnd) : null), [periodEnd, now]);
+  const showRenewalCountdown = hasPaidPlan && daysUntilRenewal !== null && daysUntilRenewal <= RENEWAL_WARNING_DAYS && daysUntilRenewal >= 0;
+  const renewalDueDate = periodEnd ? new Date(periodEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
 
   return (
     <>
@@ -175,7 +210,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
         )}
       </nav>
       <div className="shrink-0 p-3 border-t border-blaster-border">
-        {loading ? (
+        {loading || !subscriptionLoaded ? (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
             <Skeleton className="h-3 w-20 mb-3" />
             <div className="flex items-start gap-2 mb-3">
@@ -187,15 +222,37 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
             </div>
             <Skeleton className="h-10 w-full rounded-lg" />
           </div>
+        ) : showRenewalCountdown ? (
+          <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
+            <p className="text-xs text-blaster-muted mb-2">Renewal</p>
+            <div className="flex items-start gap-2 mb-3">
+              <ClockIcon />
+              <div>
+                <p className="text-sm font-semibold text-blaster-fg">
+                  {daysUntilRenewal === 0
+                    ? 'Renews today'
+                    : daysUntilRenewal === 1
+                      ? '1 day left'
+                      : `${daysUntilRenewal} days left`}
+                </p>
+                <p className="text-xs text-blaster-muted">
+                  {subscription?.planName} renews {renewalDueDate ? `on ${renewalDueDate}` : 'soon'}
+                </p>
+              </div>
+            </div>
+            <NavLink
+              to="/app/account/billing"
+              onClick={onMobileClose}
+              className="block w-full py-2 rounded-lg bg-gray-100 text-blaster-fg font-medium text-sm hover:bg-gray-200 transition text-center"
+            >
+              Manage plan
+            </NavLink>
+          </div>
         ) : hasPaidPlan ? (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
-            <p className="text-xs text-blaster-muted mb-2">Thank you for upgrading</p>
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2 mb-3">
               <CrownIcon />
-              <div>
-                <p className="text-sm font-semibold text-blaster-fg">You&apos;re a premium user</p>
-                <p className="text-xs text-blaster-muted">Enjoy higher limits and priority sending.</p>
-              </div>
+              <p className="text-sm font-semibold text-blaster-fg">{subscription?.planName ?? 'Premium'}</p>
             </div>
             <NavLink
               to="/app/account/billing"
@@ -212,7 +269,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
               <ClockIcon />
               <div>
                 <p className="text-sm text-blaster-fg">
-                  {daysLeft} day{daysLeft === 1 ? '' : 's'} left to get
+                  {promoDaysLeft} day{promoDaysLeft === 1 ? '' : 's'} left to get
                 </p>
                 <p className="text-base font-bold text-blaster-fg">50% off for 3 months</p>
               </div>
