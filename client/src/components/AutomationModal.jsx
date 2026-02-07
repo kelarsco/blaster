@@ -188,6 +188,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       return;
     }
     setLoading(true);
+    setError('');
     try {
       const res = await authFetch(`${API}/campaigns/start`, {
         method: 'POST',
@@ -203,12 +204,27 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
           onePerStore,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to start campaign');
+      const text = await res.text();
+      let data = {};
+      try {
+        if (text && text.trim()) data = JSON.parse(text);
+      } catch (_) {
+        if (res.ok) {
+          onCampaignStart(undefined);
+          onClose();
+          return;
+        }
+        setError(data.error || 'Invalid response from server');
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error || 'Failed to start campaign');
+        return;
+      }
       onCampaignStart(data.campaignId);
       onClose();
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Failed to start campaign');
     } finally {
       setLoading(false);
     }

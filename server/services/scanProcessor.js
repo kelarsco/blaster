@@ -5,10 +5,10 @@ import { crawlStore } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 4, 8);
-const DELAY_BETWEEN_STORES_MS = 200;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 8);
+const DELAY_BETWEEN_STORES_MS = 600;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 55000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);

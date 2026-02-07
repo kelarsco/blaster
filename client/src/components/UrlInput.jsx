@@ -32,19 +32,10 @@ export function UrlInput({
   const [rawUrls, setRawUrls] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
-  const [emailFilters, setEmailFilters] = useState({
-    includeGmail: true,
-    includeOutlook: true,
-    includeYahoo: true,
-    includeHotmail: true,
-    includeProtonmail: true,
-    includeDomain: true,
-  });
 
   const urlCount = parseUrls(rawUrls).length;
-  const hasProvider = Object.values(emailFilters).some(Boolean);
   const isScanRunning = isScanning || (scanStatus && scanStatus.status === 'running');
-  const isValid = urlCount >= 1 && urlCount <= 1000 && hasProvider && !isScanRunning;
+  const isValid = urlCount >= 1 && urlCount <= 1000 && !isScanRunning;
 
   const startScan = async () => {
     setError('');
@@ -68,16 +59,7 @@ export function UrlInput({
           rawUrls,
           maxConcurrentCrawlers,
           maxUrlsPerScan,
-          emailFilters: {
-            includeProviders: [
-              ...(emailFilters.includeGmail ? ['gmail'] : []),
-              ...(emailFilters.includeOutlook ? ['outlook'] : []),
-              ...(emailFilters.includeYahoo ? ['yahoo'] : []),
-              ...(emailFilters.includeHotmail ? ['hotmail'] : []),
-              ...(emailFilters.includeProtonmail ? ['protonmail'] : []),
-              ...(emailFilters.includeDomain ? ['domain'] : []),
-            ],
-          },
+          emailFilters: { includeProviders: [] },
         }),
       });
 
@@ -134,66 +116,12 @@ export function UrlInput({
         className="w-full px-4 py-3 rounded-xl bg-blaster-input-bg border border-blaster-input-border text-blaster-fg placeholder-blaster-muted focus:outline-none focus:ring-2 focus:ring-blaster-accent/40 focus:border-blaster-accent transition"
         disabled={isScanning}
       />
-      <p className="text-xs text-blaster-muted mt-2 mb-1">Extract emails from:</p>
-      <div className="flex flex-wrap items-center gap-4 mt-3">
-        <span className="text-sm text-blaster-muted">
-          Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>
-        </span>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeGmail}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeGmail: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          Gmail
-        </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeOutlook}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeOutlook: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          Outlook
-        </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeYahoo}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeYahoo: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          Yahoo Mail
-        </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeHotmail}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeHotmail: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          Hotmail
-        </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeProtonmail}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeProtonmail: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          ProtonMail
-        </label>
-        <label className="flex items-center gap-2 text-sm text-blaster-fg cursor-pointer">
-          <input
-            type="checkbox"
-            checked={emailFilters.includeDomain}
-            onChange={(e) => setEmailFilters((f) => ({ ...f, includeDomain: e.target.checked }))}
-            className="rounded border-blaster-border text-blaster-accent focus:ring-blaster-accent"
-          />
-          Domain mail
-        </label>
-      </div>
+      <p className="text-xs text-blaster-muted mt-2 mb-3">
+        We extract every email found (e.g. @gmail.com, @domain.com). You can filter by provider when starting a campaign.
+      </p>
+      <p className="text-sm text-blaster-muted">
+        Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>
+      </p>
       {error && (
         <p className="mt-2 text-sm text-red-600">{error}</p>
       )}

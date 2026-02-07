@@ -4,6 +4,7 @@
  */
 import { load } from 'cheerio';
 
+/** Matches valid emails; local part may contain dots (e.g. georgios.d.l.laskaris@gmail.com). */
 const EMAIL_REGEX = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*/g;
 
 const REAL_MAIL_DOMAINS = new Set([
@@ -50,17 +51,27 @@ function normalizeObfuscated(text) {
     .trim();
 }
 
+/** Trim trailing letters accidentally glued to the domain (e.g. gmail.comstrada → gmail.com, .comhorario → .com). */
+function trimTrailingFromDomain(match) {
+  const atIdx = match.indexOf('@');
+  if (atIdx === -1) return match;
+  const domain = match.slice(atIdx + 1);
+  const trimmed = domain.replace(/(\.[a-zA-Z]{2,})[a-zA-Z]*$/, '$1');
+  return match.slice(0, atIdx + 1) + trimmed;
+}
+
 function extractFromText(text, storeHost = '') {
   const normalized = normalizeObfuscated(decodeHtmlEntities(text));
   const matches = normalized.match(EMAIL_REGEX) || [];
   return matches
-    .map((e) => e.toLowerCase().trim())
+    .map((e) => trimTrailingFromDomain(e.toLowerCase().trim()))
     .filter((e) => isValidEmail(e, storeHost));
 }
 
+/** Accepts known providers (gmail, outlook, etc.), store/domain emails (e.g. info@elurch.com, contact@store.com), and any other valid domain. Rejects only FAKE_DOMAINS and image/CSS extensions. */
 function isValidEmail(email, storeOriginHost = '') {
   const lower = email.toLowerCase().trim();
-  if (lower.length < 6 || lower.length > 120 || !lower.includes('@')) return false;
+  if (lower.length < 6 || lower.length > 254 || !lower.includes('@')) return false;
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(lower)) return false;
   const at = lower.indexOf('@');
   const domain = lower.slice(at + 1);
@@ -102,6 +113,7 @@ function getStoreHost(storeUrl) {
   }
 }
 
+/** When includeProviders is empty, allow all: extract every valid email (gmail, outlook, yahoo, icloud, and any other valid domain). No provider filter during extraction. */
 function allowedByProviders(email, includeProviders, storeHost) {
   if (!Array.isArray(includeProviders) || includeProviders.length === 0) return true;
   const provider = getEmailProvider(email, storeHost);
@@ -128,7 +140,7 @@ function extractJsonLdEmails(html) {
       const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
       const emails = str.match(EMAIL_REGEX) || [];
       for (const e of emails) {
-        const norm = e.toLowerCase().trim();
+        const norm = trimTrailingFromDomain(e.toLowerCase().trim());
         if (norm.includes('@') && !norm.endsWith('.png') && !norm.endsWith('.jpg')) out.push(norm);
       }
     } catch (_) {}
@@ -138,7 +150,7 @@ function extractJsonLdEmails(html) {
 
 /**
  * DOM-aware extraction from a single page: mailto, href, data-*, footer, header, JSON-LD, plain text.
- * Only returns emails that pass includeProviders (applied during extraction).
+ * Extracts all valid emails (e.g. @gmail.com, @outlook.com, @yahoo.com, @icloud.com and any other valid domain). No provider filter when includeProviders is empty.
  */
 function extractFromPage(pageUrl, html, storeHost, includeProviders = []) {
   const byEmail = new Map();

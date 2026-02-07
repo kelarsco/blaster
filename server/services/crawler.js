@@ -6,14 +6,15 @@ import https from 'https';
 import http from 'http';
 import { load } from 'cheerio';
 
-const REQUEST_TIMEOUT_MS = 6000;
-const CRAWL_TOTAL_TIMEOUT_MS = 50000;
-const DEFAULT_DELAY_MIN_MS = 100;
-const DEFAULT_DELAY_MAX_MS = 350;
-const STEALTH_DELAY_MIN_MS = 800;
-const STEALTH_DELAY_MAX_MS = 2000;
+const REQUEST_TIMEOUT_MS = 14000;
+const PRIVACY_POLICY_TIMEOUT_MS = 20000;
+const CRAWL_TOTAL_TIMEOUT_MS = 55000;
+const DEFAULT_DELAY_MIN_MS = 500;
+const DEFAULT_DELAY_MAX_MS = 1200;
+const STEALTH_DELAY_MIN_MS = 1200;
+const STEALTH_DELAY_MAX_MS = 2500;
 const MAX_PAGES_PER_STORE = 10;
-const MAX_TIER2_LINKS = 4;
+const MAX_TIER2_LINKS = 0;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -23,23 +24,10 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ];
 
+/** Only these pages are visited per store: privacy policy, contact, homepage. No Tier2 links. */
 const TIER1_PATHS = [
-  '/contact',
-  '/contact-us',
-  '/about',
-  '/about-us',
-  '/impressum',
-  '/legal',
-  '/privacy-policy',
-  '/terms',
   '/policies/privacy-policy',
-  '/policies/contact-information',
   '/pages/contact',
-  '/pages/contact-us',
-  '/pages/about',
-  '/pages/about-us',
-  '/help',
-  '/support',
   '/',
 ];
 
@@ -187,7 +175,8 @@ export async function crawlStore(storeUrl, options = {}) {
     await delay(randomBetween(delayMin, delayMax));
     if (timedOut()) break;
     const url = path === '/' ? baseOrigin + '/' : baseOrigin + path;
-    const html = await fetchHtml(url, { userAgent, timeout: REQUEST_TIMEOUT_MS });
+    const pageTimeout = path === '/policies/privacy-policy' ? PRIVACY_POLICY_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    const html = await fetchHtml(url, { userAgent, timeout: pageTimeout });
     addPage(url, html, 'tier1');
   }
 
