@@ -10,7 +10,7 @@ if (hasResend) {
   resendClient = new Resend(process.env.RESEND_API_KEY);
 }
 
-const FROM_EMAIL = process.env.VERIFICATION_EMAIL_FROM || process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'onboarding@resend.dev';
+const FROM_EMAIL = process.env.VERIFICATION_EMAIL_FROM || process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'no-reply@wiblaster.com';
 const FROM_NAME = process.env.VERIFICATION_EMAIL_FROM_NAME || 'wiblaster';
 
 function getFrom() {

@@ -70,7 +70,7 @@ inviteRoutes.post('/', requireAuth, async (req, res) => {
     const acceptUrl = `${baseUrl.replace(/\/$/, '')}/invite/accept?token=${token}`;
 
     if (hasInviteSmtp && inviteTransporter) {
-      const from = process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'noreply@wiblaster.com';
+      const from = process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'no-reply@wiblaster.com';
       await inviteTransporter.sendMail({
         from,
         to: inviteeEmail,
