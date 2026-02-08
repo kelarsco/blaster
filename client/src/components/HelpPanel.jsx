@@ -123,7 +123,7 @@ export function HelpPanel({ onClose }) {
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium text-sm"
+                className="flex items-center gap-2 text-blaster-fg hover:text-blaster-muted font-medium text-sm"
               >
                 <BackIcon />
                 Back
@@ -161,7 +161,7 @@ export function HelpPanel({ onClose }) {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16">
-              <div className="w-10 h-10 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mb-4" />
+              <div className="w-10 h-10 border-2 border-blaster-fg border-t-transparent rounded-full animate-spin mb-4" />
               <p className="text-sm text-blaster-muted">Loading...</p>
             </div>
           ) : selectedTopic ? (
@@ -191,7 +191,7 @@ export function HelpPanel({ onClose }) {
                             onClick={() => handleTopicClick(topic)}
                             className="text-left w-full group"
                           >
-                            <span className="text-base font-medium text-teal-600 group-hover:text-teal-700 transition block">
+                            <span className="text-base font-medium text-blaster-fg group-hover:text-blaster-muted transition block">
                               {topic.title}
                             </span>
                             {topic.description && (
@@ -218,7 +218,7 @@ export function HelpPanel({ onClose }) {
           <button
             type="button"
             onClick={() => window.location.href = 'mailto:support@wiblaster.com'}
-            className="w-full py-2.5 rounded-lg border-2 border-teal-600 text-teal-600 font-medium text-sm hover:bg-teal-50 transition"
+            className="w-full py-2.5 rounded-lg border-2 border-[#1a1a21] text-blaster-fg font-medium text-sm hover:bg-gray-100 transition"
           >
             Contact Us
           </button>

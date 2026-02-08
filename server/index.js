@@ -24,6 +24,7 @@ import { notesRoutes } from './routes/notes.js';
 import { authRoutes } from './routes/auth.js';
 import { inviteRoutes } from './routes/invites.js';
 import { billingRoutes, handlePaystackWebhook } from './routes/billing.js';
+import { supportRoutes } from './routes/support.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
 
 const require = createRequire(import.meta.url);
@@ -110,6 +111,7 @@ async function start() {
   app.use('/api/activity', activityRoutes);
   app.use('/api/notes', notesRoutes);
   app.use('/api/billing', billingRoutes);
+  app.use('/api/support', supportRoutes);
 
   if (clientBuilt) {
     app.use(express.static(clientDist));

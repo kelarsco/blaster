@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
+import { getStoredPlanId } from '../data/plans';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
+
+function getPostSignupPath(search) {
+  const fromPricing = search && search.includes('from=pricing');
+  const storedPlan = getStoredPlanId();
+  if (fromPricing || (storedPlan && storedPlan !== 'free')) return '/app/account/pricing';
+  return '/app/dashboard';
+}
 
 export function SignupPage() {
   const { user, loading, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -17,7 +26,7 @@ export function SignupPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (user) navigate('/app/dashboard', { replace: true });
+    if (user) navigate(getPostSignupPath(), { replace: true });
   }, [user, loading, navigate]);
 
   const handleSignup = async (e) => {
@@ -53,7 +62,7 @@ export function SignupPage() {
         navigate('/verify-email', { state: { email: data.email }, replace: true });
         return;
       }
-      navigate('/app/dashboard', { replace: true });
+      navigate(getPostSignupPath(location.search), { replace: true });
     } catch (err) {
       setError(err.message || 'Signup failed');
     } finally {

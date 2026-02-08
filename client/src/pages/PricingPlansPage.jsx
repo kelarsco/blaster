@@ -3,126 +3,13 @@ import { Check, X } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
-
-const PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    tag: null,
-    description:
-      'All the basics to test wiblaster and validate results. Built for founders and small teams getting started with store discovery and cold outreach.',
-    price: 0,
-    originalPrice: null,
-    period: 'month',
-    current: true,
-    features: {
-      emails: '500',
-      users: '1 seat',
-      audiences: '1 audience',
-      support: 'Email (limited)',
-      onboarding: false,
-      ai: false,
-    },
-  },
-  {
-    id: 'essentials',
-    name: 'Essentials',
-    tag: null,
-    description:
-      'Reliable outreach for early-stage growth. Designed for solo operators and agencies beginning consistent outreach.',
-    // 50% off monthly: original $30 → $15
-    price: 15,
-    originalPrice: 30,
-    period: 'month',
-    current: false,
-    features: {
-      emails: '10,000',
-      users: '3 seats',
-      audiences: '3 audiences',
-      support: '24/7 email & chat support',
-      onboarding: false,
-      ai: false,
-    },
-  },
-  {
-    id: 'standard',
-    name: 'Standard',
-    tag: 'Best value',
-    description:
-      'Scale outreach with control, personalization, and automation. Built for serious outreach workflows that need stability and performance.',
-    // 50% off monthly: original $70 → $35
-    price: 35,
-    originalPrice: 70,
-    period: 'month',
-    current: false,
-    features: {
-      emails: '30,000',
-      users: '5 seats',
-      audiences: '5 audiences',
-      support: '24/7 email & chat support',
-      onboarding: '1 session',
-      ai: true,
-    },
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    tag: null,
-    description:
-      'High-volume outreach for teams and power users. Built for agencies and teams running large-scale cold email operations.',
-    // 50% off monthly: original $320 → $160
-    price: 160,
-    originalPrice: 320,
-    period: 'month',
-    current: false,
-    features: {
-      emails: '150,000',
-      users: 'Unlimited',
-      audiences: 'Unlimited',
-      support: 'Phone + priority support',
-      onboarding: '4 sessions',
-      ai: true,
-    },
-  },
-];
-
-// 2 months free = pay 10 months, get 12
-const MONTHS_BILLED_ANNUALLY = 10;
-
-function formatPriceNum(n) {
-  if (n == null) return '0';
-  return Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
-}
-
-function getDisplayPrice(monthlyPrice, isAnnually) {
-  if (isAnnually && monthlyPrice > 0) {
-    const totalAnnual = monthlyPrice * MONTHS_BILLED_ANNUALLY;
-    const effectivePerMonth = totalAnnual / 12;
-    return {
-      primary: totalAnnual,
-      primaryLabel: 'year',
-      secondary: effectivePerMonth,
-      secondaryLabel: 'mo',
-    };
-  }
-  return {
-    primary: monthlyPrice,
-    primaryLabel: 'month',
-    secondary: null,
-    secondaryLabel: null,
-  };
-}
-
-const PLAN_KEY = 'wiblaster-plan';
-
-function storeSelectedPlan(planId) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(PLAN_KEY, planId);
-  } catch (_) {
-    // ignore
-  }
-}
+import {
+  PLANS,
+  MONTHS_BILLED_ANNUALLY,
+  formatPriceNum,
+  getDisplayPrice,
+  storeSelectedPlan,
+} from '../data/plans';
 
 export function PricingPlansPage() {
   const { authFetch } = useAuth();

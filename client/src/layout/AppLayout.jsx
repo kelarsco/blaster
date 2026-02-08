@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { AppHeader } from '../components/AppHeader';
 import { ActivityLog } from '../components/ActivityLog';
 import { HelpPanel } from '../components/HelpPanel';
+import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
 
 const LAYOUT_SKELETON_MS = 1500;
@@ -13,6 +14,7 @@ export function AppLayout() {
   const location = useLocation();
   const [showActivity, setShowActivity] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [layoutLoading, setLayoutLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navToggleVisible, setNavToggleVisible] = useState(true);
@@ -87,7 +89,7 @@ export function AppLayout() {
         </svg>
       </button>
       <div className="flex-1 min-w-0 ml-0 md:ml-64 flex flex-col min-h-screen">
-        <AppHeader loading={layoutLoading} onOpenHelp={() => setShowHelp(true)} />
+        <AppHeader loading={layoutLoading} onOpenHelp={() => setShowHelp(true)} onOpenSupport={() => setShowSupport(true)} />
         <main ref={mainRef} className="flex-1 overflow-auto relative">
           <div key={location.pathname} className="relative min-h-full">
             <PageTransitionWrapper>
@@ -98,6 +100,7 @@ export function AppLayout() {
       </div>
       {showActivity && <ActivityLog onClose={() => setShowActivity(false)} />}
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {showSupport && <SupportChatPanel onClose={() => setShowSupport(false)} />}
     </div>
   );
 }

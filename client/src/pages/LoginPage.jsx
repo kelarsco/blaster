@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-do
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
+import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 export function LoginPage() {
   const { user, loading, setUser, setAccessTokenState, loginWithGoogle } = useAuth();
@@ -14,6 +15,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deactivatedNotice, setDeactivatedNotice] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -23,6 +25,11 @@ export function LoginPage() {
   useEffect(() => {
     const msg = searchParams.get('message');
     const err = searchParams.get('error');
+    if (err === 'deactivated' && msg) {
+      setDeactivatedNotice(true);
+      setError('');
+      return;
+    }
     if (msg && (err === 'wrong_method' || err === 'NO_DB' || err === 'NO_EMAIL')) setError(decodeURIComponent(msg));
   }, [searchParams]);
 
@@ -41,6 +48,11 @@ export function LoginPage() {
       if (!res.ok) {
         if (data.code === 'EMAIL_NOT_VERIFIED') {
           setError(data.error || 'Please verify your email first.');
+          return;
+        }
+        if (res.status === 403 && (data.error || '').toLowerCase().includes('deactivated')) {
+          setDeactivatedNotice(true);
+          setError('');
           return;
         }
         throw new Error(data.error || 'Login failed');
@@ -67,6 +79,14 @@ export function LoginPage() {
 
   return (
     <AuthLayout>
+      <SlideInNotice
+        visible={deactivatedNotice}
+        type="error"
+        title="Account no longer active"
+        message="Your account has been deactivated. Please contact support to reactivate your account."
+        onClose={() => setDeactivatedNotice(false)}
+        autoDismissMs={0}
+      />
       <AuthLogoLink />
       <h1 className="text-2xl font-bold text-blaster-fg">Welcome back</h1>
       <p className="mt-1.5 text-sm text-blaster-muted">Sign in to your account to continue</p>

@@ -170,7 +170,7 @@ export function ExecutionDashboard({ campaignId, onClose }) {
               <button
                 type="button"
                 onClick={resume}
-                className="text-sm px-3 py-1.5 rounded-lg bg-blaster-accent !text-white hover:opacity-90 transition"
+                className="text-sm px-3 py-1.5 rounded-lg bg-blaster-accent text-white hover:opacity-90 transition"
               >
                 Continue Campaign
               </button>

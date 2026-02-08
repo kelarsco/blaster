@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { getDb } from '../db.js';
 import { sendVerificationCode, isVerificationEmailConfigured } from '../services/verificationEmail.js';
+import { sendDeactivationConfirmation } from '../services/transactionalEmail.js';
 import { sendPasswordResetEmail, isPasswordResetEmailConfigured } from '../services/passwordResetEmail.js';
 import { authRateLimit } from '../middleware/authRateLimit.js';
 import { requireAuth } from '../middleware/requireAuth.js';
@@ -418,9 +419,15 @@ authRoutes.post('/deactivate', authRateLimit, requireAuth, async (req, res) => {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable' });
     const userId = req.user.id;
+    const userRow = await db.query('SELECT email, name FROM users WHERE id = $1', [userId]);
+    const userEmail = userRow.rows?.[0]?.email;
+    const userName = userRow.rows?.[0]?.name || null;
     await db.query('UPDATE users SET deactivated_at = NOW(), updated_at = NOW() WHERE id = $1', [userId]);
     await revokeRefreshTokensForUser(userId);
     clearRefreshTokenCookie(res);
+    if (userEmail) {
+      sendDeactivationConfirmation(userEmail, userName).catch((e) => console.warn('[transactional deactivation email]', e?.message || e));
+    }
     res.status(200).json({ ok: true });
   } catch (e) {
     console.error('[auth deactivate]', e?.message || e);

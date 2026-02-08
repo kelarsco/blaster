@@ -18,11 +18,11 @@ function Skeleton({ className = '' }) {
 const dropdownItems = [
   { label: 'Account', to: '/app/account' },
   { label: 'Pricing plan', to: '/app/account/pricing' },
-  { label: 'Support', to: '#' },
+  { label: 'Support', action: 'support' },
   { label: 'Log out', action: 'logout' },
 ];
 
-export function AppHeader({ loading, onOpenHelp }) {
+export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [profile, setProfile] = useState(() => loadProfileFromStorage());
@@ -178,6 +178,22 @@ export function AppHeader({ loading, onOpenHelp }) {
                           onClick={() => {
                             setDropdownOpen(false);
                             logout();
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-blaster-fg hover:bg-gray-50 transition"
+                          role="menuitem"
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    }
+                    if (item.action === 'support') {
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            setDropdownOpen(false);
+                            onOpenSupport?.();
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-blaster-fg hover:bg-gray-50 transition"
                           role="menuitem"

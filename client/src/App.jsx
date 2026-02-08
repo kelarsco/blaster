@@ -27,6 +27,8 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { PricingPage } from './pages/PricingPage';
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -55,6 +57,8 @@ function AppRoutes() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/invite/accept" element={<InviteAcceptPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
         <Route
           path="/app"
           element={

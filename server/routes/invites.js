@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
+import { sendInviteAcceptedNotification } from '../services/transactionalEmail.js';
 
 const hasInviteSmtp =
   process.env.INVITE_SMTP_HOST &&
@@ -145,6 +146,8 @@ inviteRoutes.post('/accept', requireAuth, async (req, res) => {
       'INSERT INTO team_members (id, owner_id, member_id, member_email) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
       [teamId, row.inviter_id, req.user.id, userEmail]
     );
+
+    sendInviteAcceptedNotification(row.inviter_email, userEmail).catch((e) => console.warn('[transactional invite-accepted email]', e?.message || e));
 
     return res.json({ ok: true, message: 'You have joined the team' });
   } catch (e) {

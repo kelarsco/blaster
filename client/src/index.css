@@ -112,6 +112,10 @@ button[class*="blaster-accent"]:hover:not(.btn-blaster-accent) {
 [class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
   color: #ffffff !important;
 }
+/* Override link-style accent on buttons that use accent as background (e.g. Continue Campaign) */
+button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
+  color: #ffffff !important;
+}
 .input:focus, textarea:focus {
   @apply outline-none ring-2 ring-blaster-accent/30;
 }
@@ -137,4 +141,55 @@ button[class*="blaster-accent"]:hover:not(.btn-blaster-accent) {
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out forwards;
+}
+
+/* Sidebar panel: smooth slide in/out via transition */
+.sidebar-panel {
+  transform: translateX(100%);
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+.sidebar-panel.sidebar-panel-open {
+  transform: translateX(0);
+}
+.sidebar-panel.sidebar-panel-closing {
+  transform: translateX(100%);
+}
+.sidebar-overlay {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+.sidebar-overlay.sidebar-overlay-open {
+  opacity: 1;
+}
+.sidebar-overlay.sidebar-overlay-closing {
+  opacity: 0;
+}
+
+/* Landing: button hover pop scale */
+.btn-landing-pop {
+  transition: transform 0.2s ease;
+}
+.btn-landing-pop:hover {
+  transform: scale(1.05);
+}
+.btn-landing-pop:active {
+  transform: scale(0.98);
+}
+
+/* Landing: hero split text animation (word-by-word reveal) */
+@keyframes landing-split-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.landing-split-word {
+  display: inline-block;
+  opacity: 0;
+  animation: landing-split-in 0.5s ease-out forwards;
+  white-space: pre;
 }

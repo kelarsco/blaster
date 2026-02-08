@@ -49,6 +49,10 @@ campaignRoutes.get('/', requireAuth, async (req, res) => {
 });
 
 campaignRoutes.post('/start', requireAuth, async (req, res) => {
+  const db = getDb();
+  const userId = req.user.id;
+  if (!db) return res.status(503).json({ error: 'Database required for campaigns. Set DATABASE_URL in server/.env' });
+
   try {
     const {
       scanId,
@@ -61,9 +65,7 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       delayMax = 5,
       onePerStore = true,
     } = req.body || {};
-    const db = getDb();
-    const userId = req.user.id;
-    if (!db) return res.status(503).json({ error: 'Database required for campaigns. Set DATABASE_URL in server/.env' });
+
     if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ error: 'Recipients required' });
     }
@@ -114,14 +116,13 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
         });
       }
     }
+
     const campaignId = uuidv4();
     const delayMinSec = Math.max(0.5, Number(delayMin) || 2);
     const delayMaxSec = Math.max(delayMinSec, Number(delayMax) || 5);
-    await db.query(
-      'INSERT INTO campaigns (id, user_id, sender_group_id, status, total_queued, sent, failed, delay_min, delay_max) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7)',
-      [campaignId, userId, senderGroupId || null, 'running', list.length, delayMinSec, delayMaxSec]
-    );
-    logActivity('campaign_start', { campaignId, totalQueued: list.length }, userId);
+
+    // Build pending rows for batch insert
+    const pendingRows = [];
     for (let i = 0; i < list.length; i++) {
       const r = list[i];
       const storeUrl = r.storeUrl || r.store_url;
@@ -134,26 +135,64 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
         ? templates[Math.floor(Math.random() * templates.length)]
         : { body: `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards` };
       const body = typeof template === 'string' ? template : (template.body || template.text || '');
-      await db.query(
-        'INSERT INTO campaign_pending_sends (campaign_id, store_url, email, sender_id, subject, body) VALUES ($1, $2, $3, $4, $5, $6)',
-        [campaignId, storeUrl, email, senderId, subject, body]
+      pendingRows.push({ campaignId, storeUrl, email, senderId, subject, body });
+    }
+
+    // Use a single client and transaction to avoid "connection closed unexpectedly" (Neon/serverless)
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'INSERT INTO campaigns (id, user_id, sender_group_id, status, total_queued, sent, failed, delay_min, delay_max) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7)',
+        [campaignId, userId, senderGroupId || null, 'running', list.length, delayMinSec, delayMaxSec]
       );
-      const domain = getDomain(email);
+      const BATCH = 80;
+      for (let b = 0; b < pendingRows.length; b += BATCH) {
+        const chunk = pendingRows.slice(b, b + BATCH);
+        const values = [];
+        const placeholders = [];
+        chunk.forEach((row, i) => {
+          const base = i * 6 + 1;
+          placeholders.push(`($${base}, $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+          values.push(row.campaignId, row.storeUrl, row.email, row.senderId, row.subject, row.body);
+        });
+        await client.query(
+          `INSERT INTO campaign_pending_sends (campaign_id, store_url, email, sender_id, subject, body) VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    logActivity('campaign_start', { campaignId, totalQueued: list.length }, userId);
+
+    for (let i = 0; i < pendingRows.length; i++) {
+      const row = pendingRows[i];
+      const domain = getDomain(row.email);
       const throttle = THROTTLE_DOMAINS.includes(domain) ? 2 : 1;
       setTimeout(async () => {
         await addSendJob({
           campaignId,
-          storeUrl,
-          email,
-          senderId,
-          subject,
-          body,
+          storeUrl: row.storeUrl,
+          email: row.email,
+          senderId: row.senderId,
+          subject: row.subject,
+          body: row.body,
         });
       }, i * (delayMs(delayMinSec, delayMaxSec) * throttle));
     }
+
     res.json({ campaignId, totalQueued: list.length });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    const msg = e?.message || String(e);
+    console.error('[campaigns POST /start]', msg);
+    const isConnectionError = /connection closed|connection terminated|ECONNRESET|ETIMEDOUT|connect ECONNREFUSED/i.test(msg);
+    const userMessage = isConnectionError
+      ? 'Database connection failed. Please try again in a moment.'
+      : msg;
+    res.status(500).json({ error: userMessage });
   }
 });
 

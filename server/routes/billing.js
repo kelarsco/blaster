@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { syncPaystackPlans, getUsdToNgnRate, amountForPaystack } from '../services/paystackSync.js';
+import { sendSubscriptionConfirmation } from '../services/transactionalEmail.js';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE = 'https://api.paystack.co';
@@ -527,6 +528,13 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
       [uuidv4(), userId, planId, tx.authorization?.subscription_code ?? null, tx.authorization?.customer_code ?? null, now, periodEnd]
     );
+    const planRow = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [planId]);
+    const plan = planRow.rows?.[0];
+    const toEmail = req.user?.email;
+    if (toEmail && plan) {
+      const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';
+      sendSubscriptionConfirmation(toEmail, plan.name || planId, amountFormatted, plan.interval || 'monthly').catch((e) => console.warn('[transactional subscription email]', e?.message || e));
+    }
     return res.json({ ok: true, planId });
   } catch (e) {
     console.error('[billing verify-payment]', e?.message || e);
@@ -577,6 +585,12 @@ export async function handlePaystackWebhook(req, res) {
          VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
         [uuidv4(), userId, planId, subscriptionCode || null, customerCode || null, periodStart, periodEnd]
       );
+      const planRow = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [planId]);
+      const plan = planRow.rows?.[0];
+      if (email && plan) {
+        const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';
+        sendSubscriptionConfirmation(email, plan.name || planId, amountFormatted, plan.interval || 'monthly').catch((e) => console.warn('[transactional subscription email webhook]', e?.message || e));
+      }
     }
     if (event === 'subscription.disable' && data?.subscription_code) {
       await db.query(
