@@ -8,8 +8,12 @@ function getDomain(email) {
   return i >= 0 ? (email || '').slice(i + 1).toLowerCase() : '';
 }
 
+/** Random delay in ms; min/max can be fractional seconds (e.g. 0.5, 2). */
 function delayMs(min, max) {
-  return Math.floor(Math.random() * (max - min + 1) + min) * 1000;
+  const minSec = Number(min) || 1;
+  const maxSec = Number(max) != null && Number(max) >= minSec ? Number(max) : minSec;
+  const sec = Math.random() * (maxSec - minSec) + minSec;
+  return Math.round(sec * 1000);
 }
 
 export async function resumePendingCampaignsOnStartup() {
@@ -17,12 +21,12 @@ export async function resumePendingCampaignsOnStartup() {
   if (!db) return;
   try {
     const campaigns = await db.query(
-      "SELECT id FROM campaigns WHERE status = 'running'"
+      "SELECT id, delay_min, delay_max FROM campaigns WHERE status = 'running'"
     );
     let totalRequeued = 0;
-    const delayMin = 2;
-    const delayMax = 5;
     for (const c of campaigns.rows) {
+      const delayMin = c.delay_min != null ? Number(c.delay_min) : 2;
+      const delayMax = c.delay_max != null ? Number(c.delay_max) : 5;
       const pending = await db.query(
         `SELECT p.store_url, p.email, p.sender_id, p.subject, p.body
          FROM campaign_pending_sends p

@@ -190,6 +190,50 @@ billingRoutes.get('/subscription', requireAuth, async (req, res) => {
   }
 });
 
+/** Billing history: past and current subscriptions (plan payments) and extra credit paid. */
+billingRoutes.get('/history', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ subscriptions: [], extraCreditPaidCents: 0 });
+    const userId = req.user.id;
+
+    const subRows = await db.query(
+      `SELECT s.id, s.plan_id, s.status, s.current_period_start, s.current_period_end, s.created_at, s.updated_at,
+              p.name AS plan_name, p.amount, p.interval
+       FROM subscriptions s
+       JOIN plans p ON p.id = s.plan_id
+       WHERE s.user_id = $1
+       ORDER BY s.created_at DESC
+       LIMIT 100`,
+      [userId]
+    );
+
+    const extraRow = await db.query(
+      'SELECT paid_cents FROM user_extra_credit WHERE user_id = $1',
+      [userId]
+    );
+    const extraCreditPaidCents = extraRow.rows?.[0]?.paid_cents ?? 0;
+
+    const subscriptions = (subRows.rows || []).map((row) => ({
+      id: row.id,
+      planId: row.plan_id,
+      planName: row.plan_name,
+      amount: row.amount,
+      interval: row.interval,
+      status: row.status,
+      periodStart: row.current_period_start,
+      periodEnd: row.current_period_end,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+
+    res.json({ subscriptions, extraCreditPaidCents });
+  } catch (e) {
+    console.error('[billing history]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load billing history' });
+  }
+});
+
 /** Initialize Paystack subscription (redirect user to Paystack to pay). */
 billingRoutes.post('/initialize', requireAuth, async (req, res) => {
   try {
@@ -261,6 +305,44 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[billing initialize]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to initialize payment' });
+  }
+});
+
+/** Pause (disable) subscription: stops billing via Paystack. User can resubscribe from Pricing later. */
+billingRoutes.post('/subscription/pause', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Service unavailable' });
+    const userId = req.user.id;
+    const sub = await db.query(
+      `SELECT s.id, s.paystack_subscription_code, s.plan_id, p.amount FROM subscriptions s
+       JOIN plans p ON p.id = s.plan_id
+       WHERE s.user_id = $1 AND s.status IN ('active', 'trialing') AND p.amount > 0
+       ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1`,
+      [userId]
+    );
+    const row = sub.rows?.[0];
+    if (!row) return res.status(400).json({ error: 'No active paid subscription to pause. Free plans cannot be paused.' });
+    const code = row.paystack_subscription_code;
+    if (PAYSTACK_SECRET && code) {
+      const response = await fetch(`${PAYSTACK_BASE}/subscription/disable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PAYSTACK_SECRET },
+        body: JSON.stringify({ code, token: code }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!data.status && data.message) {
+        console.warn('[billing pause] Paystack:', data.message);
+      }
+    }
+    await db.query(
+      `UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+      [row.id]
+    );
+    res.json({ ok: true, message: 'Your plan has been paused. Billing has stopped. You can resubscribe anytime from Pricing plans.' });
+  } catch (e) {
+    console.error('[billing subscription/pause]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to pause subscription' });
   }
 });
 

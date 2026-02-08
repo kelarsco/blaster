@@ -15,8 +15,12 @@ function getDomain(email) {
 
 const THROTTLE_DOMAINS = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com', 'live.com', 'icloud.com'];
 
+/** Random delay in ms; min/max can be fractional seconds (e.g. 0.5, 2). */
 function delayMs(min, max) {
-  return Math.floor(Math.random() * (max - min + 1) + min) * 1000;
+  const minSec = Number(min) || 1;
+  const maxSec = Number(max) != null && Number(max) >= minSec ? Number(max) : minSec;
+  const sec = Math.random() * (maxSec - minSec) + minSec;
+  return Math.round(sec * 1000);
 }
 
 campaignRoutes.get('/', requireAuth, async (req, res) => {
@@ -111,9 +115,11 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       }
     }
     const campaignId = uuidv4();
+    const delayMinSec = Math.max(0.5, Number(delayMin) || 2);
+    const delayMaxSec = Math.max(delayMinSec, Number(delayMax) || 5);
     await db.query(
-      'INSERT INTO campaigns (id, user_id, sender_group_id, status, total_queued, sent, failed) VALUES ($1, $2, $3, $4, $5, 0, 0)',
-      [campaignId, userId, senderGroupId || null, 'running', list.length]
+      'INSERT INTO campaigns (id, user_id, sender_group_id, status, total_queued, sent, failed, delay_min, delay_max) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7)',
+      [campaignId, userId, senderGroupId || null, 'running', list.length, delayMinSec, delayMaxSec]
     );
     logActivity('campaign_start', { campaignId, totalQueued: list.length }, userId);
     for (let i = 0; i < list.length; i++) {
@@ -143,7 +149,7 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
           subject,
           body,
         });
-      }, i * (delayMs(delayMin, delayMax) * throttle));
+      }, i * (delayMs(delayMinSec, delayMaxSec) * throttle));
     }
     res.json({ campaignId, totalQueued: list.length });
   } catch (e) {
@@ -201,7 +207,7 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
   const db = getDb();
   const campaignId = req.params.campaignId;
   if (!db) return res.status(503).json({ error: 'Database not ready' });
-  const campaignRow = (await db.query('SELECT id FROM campaigns WHERE id = $1 AND user_id = $2', [campaignId, req.user.id])).rows[0];
+  const campaignRow = (await db.query('SELECT id, delay_min, delay_max FROM campaigns WHERE id = $1 AND user_id = $2', [campaignId, req.user.id])).rows[0];
   if (!campaignRow) return res.status(404).json({ error: 'Campaign not found' });
   await db.query("UPDATE campaigns SET status = 'running', updated_at = NOW() WHERE id = $1 AND user_id = $2", [campaignId, req.user.id]);
   const pending = await db.query(
@@ -214,8 +220,8 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
      )`,
     [campaignId]
   );
-  const delayMin = 2;
-  const delayMax = 5;
+  const delayMin = campaignRow.delay_min != null ? Number(campaignRow.delay_min) : 2;
+  const delayMax = campaignRow.delay_max != null ? Number(campaignRow.delay_max) : 5;
   for (let i = 0; i < pending.rows.length; i++) {
     const row = pending.rows[i];
     const throttle = THROTTLE_DOMAINS.includes(getDomain(row.email)) ? 2 : 1;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 const THRESHOLDS = [10, 30, 50, 100];
 const AMOUNT_CENTS = { 10: 1000, 30: 3000, 50: 5000, 100: 10000 };
@@ -11,6 +12,7 @@ export function BillingExtraCreditPage() {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(null);
+  const [notice, setNotice] = useState({ visible: false, message: '', title: 'Payment issue' });
 
   useEffect(() => {
     if (!authFetch) {
@@ -47,16 +49,24 @@ export function BillingExtraCreditPage() {
           return;
         }
         setPaying(null);
-        alert(data.error || 'Could not start payment');
+        setNotice({ visible: true, message: data.error || 'Could not start payment', title: 'Payment issue' });
       })
       .catch((e) => {
         setPaying(null);
-        alert(e?.message || 'Failed to start payment');
+        setNotice({ visible: true, message: e?.message || 'Failed to start payment', title: 'Payment issue' });
       });
   };
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
+      <SlideInNotice
+        visible={notice.visible}
+        message={notice.message}
+        title={notice.title}
+        type="error"
+        onClose={() => setNotice((n) => ({ ...n, visible: false }))}
+        autoDismissMs={8000}
+      />
       <div className="mb-6 md:mb-8">
         <Link to="/app/account/billing" className="text-xs md:text-sm text-blaster-accent hover:underline mb-2 inline-block">← Back to billing</Link>
         <h1 className="page-title-mobile">Extra credit</h1>

@@ -18,6 +18,7 @@ import {
   createRefreshToken,
   findRefreshTokenByToken,
   revokeRefreshTokenById,
+  revokeRefreshTokensForUser,
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   getRefreshCookieName,
@@ -59,11 +60,14 @@ if (hasGoogleConfig) {
         }
         try {
           const existing = await db.query(
-            'SELECT id, email, name, auth_provider FROM users WHERE email = $1',
+            'SELECT id, email, name, auth_provider, deactivated_at FROM users WHERE email = $1',
             [email]
           );
           const row = existing.rows?.[0];
           if (row) {
+            if (row.deactivated_at) {
+              return done(null, null, { code: 'DEACTIVATED', message: 'This account has been deactivated. Contact support to reactivate.' });
+            }
             if (row.auth_provider !== 'google') {
               return done(null, null, { code: 'WRONG_METHOD', message: 'This account uses email and password. Sign in with your password.' });
             }
@@ -250,11 +254,12 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
     if (!emailNorm || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const r = await db.query(
-      'SELECT id, email, password_hash, name, auth_provider, email_verified FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, name, auth_provider, email_verified, deactivated_at FROM users WHERE email = $1',
       [emailNorm]
     );
     const row = r?.rows?.[0];
     if (!row) return res.status(401).json({ error: 'Invalid email or password' });
+    if (row.deactivated_at) return res.status(403).json({ error: 'This account has been deactivated. Contact support to reactivate.' });
     if (row.auth_provider !== 'credentials') {
       return res.status(400).json({ error: 'This account uses Google. Sign in with Google instead.' });
     }
@@ -400,6 +405,29 @@ authRoutes.post('/change-password', authRateLimit, requireAuth, async (req, res)
   }
 });
 
+const DEACTIVATE_PHRASE = 'DEACTIVATE THIS ACCOUNT';
+
+/** Deactivate account (soft). User must type exact phrase. Does not delete from DB. */
+authRoutes.post('/deactivate', authRateLimit, requireAuth, async (req, res) => {
+  try {
+    const { confirmPhrase } = req.body || {};
+    const phrase = typeof confirmPhrase === 'string' ? confirmPhrase.trim() : '';
+    if (phrase !== DEACTIVATE_PHRASE) {
+      return res.status(400).json({ error: 'Confirmation phrase does not match. Type exactly: ' + DEACTIVATE_PHRASE });
+    }
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Service unavailable' });
+    const userId = req.user.id;
+    await db.query('UPDATE users SET deactivated_at = NOW(), updated_at = NOW() WHERE id = $1', [userId]);
+    await revokeRefreshTokensForUser(userId);
+    clearRefreshTokenCookie(res);
+    res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('[auth deactivate]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to deactivate' });
+  }
+});
+
 /** Refresh access token using refresh token from HttpOnly cookie. Returns 200 with no user when no/invalid cookie (avoids 401 noise for unauthenticated visitors). */
 authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   try {
@@ -409,9 +437,10 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     if (!found) return res.status(200).json({});
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable' });
-    const r = await db.query('SELECT id, email, name, picture_url, auth_provider FROM users WHERE id = $1', [found.user_id]);
+    const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at FROM users WHERE id = $1', [found.user_id]);
     const row = r?.rows?.[0];
     if (!row) return res.status(401).json({ error: 'User not found' });
+    if (row.deactivated_at) return res.status(200).json({});
     const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null, auth_provider: row.auth_provider || 'credentials' };
     const accessToken = createAccessToken(user);
     res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture, auth_provider: user.auth_provider }, accessToken, expiresIn: getAccessTTLSeconds() });
@@ -435,6 +464,9 @@ authRoutes.get('/google/callback', (req, res, next) => {
     }
     if (info?.code === 'NO_DB' || info?.code === 'NO_EMAIL') {
       return res.redirect(302, `/login?error=${info.code}&message=${encodeURIComponent(info.message || '')}`);
+    }
+    if (info?.code === 'DEACTIVATED') {
+      return res.redirect(302, `/login?error=deactivated&message=${encodeURIComponent(info.message || '')}`);
     }
     if (!user) return res.redirect(302, '/login?error=1');
     try {

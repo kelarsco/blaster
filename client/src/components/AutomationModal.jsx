@@ -32,7 +32,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 0.5 && d <= 60) return Math.max(1, Math.round(d));
+        if (d >= 0.5 && d <= 60) return d;
       }
     } catch (_) {}
     return 2;
@@ -43,7 +43,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 0.5 && d <= 60) return Math.max(1, Math.round(d));
+        if (d >= 0.5 && d <= 60) return d;
       }
     } catch (_) {}
     return 5;
@@ -356,9 +356,9 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
             <div className="flex flex-wrap gap-6 items-center">
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <span className="font-medium">Delay between emails (sec):</span>
-                <input type="number" min={1} max={60} value={delayMin} onChange={(e) => setDelayMin(Number(e.target.value))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={0.5} max={60} step={0.5} value={delayMin} onChange={(e) => setDelayMin(Math.max(0.5, Number(e.target.value) || 0.5))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>min</span>
-                <input type="number" min={1} max={60} value={delayMax} onChange={(e) => setDelayMax(Number(e.target.value))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={0.5} max={60} step={0.5} value={delayMax} onChange={(e) => setDelayMax(Math.max(0.5, Number(e.target.value) || 0.5))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>max</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">

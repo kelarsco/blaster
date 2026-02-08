@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Check, X } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 const PLANS = [
   {
@@ -88,6 +89,11 @@ const PLANS = [
 // 2 months free = pay 10 months, get 12
 const MONTHS_BILLED_ANNUALLY = 10;
 
+function formatPriceNum(n) {
+  if (n == null) return '0';
+  return Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
+}
+
 function getDisplayPrice(monthlyPrice, isAnnually) {
   if (isAnnually && monthlyPrice > 0) {
     const totalAnnual = monthlyPrice * MONTHS_BILLED_ANNUALLY;
@@ -123,7 +129,12 @@ export function PricingPlansPage() {
   const [billingPeriod, setBillingPeriod] = useState('monthly');
   const [subscription, setSubscription] = useState(null);
   const [subscribingPlanId, setSubscribingPlanId] = useState(null);
+  const [notice, setNotice] = useState({ visible: false, message: '', title: null });
   const isAnnually = billingPeriod === 'annually';
+
+  const showNotice = (message, title = 'Could not start subscription') => {
+    setNotice({ visible: true, message, title });
+  };
 
   useEffect(() => {
     if (!authFetch) return;
@@ -158,8 +169,13 @@ export function PricingPlansPage() {
       }
       if (!res.ok) {
         const msg = data.error || 'Could not start subscription.';
-        alert(msg.includes('Invalid Amount') ? 'Payment setup is updating. Please try again in a moment or contact support.' : msg);
+        showNotice(
+          msg.includes('Invalid Amount') ? 'Payment setup is updating. Please try again in a moment or contact support.' : msg,
+          'Could not start subscription'
+        );
       }
+    } catch (e) {
+      showNotice(e?.message || 'Something went wrong. Please try again.', 'Could not start subscription');
     } finally {
       setSubscribingPlanId(null);
     }
@@ -169,6 +185,14 @@ export function PricingPlansPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
+      <SlideInNotice
+        visible={notice.visible}
+        message={notice.message}
+        title={notice.title}
+        type="error"
+        onClose={() => setNotice((n) => ({ ...n, visible: false }))}
+        autoDismissMs={8000}
+      />
       <div className="mb-6 md:mb-8">
         <h1 className="page-title-mobile">Pricing plans</h1>
         <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Choose the plan that fits your outreach scale</p>
@@ -229,19 +253,19 @@ export function PricingPlansPage() {
                 if (showOriginal) {
                   return (
                     <>
-                      <span className="text-blaster-muted line-through mr-2">${plan.originalPrice}</span>
-                      <span className="text-xl md:text-2xl font-bold text-blaster-fg">${display.primary}</span>
+                      <span className="text-blaster-muted line-through mr-2">${formatPriceNum(plan.originalPrice)}</span>
+                      <span className="text-xl md:text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
                       <span className="text-blaster-muted text-sm">/{display.primaryLabel}*</span>
                     </>
                   );
                 }
                 return (
                   <>
-                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">${display.primary}</span>
+                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
                     <span className="text-blaster-muted text-sm">/{display.primaryLabel}*</span>
                     {display.secondary != null && (
                       <span className="ml-1.5 text-blaster-muted text-xs">
-                        (~${Number.isInteger(display.secondary) ? display.secondary : display.secondary.toFixed(2)}/{display.secondaryLabel})
+                        (~${formatPriceNum(display.secondary)}/{display.secondaryLabel})
                       </span>
                     )}
                   </>

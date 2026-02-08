@@ -193,6 +193,8 @@ async function runSchema(p) {
       );
 
       ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sender_group_id TEXT REFERENCES sender_groups(id) ON DELETE SET NULL;
+      ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_min REAL DEFAULT 2;
+      ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_max REAL DEFAULT 5;
 
       CREATE TABLE IF NOT EXISTS invites (
         id TEXT PRIMARY KEY,
@@ -272,6 +274,8 @@ async function runSchema(p) {
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'free';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free');
+      UPDATE plans SET amount = 1500, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET amount = 15000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
@@ -283,6 +287,7 @@ async function runSchema(p) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified SMALLINT DEFAULT 0;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS picture_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
