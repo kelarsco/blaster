@@ -61,13 +61,16 @@ if (hasGoogleConfig) {
         }
         try {
           const existing = await db.query(
-            'SELECT id, email, name, auth_provider, deactivated_at FROM users WHERE email = $1',
+            'SELECT id, email, name, auth_provider, deactivated_at, suspended_at FROM users WHERE email = $1',
             [email]
           );
           const row = existing.rows?.[0];
           if (row) {
             if (row.deactivated_at) {
               return done(null, null, { code: 'DEACTIVATED', message: 'This account has been deactivated. Contact support to reactivate.' });
+            }
+            if (row.suspended_at) {
+              return done(null, null, { code: 'SUSPENDED', message: 'This account has been suspended. Contact support to reactivate.' });
             }
             if (row.auth_provider !== 'google') {
               return done(null, null, { code: 'WRONG_METHOD', message: 'This account uses email and password. Sign in with your password.' });
@@ -222,11 +225,12 @@ authRoutes.post('/verify-email', authRateLimit, async (req, res) => {
     if (!emailNorm || !codeStr) return res.status(400).json({ error: 'Email and code are required' });
 
     const r = await db.query(
-      `SELECT id, email, name, auth_provider, verification_code, verification_code_expires_at FROM users WHERE email = $1`,
+      `SELECT id, email, name, auth_provider, verification_code, verification_code_expires_at, suspended_at FROM users WHERE email = $1`,
       [emailNorm]
     );
     const row = r?.rows?.[0];
     if (!row) return res.status(401).json({ error: 'Invalid or expired code' });
+    if (row.suspended_at) return res.status(403).json({ error: 'This account has been suspended. Contact support to reactivate.', code: 'SUSPENDED' });
     if (row.auth_provider !== 'credentials') return res.status(400).json({ error: 'This account uses Google. Sign in with Google.' });
     if (row.verification_code !== codeStr) return res.status(401).json({ error: 'Invalid code' });
     if (!row.verification_code_expires_at || new Date(row.verification_code_expires_at) < new Date()) {
@@ -255,12 +259,13 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
     if (!emailNorm || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const r = await db.query(
-      'SELECT id, email, password_hash, name, auth_provider, email_verified, deactivated_at FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, name, auth_provider, email_verified, deactivated_at, suspended_at FROM users WHERE email = $1',
       [emailNorm]
     );
     const row = r?.rows?.[0];
     if (!row) return res.status(401).json({ error: 'Invalid email or password' });
     if (row.deactivated_at) return res.status(403).json({ error: 'This account has been deactivated. Contact support to reactivate.' });
+    if (row.suspended_at) return res.status(403).json({ error: 'This account has been suspended. Contact support to reactivate.', code: 'SUSPENDED' });
     if (row.auth_provider !== 'credentials') {
       return res.status(400).json({ error: 'This account uses Google. Sign in with Google instead.' });
     }
@@ -435,7 +440,7 @@ authRoutes.post('/deactivate', authRateLimit, requireAuth, async (req, res) => {
   }
 });
 
-/** Refresh access token using refresh token from HttpOnly cookie. Returns 200 with no user when no/invalid cookie (avoids 401 noise for unauthenticated visitors). */
+/** Refresh access token using refresh token from HttpOnly cookie. Returns 200 with no user when no/invalid cookie. Returns 403 with code SUSPENDED when user is suspended (revokes token and clears cookie). */
 authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   try {
     const token = req.cookies?.[getRefreshCookieName()];
@@ -444,9 +449,14 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     if (!found) return res.status(200).json({});
     const db = getDb();
     if (!db) return res.status(200).json({});
-    const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at FROM users WHERE id = $1', [found.user_id]);
+    const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at, suspended_at FROM users WHERE id = $1', [found.user_id]);
     const row = r?.rows?.[0];
     if (!row || row.deactivated_at) return res.status(200).json({});
+    if (row.suspended_at) {
+      await revokeRefreshTokenById(found.id);
+      clearRefreshTokenCookie(res);
+      return res.status(403).json({ error: 'This account has been suspended. Contact support to reactivate.', code: 'SUSPENDED' });
+    }
     const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null, auth_provider: row.auth_provider || 'credentials' };
     const accessToken = createAccessToken(user);
     res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture, auth_provider: user.auth_provider }, accessToken, expiresIn: getAccessTTLSeconds() });
@@ -473,6 +483,9 @@ authRoutes.get('/google/callback', (req, res, next) => {
     }
     if (info?.code === 'DEACTIVATED') {
       return res.redirect(302, `/login?error=deactivated&message=${encodeURIComponent(info.message || '')}`);
+    }
+    if (info?.code === 'SUSPENDED') {
+      return res.redirect(302, `/login?error=suspended&message=${encodeURIComponent(info.message || '')}`);
     }
     if (!user) return res.redirect(302, '/login?error=1');
     try {

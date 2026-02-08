@@ -120,7 +120,7 @@ export function LandingPage() {
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Link
-              to="/signup"
+              to="/pricing"
               className="inline-flex items-center justify-center px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-blaster-fg text-white text-sm font-semibold btn-landing-pop whitespace-nowrap scale-[0.84] sm:scale-100 origin-center"
             >
               Get Started Free
@@ -176,7 +176,7 @@ export function LandingPage() {
                 </a>
               ))}
               <Link
-                to="/signup"
+                to="/pricing"
                 onClick={closeSidebar}
                 className="block py-3 text-black font-medium hover:opacity-80 transition"
               >
@@ -190,11 +190,11 @@ export function LandingPage() {
                   Find emails from store sites and send campaigns with multiple senders.
                 </p>
                 <Link
-                  to="/signup"
+                  to="/pricing"
                   onClick={closeSidebar}
                   className="mt-3 block text-center text-sm font-medium text-black hover:underline"
                 >
-                  Learn more →
+                  View pricing →
                 </Link>
               </div>
               <p className="text-xs text-blaster-muted mt-4">© {new Date().getFullYear()} wiblaster.</p>
@@ -218,7 +218,7 @@ export function LandingPage() {
           </p>
           <div className="aos-fade-up mt-10 flex flex-col sm:flex-row items-center justify-center gap-3" data-aos-delay="100">
             <Link
-              to="/signup"
+              to="/pricing"
               className="w-full sm:w-auto btn-blaster-cta whitespace-nowrap text-center btn-landing-pop"
             >
               Get Started Free
@@ -227,7 +227,7 @@ export function LandingPage() {
               to="/login"
               className="w-full sm:w-auto btn-blaster-accent text-sm px-5 py-2.5 rounded-lg whitespace-nowrap text-center btn-landing-pop"
             >
-              Learn more
+              Log in
             </Link>
           </div>
         </div>
@@ -259,11 +259,11 @@ export function LandingPage() {
             ))}
           </div>
           <div className="aos-fade-up mt-12 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to="/signup" className="btn-blaster-cta btn-landing-pop w-full sm:w-auto text-center">
+            <Link to="/pricing" className="btn-blaster-cta btn-landing-pop w-full sm:w-auto text-center">
               Get Started Free
             </Link>
             <Link to="/login" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop w-full sm:w-auto text-center">
-              Learn more
+              Log in
             </Link>
           </div>
         </div>
@@ -287,11 +287,11 @@ export function LandingPage() {
             ))}
           </div>
           <div className="mt-10 flex justify-center gap-3">
-            <Link to="/signup" className="btn-blaster-cta btn-landing-pop">
+            <Link to="/pricing" className="btn-blaster-cta btn-landing-pop">
               Get Started Free
             </Link>
             <Link to="/login" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
-              Learn more
+              Log in
             </Link>
           </div>
         </div>
@@ -363,7 +363,7 @@ export function LandingPage() {
             </table>
           </div>
           <div className="mt-8 flex justify-center">
-            <Link to="/signup" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
+            <Link to="/pricing" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
               Get started
             </Link>
           </div>
@@ -415,7 +415,7 @@ export function LandingPage() {
               wiblaster helps you extract contact emails from store sites and run campaigns with multiple senders—so you spend less time hunting and more time closing.
             </p>
             <Link
-              to="/signup"
+              to="/pricing"
               className="inline-block mt-6 btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop"
             >
               Get started free

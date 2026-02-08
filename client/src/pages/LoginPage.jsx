@@ -16,6 +16,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [deactivatedNotice, setDeactivatedNotice] = useState(false);
+  const [suspendedNotice, setSuspendedNotice] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -27,6 +28,11 @@ export function LoginPage() {
     const err = searchParams.get('error');
     if (err === 'deactivated' && msg) {
       setDeactivatedNotice(true);
+      setError('');
+      return;
+    }
+    if (err === 'suspended') {
+      setSuspendedNotice(true);
       setError('');
       return;
     }
@@ -52,6 +58,11 @@ export function LoginPage() {
         }
         if (res.status === 403 && (data.error || '').toLowerCase().includes('deactivated')) {
           setDeactivatedNotice(true);
+          setError('');
+          return;
+        }
+        if (res.status === 403 && data.code === 'SUSPENDED') {
+          setSuspendedNotice(true);
           setError('');
           return;
         }
@@ -85,6 +96,14 @@ export function LoginPage() {
         title="Account no longer active"
         message="Your account has been deactivated. Please contact support to reactivate your account."
         onClose={() => setDeactivatedNotice(false)}
+        autoDismissMs={0}
+      />
+      <SlideInNotice
+        visible={suspendedNotice}
+        type="error"
+        title="Account suspended"
+        message="Your account has been suspended. You cannot sign in until an administrator reactivates your account. Please contact support."
+        onClose={() => setSuspendedNotice(false)}
         autoDismissMs={0}
       />
       <AuthLogoLink />

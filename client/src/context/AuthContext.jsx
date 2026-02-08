@@ -13,13 +13,21 @@ export function AuthProvider({ children }) {
   const [accessToken, setAccessTokenState] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  /** Try to restore session via refresh token (cookie). Runs once on mount. */
+  /** Try to restore session via refresh token (cookie). Runs once on mount. On 403 SUSPENDED, clear session and redirect to login. */
   useEffect(() => {
     let cancelled = false;
     fetch(`${API}/auth/refresh`, { method: 'POST', credentials: 'include' })
-      .then((r) => {
-        if (cancelled) return;
-        if (r.ok) return r.json();
+      .then(async (r) => {
+        if (cancelled) return null;
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 403 && data?.code === 'SUSPENDED') {
+          setUser(null);
+          setAccessTokenState(null);
+          const msg = encodeURIComponent(data?.error || 'Account suspended.');
+          window.location.href = `/login?error=suspended&message=${msg}`;
+          return null;
+        }
+        if (r.ok && data?.user && data?.accessToken) return data;
         return null;
       })
       .then((data) => {
@@ -48,18 +56,25 @@ export function AuthProvider({ children }) {
     }).catch(() => {});
   }, [user]);
 
-  /** Authenticated fetch: adds Bearer token, on 401 tries refresh once then retries. */
+  /** Authenticated fetch: adds Bearer token, on 401 tries refresh once then retries. On 403 SUSPENDED from refresh, clears session and redirects to login. */
   const authFetch = useCallback(async (url, options = {}) => {
     const headers = { ...options.headers };
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     let res = await fetch(url, { ...options, credentials: 'include', headers });
     if (res.status === 401) {
       const refreshRes = await fetch(`${API}/auth/refresh`, { method: 'POST', credentials: 'include' });
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        setUser(data.user);
-        setAccessTokenState(data.accessToken);
-        const newToken = data.accessToken;
+      const refreshData = await refreshRes.json().catch(() => ({}));
+      if (refreshRes.status === 403 && refreshData?.code === 'SUSPENDED') {
+        setUser(null);
+        setAccessTokenState(null);
+        const msg = encodeURIComponent(refreshData?.error || 'Account suspended.');
+        window.location.href = `/login?error=suspended&message=${msg}`;
+        return refreshRes;
+      }
+      if (refreshRes.ok && refreshData?.user && refreshData?.accessToken) {
+        setUser(refreshData.user);
+        setAccessTokenState(refreshData.accessToken);
+        const newToken = refreshData.accessToken;
         if (newToken) {
           const retryHeaders = { ...options.headers, Authorization: `Bearer ${newToken}` };
           res = await fetch(url, { ...options, credentials: 'include', headers: retryHeaders });

@@ -262,6 +262,12 @@ export function PricingPage() {
             );
           })}
         </div>
+        <p className="mt-6 text-center text-sm text-blaster-muted">
+          Already have an account?{' '}
+          <Link to="/login" className="text-blaster-fg font-medium hover:underline">
+            Log in
+          </Link>
+        </p>
 
         <section className="mt-12 border-t border-blaster-border pt-8">
           <button

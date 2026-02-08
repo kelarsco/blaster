@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { revokeRefreshTokensForUser } from '../services/tokenAuth.js';
 
 export const adminRoutes = Router();
 adminRoutes.use(requireAdmin);
@@ -234,12 +235,25 @@ adminRoutes.post('/users/:id/disable', async (req, res) => {
   }
 });
 
-/** POST /api/bl-admin/users/:id/suspend */
+/** POST /api/bl-admin/users/:id/suspend - Sets suspended_at and revokes all refresh tokens (logs user out everywhere) */
 adminRoutes.post('/users/:id/suspend', async (req, res) => {
   try {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
     await db.query('UPDATE users SET suspended_at = COALESCE(suspended_at, NOW()), updated_at = NOW() WHERE id = $1', [req.params.id]);
+    await revokeRefreshTokensForUser(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed' });
+  }
+});
+
+/** POST /api/bl-admin/users/:id/reactivate - Clear suspended_at so user can sign in again */
+adminRoutes.post('/users/:id/reactivate', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    await db.query('UPDATE users SET suspended_at = NULL, updated_at = NOW() WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e?.message || 'Failed' });

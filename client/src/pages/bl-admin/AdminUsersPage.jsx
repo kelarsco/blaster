@@ -74,6 +74,15 @@ export function AdminUsersPage() {
     } catch (_) {}
   };
 
+  const handleReactivate = async (id) => {
+    try {
+      await adminFetch(`/users/${id}/reactivate`, { method: 'POST' });
+      setOtherActionUser(null);
+      setMenuUserId(null);
+      fetchUsers();
+    } catch (_) {}
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Permanently delete this user and all their data?')) return;
     try {
@@ -341,9 +350,15 @@ export function AdminUsersPage() {
               <button type="button" onClick={() => handleDisable(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-border/30 text-sm">
                 <UserX className="w-4 h-4" /> Disable account
               </button>
-              <button type="button" onClick={() => handleSuspend(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-border/30 text-sm">
-                <AlertCircle className="w-4 h-4" /> Suspend
-              </button>
+              {otherActionUser.suspendedAt ? (
+                <button type="button" onClick={() => handleReactivate(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-emerald-600 text-emerald-600 hover:bg-emerald-600/10 text-sm">
+                  <AlertCircle className="w-4 h-4" /> Reactivate
+                </button>
+              ) : (
+                <button type="button" onClick={() => handleSuspend(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-border/30 text-sm">
+                  <AlertCircle className="w-4 h-4" /> Suspend
+                </button>
+              )}
               <button type="button" onClick={() => handleDelete(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm">
                 <Trash2 className="w-4 h-4" /> Delete user
               </button>
