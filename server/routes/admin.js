@@ -265,9 +265,24 @@ adminRoutes.delete('/users/:id', async (req, res) => {
   try {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
-    await db.query('DELETE FROM users WHERE id = $1', [req.params.id]);
-    res.json({ ok: true });
+    const id = req.params.id;
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      // scan_results references scans; no CASCADE on that FK, so delete first
+      await client.query('DELETE FROM scan_results WHERE scan_id IN (SELECT id FROM scans WHERE user_id = $1)', [id]);
+      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+      await client.query('DELETE FROM users WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (e) {
+    console.error('[admin delete user]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed' });
   }
 });
@@ -282,7 +297,8 @@ adminRoutes.post('/users/bulk-delete', async (req, res) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      // Revoke refresh tokens first so sessions are cleared
+      // scan_results references scans; FK has no CASCADE, so delete before user/scans cascade
+      await client.query('DELETE FROM scan_results WHERE scan_id IN (SELECT id FROM scans WHERE user_id = ANY($1::text[]))', [ids]);
       await client.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1::text[])', [ids]);
       await client.query('DELETE FROM users WHERE id = ANY($1::text[])', [ids]);
       await client.query('COMMIT');

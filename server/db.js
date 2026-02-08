@@ -364,8 +364,22 @@ async function runSchema(p) {
       UPDATE users SET email_verified = 1 WHERE password_hash IS NOT NULL AND (email_verified IS NULL OR email_verified = 0);
     `);
     await migrateStoreNotesPK(p);
+    await migrateScanResultsCascade(p);
   } finally {
     client.release();
+  }
+}
+
+/** Fix scan_results FK so deleting a scan (e.g. via user CASCADE) also deletes results. */
+async function migrateScanResultsCascade(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE scan_results DROP CONSTRAINT IF EXISTS scan_results_scan_id_fkey;
+      ALTER TABLE scan_results ADD CONSTRAINT scan_results_scan_id_fkey
+        FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
+    `);
+  } catch (e) {
+    console.warn('[migrateScanResultsCascade]', e?.message || e);
   }
 }
 
