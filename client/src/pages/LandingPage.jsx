@@ -221,13 +221,13 @@ export function LandingPage() {
               to="/pricing"
               className="w-full sm:w-auto btn-blaster-cta whitespace-nowrap text-center btn-landing-pop"
             >
-              Get Started Free
+              Start free trial
             </Link>
             <Link
-              to="/login"
+              to="#features"
               className="w-full sm:w-auto btn-blaster-accent text-sm px-5 py-2.5 rounded-lg whitespace-nowrap text-center btn-landing-pop"
             >
-              Log in
+              Learn more
             </Link>
           </div>
         </div>
@@ -262,8 +262,8 @@ export function LandingPage() {
             <Link to="/pricing" className="btn-blaster-cta btn-landing-pop w-full sm:w-auto text-center">
               Get Started Free
             </Link>
-            <Link to="/login" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop w-full sm:w-auto text-center">
-              Log in
+            <Link to="#how" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop w-full sm:w-auto text-center">
+              Learn more
             </Link>
           </div>
         </div>
@@ -287,11 +287,8 @@ export function LandingPage() {
             ))}
           </div>
           <div className="mt-10 flex justify-center gap-3">
-            <Link to="/pricing" className="btn-blaster-cta btn-landing-pop">
-              Get Started Free
-            </Link>
-            <Link to="/login" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
-              Log in
+            <Link to="/dashboard" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
+              Explore dashboard
             </Link>
           </div>
         </div>
