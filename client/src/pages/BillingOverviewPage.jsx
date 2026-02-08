@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { formatUTCDateOnly } from '../utils/dateUtils';
 
 function formatPrice(amountCents, interval) {
   const dollars = (amountCents / 100).toFixed(2);
@@ -232,7 +233,7 @@ export function BillingOverviewPage() {
               <>
                 <p className="text-sm text-blaster-muted mb-4">
                   {overview?.subscription?.currentPeriodEnd
-                    ? `Your next billing date is ${new Date(overview.subscription.currentPeriodEnd).toLocaleDateString()}.`
+                    ? `Your next billing date is ${formatUTCDateOnly(overview.subscription.currentPeriodEnd) ?? '—'}.`
                     : 'You will be charged according to your plan.'}
                 </p>
                 <div className="rounded-xl bg-blaster-bg-app/80 border border-blaster-border p-4 space-y-2 text-sm">

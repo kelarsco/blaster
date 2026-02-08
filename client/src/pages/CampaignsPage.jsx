@@ -109,9 +109,11 @@ export function CampaignsPage() {
     });
   };
 
-  const selectAll = () => {
+  const selectAll = (e) => {
+    e?.preventDefault();
     if (selectedIds.size === campaigns.length) setSelectedIds(new Set());
     else setSelectedIds(new Set(campaigns.map((c) => c.id)));
+    if (typeof window !== 'undefined' && window.getSelection) window.getSelection().removeAllRanges();
   };
 
   const exitSelectionMode = () => {
@@ -245,7 +247,7 @@ export function CampaignsPage() {
               <button
                 type="button"
                 onClick={selectAll}
-                className="text-sm text-blaster-accent hover:underline"
+                className="text-sm text-blaster-accent hover:underline select-none"
               >
                 {selectedIds.size === campaigns.length ? 'Deselect all' : 'Select all'}
               </button>

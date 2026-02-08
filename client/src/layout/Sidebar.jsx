@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { formatUTCDateOnly } from '../utils/dateUtils';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: DashboardIcon },
@@ -104,7 +105,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
+  const fetchSubscription = React.useCallback(() => {
     if (!authFetch) {
       setSubscriptionLoaded(true);
       return;
@@ -122,6 +123,23 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   }, [authFetch]);
 
   useEffect(() => {
+    fetchSubscription();
+  }, [fetchSubscription]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchSubscription();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [fetchSubscription]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchSubscription, 90 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchSubscription]);
+
+  useEffect(() => {
     const interval = setInterval(() => setPromoDaysLeft(computePromoDaysLeft()), 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -135,7 +153,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   const periodEnd = subscription?.currentPeriodEnd;
   const daysUntilRenewal = useMemo(() => (periodEnd ? daysUntilDate(periodEnd) : null), [periodEnd, now]);
   const showRenewalCountdown = hasPaidPlan && daysUntilRenewal !== null && daysUntilRenewal <= RENEWAL_WARNING_DAYS && daysUntilRenewal >= 0;
-  const renewalDueDate = periodEnd ? new Date(periodEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const renewalDueDate = periodEnd ? formatUTCDateOnly(periodEnd) : null;
 
   return (
     <>

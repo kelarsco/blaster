@@ -6,21 +6,45 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 export const adminRoutes = Router();
 adminRoutes.use(requireAdmin);
 
-/** GET /api/bl-admin/overview - Stats for admin dashboard */
+/** GET /api/bl-admin/overview - Stats for admin dashboard. Optional query: start, end (YYYY-MM-DD) to filter by period */
 adminRoutes.get('/overview', async (req, res) => {
   try {
     const db = getDb();
-    if (!db) return res.json({ totalUsers: 0, totalSubscribers: 0, totalRevenue: 0, activeSubscriptions: 0 });
-    const [usersRes, subRes, revenueRes] = await Promise.all([
-      db.query('SELECT COUNT(*) AS c FROM users'),
-      db.query("SELECT COUNT(DISTINCT user_id) AS c FROM subscriptions WHERE status IN ('active','trialing')"),
-      db.query(`
-        SELECT COALESCE(SUM(p.amount), 0) AS total
-        FROM subscriptions s
-        JOIN plans p ON p.id = s.plan_id
-        WHERE s.status IN ('active', 'trialing') AND p.amount > 0
-      `),
-    ]);
+    if (!db) return res.json({ totalUsers: 0, totalSubscribers: 0, totalRevenueCents: 0, activeSubscriptions: 0 });
+    const start = (req.query.start || '').trim() || null;
+    const end = (req.query.end || '').trim() || null;
+    const hasRange = start && end;
+
+    let usersRes;
+    let subRes;
+    let revenueRes;
+    if (hasRange) {
+      const subWhere = `s.status IN ('active','trialing') AND s.current_period_end::date >= $1 AND s.current_period_start::date <= $2`;
+      [usersRes, subRes, revenueRes] = await Promise.all([
+        db.query(
+          "SELECT COUNT(*) AS c FROM users WHERE created_at::date >= $1 AND created_at::date <= $2",
+          [start, end]
+        ),
+        db.query(
+          `SELECT COUNT(DISTINCT s.user_id) AS c FROM subscriptions s WHERE ${subWhere}`,
+          [start, end]
+        ),
+        db.query(
+          `SELECT COALESCE(SUM(p.amount), 0) AS total FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE ${subWhere} AND p.amount > 0`,
+          [start, end]
+        ),
+      ]);
+    } else {
+      [usersRes, subRes, revenueRes] = await Promise.all([
+        db.query('SELECT COUNT(*) AS c FROM users'),
+        db.query("SELECT COUNT(DISTINCT user_id) AS c FROM subscriptions WHERE status IN ('active','trialing')"),
+        db.query(`
+          SELECT COALESCE(SUM(p.amount), 0) AS total
+          FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+          WHERE s.status IN ('active', 'trialing') AND p.amount > 0
+        `),
+      ]);
+    }
     const totalUsers = parseInt(usersRes.rows?.[0]?.c ?? '0', 10);
     const totalSubscribers = parseInt(subRes.rows?.[0]?.c ?? '0', 10);
     const totalRevenue = parseInt(revenueRes.rows?.[0]?.total ?? '0', 10);
@@ -33,6 +57,27 @@ adminRoutes.get('/overview', async (req, res) => {
   } catch (e) {
     console.error('[admin overview]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to load overview' });
+  }
+});
+
+/** GET /api/bl-admin/sidebar-counts - Counts for sidebar update indicators */
+adminRoutes.get('/sidebar-counts', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ users: 0, subscriptions: 0, messages: 0 });
+    const [usersRes, subRes, threadsRes] = await Promise.all([
+      db.query('SELECT COUNT(*) AS c FROM users'),
+      db.query('SELECT COUNT(*) AS c FROM subscriptions'),
+      db.query('SELECT COUNT(*) AS c FROM support_threads'),
+    ]);
+    res.json({
+      users: parseInt(usersRes.rows?.[0]?.c ?? '0', 10),
+      subscriptions: parseInt(subRes.rows?.[0]?.c ?? '0', 10),
+      messages: parseInt(threadsRes.rows?.[0]?.c ?? '0', 10),
+    });
+  } catch (e) {
+    console.error('[admin sidebar-counts]', e?.message || e);
+    res.status(500).json({ users: 0, subscriptions: 0, messages: 0 });
   }
 });
 
@@ -227,7 +272,7 @@ adminRoutes.post('/users/bulk-delete', async (req, res) => {
   }
 });
 
-/** GET /api/bl-admin/subscriptions - List subscriptions with filters and date range */
+/** GET /api/bl-admin/subscriptions - List all subscribers (all statuses); revenue/count use date range and active only */
 adminRoutes.get('/subscriptions', async (req, res) => {
   try {
     const db = getDb();
@@ -235,36 +280,40 @@ adminRoutes.get('/subscriptions', async (req, res) => {
     const planFilter = (req.query.plan || '').trim() || null;
     const start = (req.query.start || '').trim() || null;
     const end = (req.query.end || '').trim() || null;
-    let where = "s.status IN ('active','trialing')";
-    const params = [];
-    let i = 1;
+
+    const listWhereClause = planFilter
+      ? "s.status IN ('active','trialing','cancelled') AND s.plan_id = $1"
+      : "s.status IN ('active','trialing','cancelled')";
+    const listParams = planFilter ? [planFilter] : [];
+
+    const statsParts = ["s.status IN ('active','trialing')"];
+    const statsParams = [];
+    let pi = 1;
     if (planFilter) {
-      where += ` AND s.plan_id = $${i++}`;
-      params.push(planFilter);
+      statsParts.push(`s.plan_id = $${pi++}`);
+      statsParams.push(planFilter);
     }
-    if (start) {
-      where += ` AND s.current_period_end >= $${i++}`;
-      params.push(start);
+    if (start && end) {
+      statsParts.push(`(s.current_period_start::date <= $${pi++} AND (s.current_period_end IS NULL OR s.current_period_end::date >= $${pi++}))`);
+      statsParams.push(end, start);
     }
-    if (end) {
-      where += ` AND s.current_period_end <= $${i++}`;
-      params.push(end);
-    }
+    const statsWhere = statsParts.join(' AND ');
+
     const [listRes, statsRes] = await Promise.all([
       db.query(
-        `SELECT s.id, s.user_id, s.plan_id, s.status, s.current_period_start, s.current_period_end, p.name AS plan_name, p.amount, p.interval, u.email, u.name
+        `SELECT s.id, s.user_id, s.plan_id, s.status, s.cancel_at_period_end, s.current_period_start, s.current_period_end, p.name AS plan_name, p.amount, p.interval, u.email, u.name
          FROM subscriptions s
          JOIN plans p ON p.id = s.plan_id
          JOIN users u ON u.id = s.user_id
-         WHERE ${where}
-         ORDER BY s.current_period_end DESC
-         LIMIT 100`,
-        params
+         WHERE ${listWhereClause}
+         ORDER BY s.updated_at DESC, s.current_period_end DESC NULLS LAST
+         LIMIT 200`,
+        listParams
       ),
       db.query(
         `SELECT COALESCE(SUM(p.amount), 0) AS revenue, COUNT(*) AS c
-         FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE ${where}`,
-        params
+         FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE ${statsWhere}`,
+        statsParams
       ),
     ]);
     const subscriptions = (listRes.rows || []).map((r) => ({
@@ -275,6 +324,7 @@ adminRoutes.get('/subscriptions', async (req, res) => {
       amount: r.amount,
       interval: r.interval,
       status: r.status,
+      cancelAtPeriodEnd: !!(r.cancel_at_period_end),
       currentPeriodStart: r.current_period_start,
       currentPeriodEnd: r.current_period_end,
       userEmail: r.email,

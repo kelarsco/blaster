@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { formatUTCDateOnly } from '../utils/dateUtils';
 
 export function BillingMonthlyPlanPage() {
   const { authFetch } = useAuth();
@@ -19,7 +20,7 @@ export function BillingMonthlyPlanPage() {
 
   const planName = subscription?.planName || 'Free';
   const planDetail = subscription
-    ? `${subscription.interval === 'annually' ? 'Billed annually' : 'Billed monthly'} · Next billing ${subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString() : '—'}`
+    ? `${subscription.interval === 'annually' ? 'Billed annually' : 'Billed monthly'} · Next billing ${formatUTCDateOnly(subscription.currentPeriodEnd) ?? '—'}`
     : '500 email sends per month · 1 seat';
 
   return (

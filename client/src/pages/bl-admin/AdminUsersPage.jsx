@@ -18,6 +18,7 @@ export function AdminUsersPage() {
   const [detailUser, setDetailUser] = useState(null);
   const [otherActionUser, setOtherActionUser] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [plans, setPlans] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -132,6 +133,16 @@ export function AdminUsersPage() {
     });
   };
 
+  const enterSelectionMode = () => {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
   const toggleSelectAll = () => {
     if (selectedIds.size >= users.length) setSelectedIds(new Set());
     else setSelectedIds(new Set(users.map((u) => u.id)));
@@ -149,13 +160,38 @@ export function AdminUsersPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="px-3 py-2 rounded-lg border border-blaster-border bg-blaster-input-bg text-blaster-fg w-full sm:w-64 text-sm"
           />
-          {users.length > 0 && (
+          {users.length > 0 && !selectionMode && (
             <label className="flex items-center gap-2 text-sm text-blaster-muted cursor-pointer">
-              <input type="checkbox" checked={selectedIds.size === users.length} onChange={toggleSelectAll} className="rounded border-blaster-border" />
-              Select all
+              <input
+                type="checkbox"
+                checked={false}
+                onChange={enterSelectionMode}
+                className="rounded border-blaster-border"
+              />
+              Select multiple
             </label>
           )}
-          {selectedIds.size > 0 && (
+          {selectionMode && (
+            <>
+              <label className="flex items-center gap-2 text-sm text-blaster-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === users.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-blaster-border"
+                />
+                Select all
+              </label>
+              <button
+                type="button"
+                onClick={exitSelectionMode}
+                className="text-sm text-blaster-muted hover:text-blaster-fg"
+              >
+                Done
+              </button>
+            </>
+          )}
+          {selectionMode && selectedIds.size > 0 && (
             <button
               type="button"
               onClick={handleBulkDelete}
@@ -174,7 +210,14 @@ export function AdminUsersPage() {
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-16 rounded-xl bg-blaster-border/40 animate-pulse" />
+            <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-blaster-border bg-blaster-bg-card">
+              <div className="h-10 w-10 rounded-lg bg-blaster-border/40 animate-pulse shrink-0" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="h-4 w-32 rounded bg-blaster-border/40 animate-pulse" />
+                <div className="h-3 w-48 rounded bg-blaster-border/40 animate-pulse" />
+              </div>
+              <div className="h-4 w-24 rounded bg-blaster-border/40 animate-pulse shrink-0" />
+            </div>
           ))}
         </div>
       ) : (
@@ -188,20 +231,27 @@ export function AdminUsersPage() {
                 onDoubleClick={() => fetchUserDetail(user.id)}
                 className="flex items-center gap-4 p-4 rounded-xl border border-blaster-border bg-blaster-bg-card hover:border-blaster-border/80"
               >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(user.id)}
-                  onChange={() => toggleSelect(user.id)}
-                  className="rounded border-blaster-border"
-                />
-                <div className="flex-1 min-w-0">
+                {selectionMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(user.id)}
+                    onChange={() => toggleSelect(user.id)}
+                    className="rounded border-blaster-border shrink-0"
+                  />
+                )}
+                <div className="flex flex-col min-w-0 flex-1">
                   <p className="font-medium text-blaster-fg truncate">{user.name || user.email || user.id}</p>
                   <p className="text-sm text-blaster-muted truncate">{user.email}</p>
-                  <p className="text-xs text-blaster-muted mt-0.5">
-                    {formatDate(user.createdAt)} · {user.planName}
+                </div>
+                <div className="flex flex-1 flex-col items-center justify-center min-w-0">
+                  <div className="flex flex-col text-left text-sm text-blaster-muted">
+                  <span>{formatDate(user.createdAt)}</span>
+                  <span className="mt-0.5">
+                    {user.planName}
                     {user.deactivatedAt && <span className="text-amber-600 ml-1">(disabled)</span>}
                     {user.suspendedAt && <span className="text-amber-600 ml-1">(suspended)</span>}
-                  </p>
+                  </span>
+                  </div>
                 </div>
                 <div className="relative shrink-0">
                   <button

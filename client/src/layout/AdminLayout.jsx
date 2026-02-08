@@ -1,15 +1,39 @@
-import React, { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useAdmin } from '../context/AdminContext';
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '';
 const ADMIN_API = `${API_BASE}/api/bl-admin`;
+const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
 
 const navItems = [
   { to: '/bl-admin/overview', label: 'Overview', end: true },
-  { to: '/bl-admin/users', label: 'Users', end: false },
-  { to: '/bl-admin/subscriptions', label: 'Subscriptions', end: false },
-  { to: '/bl-admin/messages', label: 'Messages', end: false },
+  { to: '/bl-admin/users', label: 'Users', end: false, countKey: 'users' },
+  { to: '/bl-admin/subscriptions', label: 'Subscriptions', end: false, countKey: 'subscriptions' },
+  { to: '/bl-admin/messages', label: 'Messages', end: false, countKey: 'messages' },
 ];
+
+function getLastSeen() {
+  try {
+    const raw = typeof window !== 'undefined' && window.localStorage.getItem(LAST_SEEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      users: Number(parsed.users) || 0,
+      subscriptions: Number(parsed.subscriptions) || 0,
+      messages: Number(parsed.messages) || 0,
+    };
+  } catch (_) {
+    return { users: 0, subscriptions: 0, messages: 0 };
+  }
+}
+
+function setLastSeen(key, value) {
+  try {
+    const prev = getLastSeen();
+    prev[key] = value;
+    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(prev));
+  } catch (_) {}
+}
 
 function LayoutIcon({ name }) {
   const icons = {
@@ -39,7 +63,52 @@ function LayoutIcon({ name }) {
 
 export function AdminLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { adminFetch } = useAdmin();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [counts, setCounts] = useState({ users: 0, subscriptions: 0, messages: 0 });
+  const [lastSeen, setLastSeenState] = useState(getLastSeen);
+
+  useEffect(() => {
+    setLastSeenState(getLastSeen());
+  }, []);
+
+  const fetchCounts = useCallback(() => {
+    adminFetch('/sidebar-counts')
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d) => setCounts({
+        users: d.users ?? 0,
+        subscriptions: d.subscriptions ?? 0,
+        messages: d.messages ?? 0,
+      }))
+      .catch(() => {});
+  }, [adminFetch]);
+
+  useEffect(() => {
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 60000);
+    return () => clearInterval(interval);
+  }, [fetchCounts]);
+
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/bl-admin/users')) {
+      setLastSeen('users', counts.users);
+      setLastSeenState((prev) => ({ ...prev, users: counts.users }));
+    } else if (path.startsWith('/bl-admin/subscriptions')) {
+      setLastSeen('subscriptions', counts.subscriptions);
+      setLastSeenState((prev) => ({ ...prev, subscriptions: counts.subscriptions }));
+    } else if (path.startsWith('/bl-admin/messages')) {
+      setLastSeen('messages', counts.messages);
+      setLastSeenState((prev) => ({ ...prev, messages: counts.messages }));
+    }
+  }, [location.pathname, counts.users, counts.subscriptions, counts.messages]);
+
+  const hasUpdate = {
+    users: counts.users > lastSeen.users,
+    subscriptions: counts.subscriptions > lastSeen.subscriptions,
+    messages: counts.messages > lastSeen.messages,
+  };
 
   const logout = async () => {
     try {
@@ -70,7 +139,7 @@ export function AdminLayout() {
           </span>
         </div>
         <nav className="flex-1 p-3 space-y-0.5">
-          {navItems.map(({ to, label, end }) => (
+          {navItems.map(({ to, label, end, countKey }) => (
             <NavLink
               key={to}
               to={to}
@@ -83,7 +152,10 @@ export function AdminLayout() {
               }
             >
               <LayoutIcon name={to.split('/').pop()} />
-              {label}
+              <span className="flex-1 text-left">{label}</span>
+              {countKey && hasUpdate[countKey] && (
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-hidden title="New updates" />
+              )}
             </NavLink>
           ))}
         </nav>
