@@ -151,7 +151,16 @@ export function SignupPage() {
             visible={passwordVisible}
           />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-600">
+            <p>{error}</p>
+            {error.toLowerCase().includes('already exists') && (
+              <Link to="/login" className="mt-2 inline-block font-medium hover:underline">
+                Sign in instead →
+              </Link>
+            )}
+          </div>
+        )}
         <button type="submit" disabled={submitting} className={authPrimaryButtonClass}>
           {submitting ? 'Creating account…' : 'Create account'}
         </button>

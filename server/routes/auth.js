@@ -167,7 +167,18 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
        VALUES ($1, $2, $3, $4, 'credentials', 0, $5, $6, NOW())`,
       [id, emailNorm, hash, displayName, code, expiresAt]
     );
-    await sendVerificationCode(emailNorm, code);
+    try {
+      await sendVerificationCode(emailNorm, code);
+    } catch (emailErr) {
+      await db.query('DELETE FROM users WHERE id = $1', [id]);
+      const msg = emailErr?.message || 'Failed to send verification email';
+      console.error('[auth register] email send failed', msg);
+      return res.status(503).json({
+        error: msg.includes('testing emails') || msg.includes('recipient')
+          ? "We couldn't send the verification email. In test mode you can only send to your verified email. Verify a domain at resend.com/domains to send to any address."
+          : "We couldn't send the verification email. Please try again later or contact support.",
+      });
+    }
 
     res.status(201).json({
       needsVerification: true,
