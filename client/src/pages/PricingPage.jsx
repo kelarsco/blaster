@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Check } from 'react-feather';
+import { Check, X, ChevronDown } from 'react-feather';
 import {
   PLANS,
   MONTHS_BILLED_ANNUALLY,
@@ -11,11 +11,51 @@ import {
   PLAN_KEY,
 } from '../data/plans';
 
+const SIDEBAR_DURATION_MS = 300;
+
+const NAV_LINKS = [
+  { href: '/#features', label: 'Solutions' },
+  { href: '/#security', label: 'Security' },
+  { href: '/#how', label: 'How it works' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/#faq', label: 'FAQ' },
+];
+
 export function PricingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [billingPeriod, setBillingPeriod] = useState('monthly');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarClosing, setSidebarClosing] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const closeTimeoutRef = useRef(null);
   const isAnnually = billingPeriod === 'annually';
+
+  useEffect(() => {
+    if (sidebarOpen && !sidebarClosing) {
+      const t = setTimeout(() => setSidebarVisible(true), 10);
+      return () => clearTimeout(t);
+    }
+    setSidebarVisible(false);
+  }, [sidebarOpen, sidebarClosing]);
+
+  const closeSidebar = () => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    setSidebarClosing(true);
+    setSidebarVisible(false);
+    closeTimeoutRef.current = setTimeout(() => {
+      setSidebarOpen(false);
+      setSidebarClosing(false);
+      closeTimeoutRef.current = null;
+    }, SIDEBAR_DURATION_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
 
   const handleChoosePlan = (plan) => {
     const planId = plan.id === 'free' ? 'free' : isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
@@ -36,18 +76,94 @@ export function PricingPage() {
             <span className="truncate">wiblaster</span>
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <Link to="/login" className="text-sm font-medium text-blaster-fg hover:text-blaster-accent transition">
-              Log in
-            </Link>
             <Link
               to="/signup"
-              className="inline-flex items-center justify-center px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-blaster-fg text-white text-sm font-semibold btn-landing-pop whitespace-nowrap scale-[0.7] sm:scale-100 origin-center"
+              className="inline-flex items-center justify-center px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-blaster-fg text-white text-sm font-semibold btn-landing-pop whitespace-nowrap scale-[0.84] sm:scale-100 origin-center"
             >
               Get Started Free
             </Link>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg text-blaster-fg hover:bg-blaster-border/50 transition btn-landing-pop"
+              aria-label="Open menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
           </div>
         </div>
       </header>
+
+      {sidebarOpen && (
+        <>
+          <div
+            className={`fixed inset-0 z-50 bg-black/30 backdrop-blur-sm sidebar-overlay ${sidebarVisible ? 'sidebar-overlay-open' : ''} ${sidebarClosing ? 'sidebar-overlay-closing' : ''}`}
+            onClick={closeSidebar}
+            aria-hidden
+          />
+          <aside
+            className={`fixed top-0 right-0 z-50 w-full max-w-sm h-full bg-white border-l border-blaster-border shadow-xl flex flex-col sidebar-panel rounded-tl-2xl rounded-bl-2xl ${sidebarVisible ? 'sidebar-panel-open' : ''} ${sidebarClosing ? 'sidebar-panel-closing' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-blaster-border">
+              <span className="font-bold text-black">Menu</span>
+              <button
+                type="button"
+                onClick={closeSidebar}
+                className="p-2 rounded-lg text-black hover:bg-blaster-bg-app transition"
+                aria-label="Close menu"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+              {NAV_LINKS.map((l) => (
+                <Link
+                  key={l.href}
+                  to={l.href}
+                  onClick={closeSidebar}
+                  className="block py-3 text-black font-medium hover:opacity-80 transition"
+                >
+                  {l.label}
+                </Link>
+              ))}
+              <Link to="/login" onClick={closeSidebar} className="block py-3 text-black font-medium hover:opacity-80 transition">
+                Log in
+              </Link>
+              <Link
+                to="/signup"
+                onClick={closeSidebar}
+                className="block py-3 text-black font-medium hover:opacity-80 transition"
+              >
+                Get Started Free
+              </Link>
+            </nav>
+            <div className="p-4 border-t border-blaster-border shrink-0">
+              <div className="rounded-xl bg-blaster-accent/10 border border-blaster-accent/20 p-4">
+                <h3 className="font-bold text-black text-center">Scale your outreach</h3>
+                <p className="text-sm text-blaster-muted text-center mt-1">
+                  Find emails from store sites and send campaigns with multiple senders.
+                </p>
+                <Link
+                  to="/signup"
+                  onClick={closeSidebar}
+                  className="mt-3 block text-center text-sm font-medium text-black hover:underline"
+                >
+                  Learn more →
+                </Link>
+              </div>
+              <p className="text-xs text-blaster-muted mt-4">© {new Date().getFullYear()} wiblaster.</p>
+              <Link to="/privacy" onClick={closeSidebar} className="text-xs text-blaster-muted hover:underline mt-1 inline-block">
+                Privacy Policy
+              </Link>
+            </div>
+          </aside>
+        </>
+      )}
 
       <main className="max-w-6xl mx-auto px-4 py-12 sm:py-16">
         <div className="text-center">
@@ -146,6 +262,148 @@ export function PricingPage() {
             );
           })}
         </div>
+
+        <section className="mt-12 border-t border-blaster-border pt-8">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((o) => !o)}
+            className="w-full flex items-center justify-center gap-2 text-blaster-fg font-medium hover:text-blaster-accent transition-colors py-2"
+            aria-expanded={detailsOpen}
+          >
+            <ChevronDown
+              className={`w-5 h-5 shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`}
+              strokeWidth={2}
+            />
+            See details
+          </button>
+          {detailsOpen && (
+            <div className="mt-6 bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border overflow-hidden">
+              <h2 className="px-6 py-3 text-base font-semibold text-blaster-fg border-b border-blaster-border">
+                Feature comparison
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-blaster-border">
+                      <th className="text-left px-6 py-3 text-blaster-muted font-medium">Feature</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Free</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Essentials</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Standard</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Premium</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Email sends per month</td>
+                      <td className="px-6 py-3 text-blaster-fg">500 total</td>
+                      <td className="px-6 py-3 text-blaster-fg">10,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">30,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">150,000</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Store links extracted</td>
+                      <td className="px-6 py-3 text-blaster-fg">1,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">15,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">40,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Email senders</td>
+                      <td className="px-6 py-3 text-blaster-fg">1 SMTP sender</td>
+                      <td className="px-6 py-3 text-blaster-fg">Up to 3</td>
+                      <td className="px-6 py-3 text-blaster-fg">Up to 7</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Campaigns</td>
+                      <td className="px-6 py-3 text-blaster-fg">1 active</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited concurrent</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Recipients source</td>
+                      <td className="px-6 py-3 text-blaster-fg">Scan results only</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Sender rotation</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><Check className="w-4 h-4 text-emerald-600 inline" strokeWidth={2.5} /></td>
+                      <td className="px-6 py-3 text-blaster-fg">Advanced</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Campaign presets</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><Check className="w-4 h-4 text-emerald-600 inline" strokeWidth={2.5} /></td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Delay controls</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">Basic</td>
+                      <td className="px-6 py-3 text-blaster-fg">Min/max randomization</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">One-email-per-store</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><Check className="w-4 h-4 text-emerald-600 inline" strokeWidth={2.5} /></td>
+                      <td className="px-6 py-3"><Check className="w-4 h-4 text-emerald-600 inline" strokeWidth={2.5} /></td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Exports</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3 text-blaster-fg">Excel (.xlsx)</td>
+                      <td className="px-6 py-3 text-blaster-fg">Advanced (custom fields)</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Users</td>
+                      <td className="px-6 py-3 text-blaster-fg">1 seat</td>
+                      <td className="px-6 py-3 text-blaster-fg">3 seats</td>
+                      <td className="px-6 py-3 text-blaster-fg">5 seats</td>
+                      <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Personalized onboarding</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3 text-blaster-fg">1 session</td>
+                      <td className="px-6 py-3 text-blaster-fg">4 sessions</td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Advanced retry & error recovery</td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
+                      <td className="px-6 py-3"><Check className="w-4 h-4 text-emerald-600 inline" strokeWidth={2.5} /></td>
+                    </tr>
+                    <tr className="border-b border-blaster-border">
+                      <td className="px-6 py-3 text-blaster-muted">Activity logs & monitoring</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">—</td>
+                      <td className="px-6 py-3 text-blaster-fg">Full access</td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-3 text-blaster-muted">Customer support</td>
+                      <td className="px-6 py-3 text-blaster-fg">Email (limited)</td>
+                      <td className="px-6 py-3 text-blaster-fg">24/7 email & chat</td>
+                      <td className="px-6 py-3 text-blaster-fg">24/7 email & chat</td>
+                      <td className="px-6 py-3 text-blaster-fg">Phone + priority</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
 
         <section className="mt-16 text-center">
           <h2 className="text-xl font-bold text-blaster-fg">What’s included in every plan</h2>
