@@ -366,6 +366,7 @@ async function runSchema(p) {
     await migrateStoreNotesPK(p);
     await migrateScanResultsCascade(p);
     await migrateCampaignChildCascade(p);
+    await migrateSendersGmailOAuth(p);
   } finally {
     client.release();
   }
@@ -399,6 +400,22 @@ async function migrateCampaignChildCascade(pool) {
     `);
   } catch (e) {
     console.warn('[migrateCampaignChildCascade]', e?.message || e);
+  }
+}
+
+/** Add Gmail OAuth columns to senders (provider, tokens, status, daily_sent). */
+async function migrateSendersGmailOAuth(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'smtp';
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_access_token TEXT;
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_refresh_token TEXT;
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_status TEXT;
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS daily_sent INTEGER DEFAULT 0;
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_connected_at TIMESTAMPTZ;
+    `);
+  } catch (e) {
+    console.warn('[migrateSendersGmailOAuth]', e?.message || e);
   }
 }
 

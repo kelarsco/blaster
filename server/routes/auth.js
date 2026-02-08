@@ -25,6 +25,15 @@ import {
   getRefreshCookieName,
   getAccessTTLSeconds,
 } from '../services/tokenAuth.js';
+import {
+  verifyConnectToken,
+  createConnectCookiePayload,
+  verifyConnectCookiePayload,
+  getGmailConnectCookieName,
+  getGmailConnectCookieMaxAge,
+  getGmailConnectCallbackUrl,
+  upsertGmailSender,
+} from '../services/gmailConnect.js';
 
 const hasGoogleConfig =
   process.env.GOOGLE_CLIENT_ID &&
@@ -475,6 +484,124 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     console.error('[auth refresh]', e?.message || e);
     res.status(200).json({});
   }
+});
+
+/** Gmail connect flow: verify connect_token, set cookie, redirect to Google OAuth (scope gmail.send). */
+authRoutes.get('/gmail-connect', (req, res) => {
+  const connectToken = (req.query.connect_token || '').toString().trim();
+  const payload = verifyConnectToken(connectToken);
+  if (!payload?.userId) {
+    const base = FRONTEND_URL();
+    return res.redirect(302, base + '/app/senders?gmail=error&message=' + encodeURIComponent('Invalid or expired link. Try connecting again from Senders.'));
+  }
+  if (!hasGoogleConfig) {
+    const base = FRONTEND_URL();
+    return res.redirect(302, base + '/app/senders?gmail=error&message=' + encodeURIComponent('Google OAuth is not configured.'));
+  }
+  const cookiePayload = createConnectCookiePayload(payload.userId);
+  const isDev = process.env.NODE_ENV !== 'production';
+  const isCrossOrigin = process.env.NODE_ENV === 'production' && (process.env.FRONTEND_URL || '').trim();
+  res.cookie(getGmailConnectCookieName(), cookiePayload, {
+    httpOnly: true,
+    secure: !isDev,
+    sameSite: isCrossOrigin ? 'none' : 'lax',
+    maxAge: getGmailConnectCookieMaxAge(),
+    path: '/',
+  });
+  const redirectUri = getGmailConnectCallbackUrl();
+  const scope = 'openid email profile https://www.googleapis.com/auth/gmail.send';
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('scope', scope);
+  authUrl.searchParams.set('access_type', 'offline');
+  authUrl.searchParams.set('prompt', 'consent');
+  authUrl.searchParams.set('state', connectToken);
+  res.redirect(302, authUrl.toString());
+});
+
+/** Gmail connect callback: exchange code for tokens, create/update sender, redirect to app. */
+authRoutes.get('/gmail-connect/callback', async (req, res) => {
+  const base = FRONTEND_URL();
+  const clearAndRedirect = (query = '') => {
+    res.clearCookie(getGmailConnectCookieName(), { path: '/', httpOnly: true });
+    res.redirect(302, base + '/app/senders' + (query ? '?' + query : ''));
+  };
+  const code = (req.query.code || '').toString().trim();
+  const errorQuery = req.query.error ? 'error=' + encodeURIComponent(req.query.error) : '';
+  if (!code) {
+    return clearAndRedirect(errorQuery ? 'gmail=denied&' + errorQuery : 'gmail=denied');
+  }
+  const cookiePayload = req.cookies?.[getGmailConnectCookieName()];
+  const userId = verifyConnectCookiePayload(cookiePayload);
+  if (!userId) {
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Session expired. Try connecting again from Senders.'));
+  }
+  if (!hasGoogleConfig) return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Google OAuth not configured.'));
+
+  const redirectUri = getGmailConnectCallbackUrl();
+  let tokenRes;
+  try {
+    tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+  } catch (e) {
+    console.error('[gmail-connect callback] token exchange', e?.message || e);
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Could not connect to Google. Try again.'));
+  }
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    console.error('[gmail-connect callback] token error', tokenRes.status, errText);
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Google denied access. Try again and grant all requested permissions.'));
+  }
+  let tokenData;
+  try {
+    tokenData = await tokenRes.json();
+  } catch (_) {
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Invalid response from Google.'));
+  }
+  const accessToken = tokenData.access_token;
+  const refreshToken = tokenData.refresh_token || null;
+  if (!accessToken) {
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('No access token from Google.'));
+  }
+
+  let userinfoRes;
+  try {
+    userinfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: 'Bearer ' + accessToken },
+    });
+  } catch (e) {
+    console.error('[gmail-connect callback] userinfo', e?.message || e);
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Could not get account info.'));
+  }
+  if (!userinfoRes.ok) {
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Could not get Gmail address.'));
+  }
+  let userinfo;
+  try {
+    userinfo = await userinfoRes.json();
+  } catch (_) {
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent('Invalid account info.'));
+  }
+  const email = userinfo?.email || null;
+
+  try {
+    await upsertGmailSender(userId, email, accessToken, refreshToken);
+  } catch (e) {
+    console.error('[gmail-connect callback] upsert', e?.message || e);
+    return clearAndRedirect('gmail=error&message=' + encodeURIComponent(e?.message || 'Failed to save sender.'));
+  }
+  clearAndRedirect('gmail=connected');
 });
 
 authRoutes.get('/google', (req, res, next) => {

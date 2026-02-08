@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
+import { sendEmailViaGmail } from './gmailSend.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -67,13 +68,50 @@ export async function processSendEmail(payload) {
     return;
   }
 
+  const provider = (senderRow.provider || 'smtp').toLowerCase();
+  const storeDomain = (() => {
+    try {
+      return new URL(storeUrl).hostname;
+    } catch {
+      return storeUrl;
+    }
+  })();
+  const finalBody = (body || '')
+    .replace(/\{\{store_url\}\}/g, storeUrl)
+    .replace(/\{\{store_domain\}\}/g, storeDomain);
+  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
+
+  if (provider === 'gmail_oauth') {
+    const accessToken = senderRow.oauth_access_token;
+    const refreshToken = senderRow.oauth_refresh_token || null;
+    if (!accessToken) {
+      console.error('[send] Gmail sender has no token. Reconnect in Senders.');
+      await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Gmail not connected');
+      return;
+    }
+    const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 2));
+    const doSend = async () => {
+      await sendEmailViaGmail(senderId, senderRow.email, accessToken, refreshToken, email, finalSubject, finalBody);
+      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
+      if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
+    };
+    try {
+      await withSenderSerialization(senderId, maxPerMinute, doSend);
+    } catch (err) {
+      const errMsg = err.message || String(err);
+      console.error('[send] Gmail API error:', errMsg, '| to:', email, '| from:', senderRow.email);
+      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', errMsg);
+      if (inserted) await updateCampaignCounts(db, campaignId, 'failed');
+    }
+    return;
+  }
+
   let config;
   try {
     config = JSON.parse(senderRow.config || '{}');
   } catch {
     config = {};
   }
-
   const auth = config.auth && (config.auth.user || config.auth.pass)
     ? { user: config.auth.user, pass: config.auth.pass }
     : undefined;
@@ -85,19 +123,6 @@ export async function processSendEmail(payload) {
 
   const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 10));
   const transporter = getTransporter(senderId, config, auth);
-
-  const storeDomain = (() => {
-    try {
-      return new URL(storeUrl).hostname;
-    } catch {
-      return storeUrl;
-    }
-  })();
-
-  const finalBody = (body || '')
-    .replace(/\{\{store_url\}\}/g, storeUrl)
-    .replace(/\{\{store_domain\}\}/g, storeDomain);
-  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
 
   const doSend = async () => {
     await transporter.sendMail({
