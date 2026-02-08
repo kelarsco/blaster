@@ -28,8 +28,8 @@ export const PLANS = [
     tag: null,
     description:
       'Reliable outreach for early-stage growth. Designed for solo operators and agencies beginning consistent outreach.',
-    price: 15,
-    originalPrice: 30,
+    price: 20,
+    originalPrice: 40,
     period: 'month',
     current: false,
     features: {
@@ -47,8 +47,8 @@ export const PLANS = [
     tag: 'Best value',
     description:
       'Scale outreach with control, personalization, and automation. Built for serious outreach workflows that need stability and performance.',
-    price: 35,
-    originalPrice: 70,
+    price: 50,
+    originalPrice: 100,
     period: 'month',
     current: false,
     features: {
@@ -66,8 +66,8 @@ export const PLANS = [
     tag: null,
     description:
       'High-volume outreach for teams and power users. Built for agencies and teams running large-scale cold email operations.',
-    price: 160,
-    originalPrice: 320,
+    price: 190,
+    originalPrice: 380,
     period: 'month',
     current: false,
     features: {

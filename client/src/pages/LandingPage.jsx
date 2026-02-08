@@ -90,6 +90,25 @@ export function LandingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const els = document.querySelectorAll('.aos-fade-up');
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            const el = e.target;
+            el.classList.add('aos-visible');
+            const delay = el.getAttribute('data-aos-delay');
+            if (delay) el.style.transitionDelay = `${delay}ms`;
+          }
+        });
+      },
+      { threshold: 0.05, rootMargin: '0px 0px -40px 0px' }
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, []);
+
   return (
     <div className="min-h-screen bg-blaster-bg font-landing text-blaster-fg">
       {/* Header – same bg as hero, logo left, pill CTA + menu right */}
@@ -187,17 +206,17 @@ export function LandingPage() {
         </>
       )}
 
-      {/* Hero */}
+      {/* Hero – title has no AOS; rest fades up */}
       <section className="relative min-h-[80vh] pt-16 pb-28 px-4 overflow-hidden flex flex-col justify-center">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,#faf8f5_100%)] pointer-events-none" />
         <div className="max-w-2xl mx-auto text-center relative">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-blaster-fg tracking-tight leading-tight">
             <HeroSplitText text="Find store emails. Send outreach at scale." delayMs={70} />
           </h1>
-          <p className="mt-6 text-lg sm:text-xl text-blaster-muted max-w-2xl mx-auto">
+          <p className="aos-fade-up mt-6 text-lg sm:text-xl text-blaster-muted max-w-2xl mx-auto">
             wiblaster scans every website for contact emails and powers automated campaigns—so you save time and grow leads without the guesswork.
           </p>
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="aos-fade-up mt-10 flex flex-col sm:flex-row items-center justify-center gap-3" data-aos-delay="100">
             <Link
               to="/signup"
               className="w-full sm:w-auto btn-blaster-cta whitespace-nowrap text-center btn-landing-pop"
@@ -216,15 +235,16 @@ export function LandingPage() {
 
       {/* Why wiblaster – card grid like reference */}
       <section id="features" className="pt-8 pb-16 sm:pt-10 sm:pb-20 px-4 bg-blaster-bg">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg text-center">
             Why wiblaster?
           </h2>
           <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {WHY_ITEMS.map((item) => (
+            {WHY_ITEMS.map((item, i) => (
               <div
                 key={item.title}
-                className="bg-blaster-bg-card rounded-2xl p-6 shadow-md border border-blaster-border/60 flex flex-col"
+                className="aos-fade-up bg-blaster-bg-card rounded-2xl p-6 shadow-md border border-blaster-border/60 flex flex-col"
+                data-aos-delay={50 + i * 50}
               >
                 <div className="rounded-xl bg-blaster-accent/10 flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 mb-4 shrink-0 text-blaster-accent">
                   <item.Icon className="w-7 h-7 sm:w-8 sm:h-8" strokeWidth={2} />
@@ -238,7 +258,7 @@ export function LandingPage() {
               </div>
             ))}
           </div>
-          <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="aos-fade-up mt-12 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link to="/signup" className="btn-blaster-cta btn-landing-pop w-full sm:w-auto text-center">
               Get Started Free
             </Link>
@@ -251,7 +271,7 @@ export function LandingPage() {
 
       {/* What's included */}
       <section className="py-16 px-4">
-        <div className="max-w-6xl mx-auto text-center">
+        <div className="max-w-6xl mx-auto text-center aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg">
             What's included
           </h2>
@@ -279,15 +299,16 @@ export function LandingPage() {
 
       {/* Imagine this */}
       <section className="py-16 px-4 bg-blaster-bg-card border-y border-blaster-border">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg text-center">
             Imagine this
           </h2>
           <div className="mt-12 grid md:grid-cols-3 gap-8">
-            {IMAGINE_CARDS.map((card) => (
+            {IMAGINE_CARDS.map((card, i) => (
               <div
                 key={card.title}
-                className="bg-white rounded-xl p-6 border border-blaster-border shadow-sm"
+                className="aos-fade-up bg-white rounded-xl p-6 border border-blaster-border shadow-sm"
+                data-aos-delay={i * 80}
               >
                 <h3 className="font-semibold text-blaster-fg">{card.title}</h3>
                 <p className="mt-2 text-sm text-blaster-muted">{card.desc}</p>
@@ -299,7 +320,7 @@ export function LandingPage() {
 
       {/* Free vs Upgraded */}
       <section id="pricing" className="py-16 px-4">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg text-center">
             Free vs paid
           </h2>
@@ -351,7 +372,7 @@ export function LandingPage() {
 
       {/* FAQ */}
       <section id="faq" className="py-16 px-4 bg-blaster-bg-card border-y border-blaster-border">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg text-center">
             Frequently asked questions
           </h2>
@@ -359,7 +380,8 @@ export function LandingPage() {
             {FAQ_ITEMS.map((item, i) => (
               <div
                 key={i}
-                className="bg-white rounded-lg border border-blaster-border overflow-hidden"
+                className="aos-fade-up bg-white rounded-lg border border-blaster-border overflow-hidden"
+                data-aos-delay={i * 40}
               >
                 <button
                   type="button"
@@ -384,7 +406,7 @@ export function LandingPage() {
 
       {/* Bottom CTA block */}
       <section className="py-16 px-4">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto aos-fade-up">
           <div className="rounded-2xl bg-blaster-accent/10 border border-blaster-accent/20 p-8 sm:p-12 text-center">
             <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg">
               You find more leads. You send smarter. You scale outreach.
@@ -404,7 +426,7 @@ export function LandingPage() {
 
       {/* Footer */}
       <footer className="py-10 px-4 border-t border-blaster-border bg-white">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto aos-fade-up">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
             <div>
               <h4 className="font-semibold text-blaster-fg mb-3">Product</h4>

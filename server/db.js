@@ -253,12 +253,12 @@ async function runSchema(p) {
 
       INSERT INTO plans (id, name, amount, interval, features) VALUES
         ('free', 'Free', 0, 'monthly', '{"emails":"500","users":"1 seat","support":"Email (limited)"}'::jsonb),
-        ('essentials_monthly', 'Essentials', 1500, 'monthly', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
-        ('essentials_annual', 'Essentials', 15000, 'annually', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
-        ('standard_monthly', 'Standard', 3500, 'monthly', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
-        ('standard_annual', 'Standard', 35000, 'annually', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
-        ('premium_monthly', 'Premium', 16000, 'monthly', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb),
-        ('premium_annual', 'Premium', 160000, 'annually', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb)
+        ('essentials_monthly', 'Essentials', 2000, 'monthly', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('essentials_annual', 'Essentials', 20000, 'annually', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('standard_monthly', 'Standard', 5000, 'monthly', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
+        ('standard_annual', 'Standard', 50000, 'annually', '{"emails":"30000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
+        ('premium_monthly', 'Premium', 19000, 'monthly', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb),
+        ('premium_annual', 'Premium', 190000, 'annually', '{"emails":"150000","users":"Unlimited","support":"Phone + priority"}'::jsonb)
       ON CONFLICT (id) DO NOTHING;
 
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"1"') WHERE id = 'free';
@@ -274,8 +274,12 @@ async function runSchema(p) {
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'free';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free');
-      UPDATE plans SET amount = 1500, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
-      UPDATE plans SET amount = 15000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET amount = 2000, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET amount = 20000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET amount = 5000, paystack_plan_code = NULL WHERE id = 'standard_monthly';
+      UPDATE plans SET amount = 50000, paystack_plan_code = NULL WHERE id = 'standard_annual';
+      UPDATE plans SET amount = 19000, paystack_plan_code = NULL WHERE id = 'premium_monthly';
+      UPDATE plans SET amount = 190000, paystack_plan_code = NULL WHERE id = 'premium_annual';
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
@@ -288,6 +292,7 @@ async function runSchema(p) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS picture_url TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

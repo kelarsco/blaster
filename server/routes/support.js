@@ -58,6 +58,7 @@ supportRoutes.post('/message', requireAuth, async (req, res) => {
       'INSERT INTO support_messages (id, thread_id, sender, body) VALUES ($1, $2, $3, $4)',
       [id, row.id, 'user', body]
     );
+    await db.query('UPDATE support_threads SET updated_at = NOW() WHERE id = $1', [row.id]);
     const created = (await db.query(
       'SELECT id, sender, body, created_at FROM support_messages WHERE id = $1',
       [id]

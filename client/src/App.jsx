@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToolStateProvider } from './context/ToolStateContext';
 import { LandingPage } from './pages/LandingPage';
@@ -29,6 +29,15 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { PricingPage } from './pages/PricingPage';
+import { AdminProvider, useAdmin } from './context/AdminContext';
+import { AdminLoginPage } from './pages/bl-admin/AdminLoginPage';
+import { AdminLayout } from './layout/AdminLayout';
+import { AdminOverviewPage } from './pages/bl-admin/AdminOverviewPage';
+import { AdminUsersPage } from './pages/bl-admin/AdminUsersPage';
+import { AdminSubscriptionsPage } from './pages/bl-admin/AdminSubscriptionsPage';
+import { AdminMessagesPage } from './pages/bl-admin/AdminMessagesPage';
+import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
+
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -45,6 +54,19 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function AdminProtectedLayout() {
+  const { isAdmin, adminChecked } = useAdmin();
+  if (!adminChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-blaster-bg-app">
+        <div className="animate-pulse text-blaster-muted">Loading…</div>
+      </div>
+    );
+  }
+  if (!isAdmin) return <Navigate to="/bl-admin/login" replace />;
+  return <AdminLayout />;
+}
+
 function AppRoutes() {
   return (
     <>
@@ -59,6 +81,16 @@ function AppRoutes() {
         <Route path="/invite/accept" element={<InviteAcceptPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/bl-admin" element={<AdminProvider><Outlet /></AdminProvider>}>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="login" element={<AdminLoginPage />} />
+          <Route element={<AdminProtectedLayout />}>
+            <Route path="overview" element={<AdminOverviewPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
+            <Route path="messages" element={<AdminMessagesPage />} />
+          </Route>
+        </Route>
         <Route
           path="/app"
           element={
@@ -105,7 +137,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <GlobalPreloaderGate>
+          <AppRoutes />
+        </GlobalPreloaderGate>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -443,17 +443,16 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     const found = await findRefreshTokenByToken(token);
     if (!found) return res.status(200).json({});
     const db = getDb();
-    if (!db) return res.status(503).json({ error: 'Service unavailable' });
+    if (!db) return res.status(200).json({});
     const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at FROM users WHERE id = $1', [found.user_id]);
     const row = r?.rows?.[0];
-    if (!row) return res.status(401).json({ error: 'User not found' });
-    if (row.deactivated_at) return res.status(200).json({});
+    if (!row || row.deactivated_at) return res.status(200).json({});
     const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null, auth_provider: row.auth_provider || 'credentials' };
     const accessToken = createAccessToken(user);
     res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture, auth_provider: user.auth_provider }, accessToken, expiresIn: getAccessTTLSeconds() });
   } catch (e) {
     console.error('[auth refresh]', e?.message || e);
-    res.status(500).json({ error: e?.message || 'Refresh failed' });
+    res.status(200).json({});
   }
 });
 
