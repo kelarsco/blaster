@@ -84,6 +84,11 @@ automationRoutes.delete('/senders/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+/** GET so you can verify this endpoint is deployed (e.g. open in browser). Returns 405 for POST-only. */
+automationRoutes.get('/senders/connect-gmail', (_req, res) => {
+  res.status(405).json({ error: 'Use POST to get the Connect Gmail redirect URL.', method: 'POST' });
+});
+
 /** Get URL to start "Connect Gmail inbox" OAuth flow. Frontend redirects the user to this URL. */
 automationRoutes.post('/senders/connect-gmail', requireAuth, async (req, res) => {
   try {
