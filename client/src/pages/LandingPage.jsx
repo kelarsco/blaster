@@ -113,7 +113,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-blaster-bg font-landing text-blaster-fg">
       {/* Header – same bg as hero, logo left, pill CTA + menu right */}
       <header className="sticky top-0 z-40 bg-blaster-bg pt-[5px] pb-[5px]">
-        <div className="max-w-6xl mx-auto px-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 pt-3 pb-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-sm sm:text-lg uppercase tracking-tight text-blaster-fg shrink-0 min-w-0">
             <span className="text-blaster-accent">⚡</span>
             <span className="truncate">wiblaster</span>
