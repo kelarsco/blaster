@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -32,6 +33,7 @@ export function UrlInput({
   const [rawUrls, setRawUrls] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
 
   const urlCount = parseUrls(rawUrls).length;
   const isScanRunning = isScanning || (scanStatus && scanStatus.status === 'running');
@@ -39,6 +41,7 @@ export function UrlInput({
 
   const startScan = async () => {
     setError('');
+    setUpgradeRequired(false);
     setIsScanning(true);
     try {
       let paths, maxConcurrentCrawlers, maxUrlsPerScan;
@@ -74,8 +77,14 @@ export function UrlInput({
       }
 
       if (!res.ok) {
-        const serverMsg = data?.error ?? data?.message ?? '';
-        throw new Error(serverMsg || `Server error (${res.status}) while starting scan`);
+        if (data?.upgradeRequired) {
+          setError(data.error || "You've reached your free plan limit. Upgrade to continue scanning.");
+          setUpgradeRequired(true);
+        } else {
+          setError(data?.error ?? data?.message ?? `Server error (${res.status}) while starting scan`);
+        }
+        setIsScanning(false);
+        return;
       }
 
       onScanStart(data.scanId);
@@ -123,7 +132,14 @@ export function UrlInput({
         Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>
       </p>
       {error && (
-        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <div className="mt-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
+          <p>{error}</p>
+          {upgradeRequired && (
+            <Link to="/app/account/billing/monthly-plan" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
+              Upgrade plan →
+            </Link>
+          )}
+        </div>
       )}
       <div className="mt-4 flex gap-3">
         <button

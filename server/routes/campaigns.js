@@ -104,6 +104,13 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
     }
     const limits = await getPlanLimitsForUser(userId);
     if (limits.emailsLimit < 999999 && limits.emailsUsed + list.length > limits.emailsLimit) {
+      if (limits.isFreePlan) {
+        return res.status(403).json({
+          error: "You've reached your free plan email send limit. Upgrade to send more emails.",
+          upgradeRequired: true,
+          limitType: 'emails',
+        });
+      }
       const overageScans = Math.max(0, (limits.scansUsed ?? 0) - (limits.scansLimit ?? 1000));
       const wouldBeOverageEmails = limits.emailsUsed + list.length - limits.emailsLimit;
       const wouldBeOwed = Math.floor(overageScans / 500) + Math.floor(wouldBeOverageEmails / 300);

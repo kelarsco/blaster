@@ -66,6 +66,13 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       const scansUsed = limits.scansUsed ?? 0;
       const scansLimit = limits.scansLimit ?? 1000;
       if (scansLimit < 999999 && scansUsed + totalStores > scansLimit) {
+        if (limits.isFreePlan) {
+          return res.status(403).json({
+            error: "You've reached your free plan store scan limit. Upgrade to scan more stores.",
+            upgradeRequired: true,
+            limitType: 'scans',
+          });
+        }
         const overageEmails = Math.max(0, (limits.emailsUsed ?? 0) - (limits.emailsLimit ?? 500));
         const wouldBeOverageScans = scansUsed + totalStores - scansLimit;
         const wouldBeOwed = Math.floor(wouldBeOverageScans / 500) + Math.floor(overageEmails / 300);

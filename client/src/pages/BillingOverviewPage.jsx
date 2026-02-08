@@ -178,24 +178,26 @@ export function BillingOverviewPage() {
                     <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, sendersPct)}%` }} />
                   </div>
                 </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-blaster-muted">Extra credit</span>
-                    <span className="text-blaster-fg">${extraCredit.owed} of ${extraCredit.nextThreshold} limit</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
-                    <div className="h-full bg-amber-500/50 rounded-full transition-[width]" style={{ width: `${Math.min(100, extraPct)}%` }} />
-                  </div>
-                  <p className="text-xs text-blaster-muted mt-1">
-                    $1 per 500 extra scans + $1 per 300 extra email sends when you exceed your plan before the period ends. Pay at limit to continue.
-                  </p>
-                  {extraCredit.blocked && (
-                    <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 text-sm">
-                      Pay ${extraCredit.nextThreshold} to continue scanning and sending.
-                      <Link to="/app/account/billing/extra-credit" className="block mt-1 font-medium text-blaster-accent hover:underline">Go to payment →</Link>
+                {!isFree && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-blaster-muted">Extra credit</span>
+                      <span className="text-blaster-fg">${extraCredit.owed} of ${extraCredit.nextThreshold} limit</span>
                     </div>
-                  )}
-                </div>
+                    <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
+                      <div className="h-full bg-amber-500/50 rounded-full transition-[width]" style={{ width: `${Math.min(100, extraPct)}%` }} />
+                    </div>
+                    <p className="text-xs text-blaster-muted mt-1">
+                      $1 per 500 extra scans + $1 per 300 extra email sends when you exceed your plan before the period ends. Pay at limit to continue.
+                    </p>
+                    {extraCredit.blocked && (
+                      <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 text-sm">
+                        Pay ${extraCredit.nextThreshold} to continue scanning and sending.
+                        <Link to="/app/account/billing/extra-credit" className="block mt-1 font-medium text-blaster-accent hover:underline">Go to payment →</Link>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </section>

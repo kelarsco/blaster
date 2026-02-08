@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
@@ -9,6 +9,7 @@ const AMOUNT_CENTS = { 10: 1000, 30: 3000, 50: 5000, 100: 10000 };
 
 export function BillingExtraCreditPage() {
   const { authFetch } = useAuth();
+  const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(null);
@@ -25,6 +26,15 @@ export function BillingExtraCreditPage() {
       .catch(() => setOverview(null))
       .finally(() => setLoading(false));
   }, [authFetch]);
+
+  const plan = overview?.plan ?? { amount: 0 };
+  const isFree = plan.amount === 0;
+
+  useEffect(() => {
+    if (!loading && isFree) {
+      navigate('/app/account/billing', { replace: true });
+    }
+  }, [loading, isFree, navigate]);
 
   const extra = overview?.extraCredit ?? { owed: 0, nextThreshold: 10, blocked: false };
   const nextAmount = extra.nextThreshold;
@@ -73,7 +83,7 @@ export function BillingExtraCreditPage() {
         <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Pay your extra credit balance to continue scanning and sending</p>
       </div>
 
-      {loading ? (
+      {loading || isFree ? (
         <div className="animate-pulse h-24 rounded-xl bg-blaster-border/40" />
       ) : (
         <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border p-6 max-w-lg">

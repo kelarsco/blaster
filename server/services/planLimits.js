@@ -56,7 +56,10 @@ export async function getPlanLimitsForUser(userId) {
     sendersUsed: 0,
     campaignsActive: 0,
   };
-  if (!db) return defaults;
+  if (!db) {
+    defaults.isFreePlan = true;
+    return defaults;
+  }
 
   const sub = await db.query(
     `SELECT s.plan_id, s.current_period_start, s.current_period_end, p.features
@@ -129,6 +132,7 @@ export async function getPlanLimitsForUser(userId) {
   defaults.extraCreditPaidCents = paidCents;
   defaults.extraCreditNextThreshold = extraNextThreshold;
   defaults.extraCreditBlocked = extraOwed >= extraNextThreshold;
+  defaults.isFreePlan = !row;
 
   return defaults;
 }

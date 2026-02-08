@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 
@@ -69,6 +70,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
   const [confirmCompliance, setConfirmCompliance] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [savingPreset, setSavingPreset] = useState(false);
 
@@ -189,6 +191,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
     }
     setLoading(true);
     setError('');
+    setUpgradeRequired(false);
     try {
       const res = await authFetch(`${API}/campaigns/start`, {
         method: 'POST',
@@ -219,6 +222,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       }
       if (!res.ok) {
         setError(data.error || 'Failed to start campaign');
+        if (data.upgradeRequired) setUpgradeRequired(true);
         return;
       }
       onCampaignStart(data.campaignId);
@@ -433,7 +437,16 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
             </label>
           </section>
 
-          {error && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{error}</p>}
+          {error && (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
+              <p className="font-medium">{error}</p>
+              {upgradeRequired && (
+                <Link to="/app/account/billing/monthly-plan" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
+                  Upgrade plan →
+                </Link>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sticky footer */}
