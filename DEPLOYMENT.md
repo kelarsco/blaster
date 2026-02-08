@@ -65,11 +65,19 @@
 
 ## 4. Google OAuth (optional)
 
-1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create OAuth 2.0 Client (Web).
-2. **Authorized redirect URIs:**  
-   `https://your-app.vercel.app/api/auth/google/callback`
-3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` (and `SESSION_SECRET`) on Railway as in step 2.
-4. Without these, the app still runs with a dev user (no real login).
+The backend (Railway) handles the Google redirect. The callback URL must be your **Railway** URL, not your frontend domain.
+
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create OAuth 2.0 Client (Web application).
+2. **Authorized JavaScript origins** (add both if you use them):
+   - `https://www.yourdomain.com`
+   - `https://yourdomain.com` (if you use the non-www version)
+3. **Authorized redirect URIs** (add exactly):
+   - `https://your-railway-app.railway.app/api/auth/google/callback`  
+   (Use your real Railway public URL; no trailing slash.)
+4. **Railway variables:** set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and:
+   - `GOOGLE_CALLBACK_URL` = `https://your-railway-app.railway.app/api/auth/google/callback`
+   - `FRONTEND_URL` = `https://www.yourdomain.com` (so the backend redirects users back to your site after login)
+5. Without these, the app still runs with email/password only (no Google sign-in).
 
 ---
 
@@ -78,7 +86,7 @@
 - [ ] Neon: project created, connection string copied.
 - [ ] Railway: root = `server`, `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_URL` set; deploy and copy public URL.
 - [ ] Vercel: root = `client`, `VITE_API_URL` = Railway URL; deploy.
-- [ ] (Optional) Google OAuth: redirect URI = `https://<vercel-app>/api/auth/google/callback`; credentials on Railway.
+- [ ] (Optional) Google OAuth: redirect URI = `https://<railway-url>/api/auth/google/callback` in Google Console; `GOOGLE_CALLBACK_URL` and `FRONTEND_URL` on Railway.
 
 ---
 
@@ -89,3 +97,24 @@
 - **Full stack from root:** `npm run dev`
 
 No `VITE_API_URL` in local `.env` – the client uses the Vite proxy and relative `/api`.
+
+---
+
+## 6. Custom domain
+
+- **Frontend (Vercel):** Add your domain in Vercel → Project → Settings → Domains. Then set **`VITE_API_URL`** in Vercel’s env to your **Railway backend URL** (not your custom domain). Redeploy after changing env.
+- **Railway:** In Variables, set **`FRONTEND_URL`** to your **actual frontend origin**, e.g. `https://yourdomain.com` (no trailing slash). This is required for auth cookies to work cross-origin.
+
+---
+
+## 7. Troubleshooting: “Signup failed” / 405 on `/api/auth/register` or `/api/auth/refresh`
+
+**Symptom:** Browser shows “Signup failed” and console shows `405 (Method Not Allowed)` for `/api/auth/register` or `/api/auth/refresh`.
+
+**Cause:** The app is calling the API on the **frontend origin** (your domain or Vercel URL) instead of the **Railway backend**. That happens when the frontend was built **without** `VITE_API_URL` set, so it uses relative `/api/...` and the static host returns 405 for POST.
+
+**Fix:**
+
+1. **Where the frontend is built** (Vercel, Netlify, etc.): add or correct the env var **`VITE_API_URL`** = your **Railway backend URL** (e.g. `https://your-app.railway.app`). No trailing slash.
+2. **Redeploy the frontend** so a new build picks up `VITE_API_URL`. Changing the variable alone is not enough; you must trigger a new build.
+3. On **Railway**, set **`FRONTEND_URL`** to your **frontend origin** (e.g. `https://yourdomain.com` or your Vercel URL) so refresh-token cookies are allowed for your site.
