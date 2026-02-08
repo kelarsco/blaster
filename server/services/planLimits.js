@@ -117,6 +117,19 @@ export async function getPlanLimitsForUser(userId) {
   );
   defaults.sendersUsed = parseInt(sendersCount.rows?.[0]?.c ?? '0', 10);
 
+  const overageScans = Math.max(0, defaults.scansUsed - defaults.scansLimit);
+  const overageEmails = Math.max(0, defaults.emailsUsed - defaults.emailsLimit);
+  const extraOwed = Math.floor(overageScans / 500) + Math.floor(overageEmails / 300);
+  const extraRows = await db.query('SELECT paid_cents FROM user_extra_credit WHERE user_id = $1', [userId]);
+  const paidCents = extraRows.rows?.[0]?.paid_cents ?? 0;
+  const paidDollars = paidCents / 100;
+  const EXTRA_THRESHOLDS = [10, 30, 50, 100];
+  const extraNextThreshold = EXTRA_THRESHOLDS.find((t) => t > paidDollars) ?? 100;
+  defaults.extraCreditOwed = extraOwed;
+  defaults.extraCreditPaidCents = paidCents;
+  defaults.extraCreditNextThreshold = extraNextThreshold;
+  defaults.extraCreditBlocked = extraOwed >= extraNextThreshold;
+
   return defaults;
 }
 

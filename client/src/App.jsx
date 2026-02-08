@@ -20,6 +20,7 @@ import { BillingOverviewPage } from './pages/BillingOverviewPage';
 import { BillingMonthlyPlanPage } from './pages/BillingMonthlyPlanPage';
 import { BillingInformationPage } from './pages/BillingInformationPage';
 import { BillingHistoryPage } from './pages/BillingHistoryPage';
+import { BillingExtraCreditPage } from './pages/BillingExtraCreditPage';
 import { PricingPlansPage } from './pages/PricingPlansPage';
 import { InviteAcceptPage } from './pages/InviteAcceptPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -80,6 +81,7 @@ function AppRoutes() {
             <Route path="billing/monthly-plan" element={<BillingMonthlyPlanPage />} />
             <Route path="billing/information" element={<BillingInformationPage />} />
             <Route path="billing/history" element={<BillingHistoryPage />} />
+            <Route path="billing/extra-credit" element={<BillingExtraCreditPage />} />
             <Route path="pricing" element={<PricingPlansPage />} />
           </Route>
           <Route path="settings/*" element={<Navigate to="/app/settings" replace />} />

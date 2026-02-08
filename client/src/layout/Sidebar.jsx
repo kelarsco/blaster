@@ -264,16 +264,10 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
-            <p className="text-xs text-blaster-muted mb-3">Time sensitive</p>
-            <div className="flex items-start gap-2 mb-3">
-              <ClockIcon />
-              <div>
-                <p className="text-sm text-blaster-fg">
-                  {promoDaysLeft} day{promoDaysLeft === 1 ? '' : 's'} left to get
-                </p>
-                <p className="text-base font-bold text-blaster-fg">50% off for 3 months</p>
-              </div>
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-sm font-semibold text-blaster-fg">Free</p>
             </div>
+            <p className="text-xs text-blaster-muted mb-2">{promoDaysLeft} days left for 50% off</p>
             <NavLink
               to="/app/account/pricing"
               onClick={onMobileClose}

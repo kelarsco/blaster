@@ -20,6 +20,7 @@ export function BillingOverviewPage() {
   useEffect(() => {
     let reference = searchParams.get('reference');
     const paystackSuccess = searchParams.get('paystack') === 'success';
+    const isExtraCredit = searchParams.get('extra') === '1';
     if (!reference && paystackSuccess && typeof sessionStorage !== 'undefined') {
       try {
         reference = sessionStorage.getItem('paystack-pending-reference');
@@ -27,6 +28,28 @@ export function BillingOverviewPage() {
       } catch (_) {}
     }
     if (reference && authFetch) {
+      if (isExtraCredit && typeof sessionStorage !== 'undefined') {
+        try {
+          const amountCents = sessionStorage.getItem('paystack-extra-amount');
+          if (amountCents) {
+            sessionStorage.removeItem('paystack-extra-amount');
+            authFetch(`${API}/billing/extra-credit/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reference, amountCents: Number(amountCents) }),
+            })
+              .then((r) => r.json().catch(() => ({})))
+              .then((data) => {
+                if (data.ok) {
+                  setSearchParams({}, { replace: true });
+                  setTimeout(() => fetchOverview(), 100);
+                }
+              })
+              .finally(() => {});
+            return;
+          }
+        } catch (_) {}
+      }
       authFetch(`${API}/billing/verify-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,13 +99,17 @@ export function BillingOverviewPage() {
     return () => window.removeEventListener('focus', onFocus);
   }, [fetchOverview]);
 
-  const plan = overview?.plan ?? { name: 'Free', amount: 0, interval: 'monthly', features: { emails: '500', senders: '1' } };
-  const usage = overview?.usage ?? { sendersUsed: 0, sendersLimit: 1, emailsUsed: 0, emailsLimit: 500 };
+  const plan = overview?.plan ?? { name: 'Free', amount: 0, interval: 'monthly', features: { emails: '500', senders: '1', scans: '1000' } };
+  const usage = overview?.usage ?? { scansUsed: 0, scansLimit: 1000, sendersUsed: 0, sendersLimit: 1, emailsUsed: 0, emailsLimit: 500 };
+  const extraCredit = overview?.extraCredit ?? { owed: 0, paidCents: 0, nextThreshold: 10, blocked: false };
   const isFree = plan.amount === 0;
+  const scansRemaining = Math.max(0, (usage.scansLimit >= 999999 ? 999999 : usage.scansLimit) - (usage.scansUsed ?? 0));
   const sendersRemaining = Math.max(0, usage.sendersLimit >= 999 ? 999 : usage.sendersLimit - usage.sendersUsed);
-  const emailsRemaining = Math.max(0, usage.emailsLimit >= 999999 ? 999999 : usage.emailsLimit - usage.emailsUsed);
+  const emailsRemaining = Math.max(0, (usage.emailsLimit >= 999999 ? 999999 : usage.emailsLimit) - usage.emailsUsed);
+  const scansPct = (usage.scansLimit > 0 && usage.scansLimit < 999999) ? (Math.min((usage.scansUsed ?? 0) / usage.scansLimit, 1) * 100) : 0;
   const sendersPct = usage.sendersLimit > 0 && usage.sendersLimit < 999 ? (usage.sendersUsed / usage.sendersLimit) * 100 : 0;
   const emailsPct = usage.emailsLimit > 0 && usage.emailsLimit < 999999 ? (usage.emailsUsed / usage.emailsLimit) * 100 : 0;
+  const extraPct = extraCredit.nextThreshold > 0 ? Math.min(100, (extraCredit.owed / extraCredit.nextThreshold) * 100) : 0;
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
@@ -113,18 +140,20 @@ export function BillingOverviewPage() {
               <div className="space-y-4">
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
+                <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
+                <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
               </div>
             ) : (
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-blaster-muted">Contacts</span>
+                    <span className="text-blaster-muted">Stores scanned</span>
                     <span className="text-blaster-fg">
-                      {usage.sendersLimit >= 999 ? `${usage.sendersUsed} used · Unlimited` : `${usage.sendersUsed} of ${usage.sendersLimit} used · ${sendersRemaining} remaining`}
+                      {usage.scansLimit >= 999999 ? `${usage.scansUsed ?? 0} scanned · Unlimited` : `${usage.scansUsed ?? 0} of ${usage.scansLimit} used · ${scansRemaining} remaining`}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
-                    <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, sendersPct)}%` }} />
+                    <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, scansPct)}%` }} />
                   </div>
                 </div>
                 <div>
@@ -137,6 +166,35 @@ export function BillingOverviewPage() {
                   <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
                     <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, emailsPct)}%` }} />
                   </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-blaster-muted">Email senders</span>
+                    <span className="text-blaster-fg">
+                      {usage.sendersLimit >= 999 ? `${usage.sendersUsed} used · Unlimited` : `${usage.sendersUsed} of ${usage.sendersLimit} used · ${sendersRemaining} remaining`}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
+                    <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, sendersPct)}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-blaster-muted">Extra credit</span>
+                    <span className="text-blaster-fg">${extraCredit.owed} of ${extraCredit.nextThreshold} limit</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
+                    <div className="h-full bg-amber-500/50 rounded-full transition-[width]" style={{ width: `${Math.min(100, extraPct)}%` }} />
+                  </div>
+                  <p className="text-xs text-blaster-muted mt-1">
+                    $1 per 500 extra scans + $1 per 300 extra email sends when you exceed your plan before the period ends. Pay at limit to continue.
+                  </p>
+                  {extraCredit.blocked && (
+                    <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 text-sm">
+                      Pay ${extraCredit.nextThreshold} to continue scanning and sending.
+                      <Link to="/app/account/billing/extra-credit" className="block mt-1 font-medium text-blaster-accent hover:underline">Go to payment →</Link>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -12,6 +12,7 @@ import { getDb } from '../db.js';
 import { sendVerificationCode, isVerificationEmailConfigured } from '../services/verificationEmail.js';
 import { sendPasswordResetEmail, isPasswordResetEmailConfigured } from '../services/passwordResetEmail.js';
 import { authRateLimit } from '../middleware/authRateLimit.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import {
   createAccessToken,
   createRefreshToken,
@@ -103,10 +104,15 @@ async function issueTokensAndRespond(res, user) {
 authRoutes.get('/me', async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Not signed in' });
   let picture = req.user.picture || null;
-  if (!picture && req.user.id && getDb()) {
+  let auth_provider = req.user.auth_provider || 'credentials';
+  if (req.user.id && getDb()) {
     try {
-      const r = await getDb().query('SELECT picture_url FROM users WHERE id = $1', [req.user.id]);
-      if (r.rows?.[0]?.picture_url) picture = r.rows[0].picture_url;
+      const r = await getDb().query('SELECT picture_url, auth_provider FROM users WHERE id = $1', [req.user.id]);
+      const row = r?.rows?.[0];
+      if (row) {
+        if (row.picture_url) picture = row.picture_url;
+        if (row.auth_provider) auth_provider = row.auth_provider;
+      }
     } catch (_) { /* ignore */ }
   }
   return res.json({
@@ -114,6 +120,7 @@ authRoutes.get('/me', async (req, res) => {
     email: req.user.email,
     name: req.user.name,
     picture: picture || null,
+    auth_provider,
   });
 });
 
@@ -357,6 +364,42 @@ authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
   }
 });
 
+/** Change password (credentials users only). Requires current password. */
+authRoutes.post('/change-password', authRateLimit, requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Service unavailable.' });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not signed in' });
+
+    const r = await db.query('SELECT auth_provider, password_hash FROM users WHERE id = $1', [userId]);
+    const row = r?.rows?.[0];
+    if (!row) return res.status(401).json({ error: 'User not found' });
+    if (row.auth_provider !== 'credentials') {
+      return res.status(400).json({ error: 'This account uses Google. Change your password in your Google account.' });
+    }
+    if (!row.password_hash) return res.status(400).json({ error: 'No password set. Use forgot password to set one.' });
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      return res.status(400).json({ error: 'Current password is required' });
+    }
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, row.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, userId]);
+    res.status(200).json({ message: 'Password updated' });
+  } catch (e) {
+    console.error('[auth change-password]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to change password' });
+  }
+});
+
 /** Refresh access token using refresh token from HttpOnly cookie. Returns 200 with no user when no/invalid cookie (avoids 401 noise for unauthenticated visitors). */
 authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   try {
@@ -366,12 +409,12 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     if (!found) return res.status(200).json({});
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable' });
-    const r = await db.query('SELECT id, email, name, picture_url FROM users WHERE id = $1', [found.user_id]);
+    const r = await db.query('SELECT id, email, name, picture_url, auth_provider FROM users WHERE id = $1', [found.user_id]);
     const row = r?.rows?.[0];
     if (!row) return res.status(401).json({ error: 'User not found' });
-    const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null };
+    const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null, auth_provider: row.auth_provider || 'credentials' };
     const accessToken = createAccessToken(user);
-    res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture }, accessToken, expiresIn: getAccessTTLSeconds() });
+    res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture, auth_provider: user.auth_provider }, accessToken, expiresIn: getAccessTTLSeconds() });
   } catch (e) {
     console.error('[auth refresh]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Refresh failed' });

@@ -96,10 +96,19 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       }
       list = [...byStore.values()];
     }
+    const limits = await getPlanLimitsForUser(userId);
     if (limits.emailsLimit < 999999 && limits.emailsUsed + list.length > limits.emailsLimit) {
-      return res.status(403).json({
-        error: `Email send limit reached. Your plan allows ${limits.emailsLimit.toLocaleString()} emails per ${limits.periodEnd ? 'billing period' : 'month'}. You have sent ${limits.emailsUsed.toLocaleString()}. Upgrade to send more.`,
-      });
+      const overageScans = Math.max(0, (limits.scansUsed ?? 0) - (limits.scansLimit ?? 1000));
+      const wouldBeOverageEmails = limits.emailsUsed + list.length - limits.emailsLimit;
+      const wouldBeOwed = Math.floor(overageScans / 500) + Math.floor(wouldBeOverageEmails / 300);
+      const nextThreshold = limits.extraCreditNextThreshold ?? 10;
+      if (wouldBeOwed >= nextThreshold) {
+        return res.status(403).json({
+          error: `Extra credit limit reached ($${nextThreshold}). You've used more than your plan allows. Pay your extra credit balance to continue.`,
+          extraCreditBlocked: true,
+          nextThreshold,
+        });
+      }
     }
     const campaignId = uuidv4();
     await db.query(

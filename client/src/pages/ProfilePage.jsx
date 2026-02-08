@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { Image } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
+import { API } from '../api.js';
 
 const PROFILE_KEY = 'wiblaster-profile';
 const PROFILE_IMAGE_KEY = 'wiblaster-profile-image';
@@ -21,11 +23,23 @@ function loadProfileImage() {
 }
 
 export function ProfilePage() {
-  const { user } = useAuth();
+  const { user, authFetch } = useAuth();
   const [profile, setProfile] = useState(loadProfile);
   const [saved, setSaved] = useState(false);
   const [profileImage, setProfileImage] = useState(loadProfileImage);
   const fileInputRef = useRef(null);
+
+  const isGoogleUser = user?.auth_provider === 'google';
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -50,6 +64,43 @@ export function ProfilePage() {
     } catch (_) {}
   };
 
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess(false);
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New password and confirmation do not match');
+      return;
+    }
+    if (!authFetch) return;
+    setPasswordLoading(true);
+    try {
+      const res = await authFetch(`${API}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPasswordError(data.error || 'Failed to change password');
+        return;
+      }
+      setPasswordSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } catch (err) {
+      setPasswordError(err?.message || 'Failed to change password');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const email = user?.email || '';
   const nameParts = (user?.name || '').split(' ');
   const defaultFirst = nameParts[0] || profile.firstName;
@@ -59,10 +110,6 @@ export function ProfilePage() {
     <div className="p-4 sm:p-6 md:p-8 bg-blaster-bg-app">
       <div className="mb-6 md:mb-8">
         <h1 className="page-title-mobile">Account</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">
-          This is where you manage profile details specific to you. To manage what communication you receive from wiblaster, go to your{' '}
-          <a href="#" className="text-blaster-accent hover:underline">communication preferences page</a>.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl">
@@ -157,87 +204,174 @@ export function ProfilePage() {
         {/* Right column - Change password */}
         <section>
           <h2 className="card-title-mobile mb-3 md:mb-4">Change password</h2>
-          <div className="rounded-lg bg-gray-100 border border-blaster-border p-4 flex gap-3 mb-6">
-            <div className="w-6 h-6 rounded-full bg-blaster-muted/30 flex items-center justify-center shrink-0 text-blaster-muted text-xs font-semibold">
-              i
-            </div>
-            <p className="text-sm text-blaster-muted">
-              You&apos;re using Google credentials to sign in to wiblaster. You&apos;ll need to make any changes to your current username and password in your Google account.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-blaster-fg mb-1">Verify current password</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  placeholder=""
-                  disabled
-                  className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
-                >
-                  Show
+          {isGoogleUser ? (
+            <>
+              <div className="rounded-lg bg-gray-100 border border-blaster-border p-4 flex gap-3 mb-6">
+                <div className="w-6 h-6 rounded-full bg-blaster-muted/30 flex items-center justify-center shrink-0 text-blaster-muted text-xs font-semibold">
+                  i
+                </div>
+                <p className="text-sm text-blaster-muted">
+                  You&apos;re using Google credentials to sign in to wiblaster. You&apos;ll need to make any changes to your current username and password in your Google account.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-blaster-fg mb-1">Verify current password</label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      placeholder=""
+                      disabled
+                      className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                      disabled
+                    >
+                      Show
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-blaster-fg mb-1">New password</label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      placeholder=""
+                      disabled
+                      className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                      disabled
+                    >
+                      Show
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-blaster-fg mb-1">Confirm new password</label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      placeholder=""
+                      disabled
+                      className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                      disabled
+                    >
+                      Show
+                    </button>
+                  </div>
+                </div>
+                <button type="button" disabled className="btn-blaster-accent text-sm opacity-60 cursor-not-allowed">
+                  Update
                 </button>
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-blaster-fg mb-1">New password</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  placeholder=""
-                  disabled
-                  className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
-                >
-                  Show
-                </button>
+            </>
+          ) : (
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {passwordError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 text-sm">
+                  {passwordError}
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-700 text-sm">
+                  Password updated successfully.
+                </div>
+              )}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-blaster-fg">Verify current password</label>
+                  <Link to="/forgot-password" className="text-xs text-blaster-accent hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showCurrent ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg focus:ring-2 focus:ring-blaster-accent/40"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrent((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                  >
+                    {showCurrent ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
-              <a href="#" className="text-sm text-blaster-accent hover:underline">Generate strong password</a>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs text-blaster-muted">
-                <ul className="list-disc list-inside space-y-0.5">
-                  <li>One lowercase character</li>
-                  <li>One uppercase character</li>
-                  <li>One number</li>
-                </ul>
-                <ul className="list-disc list-inside space-y-0.5">
-                  <li>One special character</li>
-                  <li>8 characters minimum</li>
-                  <li>Must not contain username</li>
-                </ul>
+              <div>
+                <label className="block text-sm font-medium text-blaster-fg mb-1">New password</label>
+                <div className="relative">
+                  <input
+                    type={showNew ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg focus:ring-2 focus:ring-blaster-accent/40"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNew((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                  >
+                    {showNew ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-xs text-blaster-muted">
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>One lowercase character</li>
+                    <li>One uppercase character</li>
+                    <li>One number</li>
+                  </ul>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>One special character</li>
+                    <li>8 characters minimum</li>
+                    <li>Must not contain username</li>
+                  </ul>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-blaster-fg mb-1">Confirm new password</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  placeholder=""
-                  disabled
-                  className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-gray-100 text-blaster-muted cursor-not-allowed"
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
-                >
-                  Show
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-blaster-fg mb-1">Confirm new password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full px-4 py-2.5 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg focus:ring-2 focus:ring-blaster-accent/40"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-blaster-accent hover:underline"
+                  >
+                    {showConfirm ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
-            </div>
-            <button
-              type="button"
-              disabled
-              className="btn-blaster-accent text-sm opacity-60 cursor-not-allowed"
-            >
-              Update
-            </button>
-          </div>
+              <button
+                type="submit"
+                disabled={passwordLoading || !currentPassword || !newPassword || !confirmPassword}
+                className="btn-blaster-accent text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {passwordLoading ? 'Updating…' : 'Update'}
+              </button>
+            </form>
+          )}
         </section>
       </div>
     </div>

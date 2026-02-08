@@ -91,6 +91,11 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     const start = new Date(periodStart).toISOString();
     const end = new Date(periodEnd).toISOString();
 
+    const scansResult = await db.query(
+      `SELECT COALESCE(SUM(total_urls), 0) AS total FROM scans WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`,
+      [userId, start, end]
+    );
+    const scansUsed = parseInt(scansResult.rows?.[0]?.total ?? '0', 10);
     const sendersCount = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
     const sendersUsed = parseInt(sendersCount.rows?.[0]?.c ?? '0', 10);
     const emailsResult = await db.query(
@@ -99,6 +104,14 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     );
     const emailsUsed = parseInt(emailsResult.rows?.[0]?.total ?? '0', 10);
 
+    const scansLimit = (() => {
+      const s = plan?.features?.scans;
+      if (s == null) return 1000;
+      const str = String(s).toLowerCase();
+      if (str === 'unlimited' || str === '∞') return 999999;
+      const n = parseInt(s, 10);
+      return Number.isNaN(n) || n < 0 ? 1000 : n;
+    })();
     const sendersLimit = (() => {
       const s = plan?.features?.senders;
       if (s == null) return 1;
@@ -116,10 +129,26 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
       return Number.isNaN(n) || n < 0 ? 500 : n;
     })();
 
+    const overageScans = Math.max(0, scansUsed - scansLimit);
+    const overageEmails = Math.max(0, emailsUsed - emailsLimit);
+    const extraCreditOwed = Math.floor(overageScans / 500) + Math.floor(overageEmails / 300);
+    const extraCreditRows = await db.query('SELECT paid_cents FROM user_extra_credit WHERE user_id = $1', [userId]);
+    const paidCents = extraCreditRows.rows?.[0]?.paid_cents ?? 0;
+    const paidDollars = paidCents / 100;
+    const EXTRA_THRESHOLDS = [10, 30, 50, 100];
+    const nextThreshold = EXTRA_THRESHOLDS.find((t) => t > paidDollars) ?? 100;
+    const extraCreditBlocked = extraCreditOwed >= nextThreshold;
+
     res.json({
       subscription,
       plan,
-      usage: { sendersUsed, sendersLimit, emailsUsed, emailsLimit },
+      usage: { scansUsed, scansLimit, sendersUsed, sendersLimit, emailsUsed, emailsLimit },
+      extraCredit: {
+        owed: extraCreditOwed,
+        paidCents,
+        nextThreshold,
+        blocked: extraCreditBlocked,
+      },
     });
   } catch (e) {
     console.error('[billing overview]', e?.message || e);
@@ -294,6 +323,77 @@ billingRoutes.get('/payment-methods/update-link', requireAuth, async (req, res) 
   } catch (e) {
     console.error('[billing update-link]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to get update link' });
+  }
+});
+
+/** Initialize one-time Paystack payment for extra credit. amountCents = 1000 ($10), 3000 ($30), 5000 ($50), or 10000 ($100). */
+billingRoutes.post('/extra-credit/initialize', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Billing is not available' });
+    if (!PAYSTACK_SECRET) return res.status(503).json({ error: 'Paystack is not configured' });
+    const allowed = [1000, 3000, 5000, 10000];
+    const amountCents = Number(req.body?.amountCents);
+    if (!allowed.includes(amountCents)) {
+      return res.status(400).json({ error: 'amountCents must be 1000 ($10), 3000 ($30), 5000 ($50), or 10000 ($100)' });
+    }
+    const email = req.user.email;
+    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/billing?paystack=success&extra=1';
+    const reference = `extra_${uuidv4().replace(/-/g, '')}`;
+    const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'NGN';
+    const { getUsdToNgnRate, amountForPaystack } = await import('../services/paystackSync.js');
+    const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
+    const amountSubunit = amountForPaystack(amountCents, PAYSTACK_CURRENCY, usdToNgn);
+    const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PAYSTACK_SECRET },
+      body: JSON.stringify({
+        email,
+        amount: amountSubunit,
+        currency: PAYSTACK_CURRENCY,
+        reference,
+        callback_url: callbackUrl,
+      }),
+    });
+    const data = await response.json();
+    if (!data.status || !data.data?.authorization_url) {
+      return res.status(400).json({ error: data.message || 'Could not create payment link' });
+    }
+    res.json({ authorizationUrl: data.data.authorization_url, reference: data.data.reference, amountCents });
+  } catch (e) {
+    console.error('[billing extra-credit initialize]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to initialize payment' });
+  }
+});
+
+/** Verify extra-credit payment and add to user balance. Body: { reference, amountCents }. */
+billingRoutes.post('/extra-credit/verify', requireAuth, async (req, res) => {
+  try {
+    const { reference, amountCents } = req.body || {};
+    if (!reference || typeof reference !== 'string') return res.status(400).json({ error: 'reference is required' });
+    const cents = Math.max(0, Math.floor(Number(amountCents) || 0));
+    if (cents === 0) return res.status(400).json({ error: 'amountCents is required' });
+    if (!PAYSTACK_SECRET) return res.status(503).json({ error: 'Paystack is not configured' });
+    const resPayload = await fetch(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference.trim())}`, {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET },
+    });
+    const data = await resPayload.json();
+    if (!data.status || !data.data || data.data.status !== 'success') {
+      return res.status(400).json({ error: data.message || 'Transaction not found or invalid' });
+    }
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+    await db.query(
+      `INSERT INTO user_extra_credit (user_id, paid_cents, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET paid_cents = user_extra_credit.paid_cents + $2, updated_at = NOW()`,
+      [userId, cents]
+    );
+    res.json({ ok: true, paidCents: cents });
+  } catch (e) {
+    console.error('[billing extra-credit verify]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Verification failed' });
   }
 });
 

@@ -66,9 +66,17 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       const scansUsed = limits.scansUsed ?? 0;
       const scansLimit = limits.scansLimit ?? 1000;
       if (scansLimit < 999999 && scansUsed + totalStores > scansLimit) {
-        return res.status(403).json({
-          error: `Scan limit reached. Your plan allows ${scansLimit.toLocaleString()} stores per ${limits.periodEnd ? 'billing period' : 'month'}. You have used ${scansUsed.toLocaleString()}. Upgrade to scan more.`,
-        });
+        const overageEmails = Math.max(0, (limits.emailsUsed ?? 0) - (limits.emailsLimit ?? 500));
+        const wouldBeOverageScans = scansUsed + totalStores - scansLimit;
+        const wouldBeOwed = Math.floor(wouldBeOverageScans / 500) + Math.floor(overageEmails / 300);
+        const nextThreshold = limits.extraCreditNextThreshold ?? 10;
+        if (wouldBeOwed >= nextThreshold) {
+          return res.status(403).json({
+            error: `Extra credit limit reached ($${nextThreshold}). You've used more than your plan allows. Pay your extra credit balance to continue.`,
+            extraCreditBlocked: true,
+            nextThreshold,
+          });
+        }
       }
     }
     const scanId = uuidv4();

@@ -243,6 +243,12 @@ async function runSchema(p) {
       CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
       CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 
+      CREATE TABLE IF NOT EXISTS user_extra_credit (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        paid_cents INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       INSERT INTO plans (id, name, amount, interval, features) VALUES
         ('free', 'Free', 0, 'monthly', '{"emails":"500","users":"1 seat","support":"Email (limited)"}'::jsonb),
         ('essentials_monthly', 'Essentials', 1500, 'monthly', '{"emails":"10000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
