@@ -208,6 +208,9 @@ export function LandingPage() {
               <Link to="/privacy" onClick={closeSidebar} className="text-xs text-blaster-muted hover:underline mt-1 inline-block">
                 Privacy Policy
               </Link>
+              <Link to="/terms" onClick={closeSidebar} className="text-xs text-blaster-muted hover:underline mt-1 inline-block">
+                Terms of Service
+              </Link>
             </div>
           </aside>
         </>
@@ -446,6 +449,7 @@ export function LandingPage() {
             <div>
               <h4 className="font-semibold text-blaster-fg mb-3">Legal</h4>
               <Link to="/privacy" className="block text-blaster-muted hover:text-blaster-fg">Privacy Policy</Link>
+              <Link to="/terms" className="block text-blaster-muted hover:text-blaster-fg mt-1">Terms of Service</Link>
             </div>
             <div>
               <h4 className="font-semibold text-blaster-fg mb-3">wiblaster</h4>

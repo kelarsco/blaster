@@ -28,6 +28,7 @@ import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { PricingPage } from './pages/PricingPage';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { AdminLoginPage } from './pages/bl-admin/AdminLoginPage';
@@ -88,6 +89,7 @@ function AppRoutes() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/invite/accept" element={<InviteAcceptPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfServicePage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/bl-admin" element={<AdminProvider><Outlet /></AdminProvider>}>
           <Route index element={<Navigate to="overview" replace />} />

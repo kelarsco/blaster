@@ -22,11 +22,12 @@
 
 1. Go to [railway.app](https://railway.app) and create a project.
 2. **New → GitHub repo** and select this repo.
-3. In project settings:
-   - **Root Directory:** `server`
-   - **Build:** (default, installs deps)
-   - **Start:** uses `npm start` from `server/package.json`
-4. **Variables** (Railway dashboard → your service → Variables):
+3. In project settings (your **blaster** service → **Settings**):
+   - **Root Directory:** must be `server` (not blank, not the repo root). This is required so only the API runs and the start command is `npm start` from inside `server/`.
+   - **Start Command:** leave empty so Railway uses `server/railway.toml` → `npm start`, or set explicitly to `npm start`.
+   - If Root Directory is wrong, you’ll see logs like `sh -c cd server && npm start` and the app may 404 on new routes or get SIGTERM on deploy.
+4. **Build:** (default, installs deps from `server/package.json`)
+5. **Variables** (Railway dashboard → your service → Variables):
 
    | Variable           | Value / note |
    |--------------------|--------------|
@@ -37,7 +38,7 @@
    | `GOOGLE_CLIENT_SECRET` | (optional) From Google Cloud Console |
    | `GOOGLE_CALLBACK_URL` | (optional) `https://your-app.vercel.app/api/auth/google/callback` |
 
-5. Deploy. Note the **public URL** (e.g. `https://your-app.railway.app`). You’ll use it as `VITE_API_URL` on Vercel.
+6. Deploy. Note the **public URL** (e.g. `https://your-app.railway.app`). You’ll use it as `VITE_API_URL` on Vercel.
 
 ---
 
@@ -84,7 +85,7 @@ The backend (Railway) handles the Google redirect. The callback URL must be your
 ## 5. Checklist
 
 - [ ] Neon: project created, connection string copied.
-- [ ] Railway: root = `server`, `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_URL` set; deploy and copy public URL.
+- [ ] Railway: **Root Directory** = `server` (not repo root), `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_URL` set; deploy and copy public URL.
 - [ ] Vercel: root = `client`, `VITE_API_URL` = Railway URL; deploy.
 - [ ] (Optional) Google OAuth: redirect URI = `https://<railway-url>/api/auth/google/callback` in Google Console; `GOOGLE_CALLBACK_URL` and `FRONTEND_URL` on Railway.
 
