@@ -269,7 +269,9 @@ adminRoutes.delete('/users/:id', async (req, res) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      // scan_results references scans; no CASCADE on that FK, so delete first
+      // Tables that reference campaigns/scans but have no CASCADE – delete before user cascade
+      await client.query('DELETE FROM campaign_pending_sends WHERE campaign_id IN (SELECT id FROM campaigns WHERE user_id = $1)', [id]);
+      await client.query('DELETE FROM campaign_sends WHERE campaign_id IN (SELECT id FROM campaigns WHERE user_id = $1)', [id]);
       await client.query('DELETE FROM scan_results WHERE scan_id IN (SELECT id FROM scans WHERE user_id = $1)', [id]);
       await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
       await client.query('DELETE FROM users WHERE id = $1', [id]);
@@ -297,7 +299,9 @@ adminRoutes.post('/users/bulk-delete', async (req, res) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      // scan_results references scans; FK has no CASCADE, so delete before user/scans cascade
+      // Tables that reference campaigns/scans but have no CASCADE – delete before user cascade
+      await client.query('DELETE FROM campaign_pending_sends WHERE campaign_id IN (SELECT id FROM campaigns WHERE user_id = ANY($1::text[]))', [ids]);
+      await client.query('DELETE FROM campaign_sends WHERE campaign_id IN (SELECT id FROM campaigns WHERE user_id = ANY($1::text[]))', [ids]);
       await client.query('DELETE FROM scan_results WHERE scan_id IN (SELECT id FROM scans WHERE user_id = ANY($1::text[]))', [ids]);
       await client.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1::text[])', [ids]);
       await client.query('DELETE FROM users WHERE id = ANY($1::text[])', [ids]);

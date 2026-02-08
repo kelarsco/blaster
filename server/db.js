@@ -365,6 +365,7 @@ async function runSchema(p) {
     `);
     await migrateStoreNotesPK(p);
     await migrateScanResultsCascade(p);
+    await migrateCampaignChildCascade(p);
   } finally {
     client.release();
   }
@@ -380,6 +381,24 @@ async function migrateScanResultsCascade(pool) {
     `);
   } catch (e) {
     console.warn('[migrateScanResultsCascade]', e?.message || e);
+  }
+}
+
+/** Fix campaign_sends / campaign_pending_sends FKs so deleting a campaign cascades. */
+async function migrateCampaignChildCascade(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE campaign_sends DROP CONSTRAINT IF EXISTS campaign_sends_campaign_id_fkey;
+      ALTER TABLE campaign_sends ADD CONSTRAINT campaign_sends_campaign_id_fkey
+        FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    `);
+    await pool.query(`
+      ALTER TABLE campaign_pending_sends DROP CONSTRAINT IF EXISTS campaign_pending_sends_campaign_id_fkey;
+      ALTER TABLE campaign_pending_sends ADD CONSTRAINT campaign_pending_sends_campaign_id_fkey
+        FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+    `);
+  } catch (e) {
+    console.warn('[migrateCampaignChildCascade]', e?.message || e);
   }
 }
 
