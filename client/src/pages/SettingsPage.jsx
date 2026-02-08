@@ -4,8 +4,7 @@ import { Clock, Folder, Globe } from 'react-feather';
 const STORAGE_KEY = 'blaster-settings';
 
 const DEFAULT_SETTINGS = {
-  delayBetweenEmails: 1,
-  autoSafeSending: true,
+  delayBetweenEmails: 20,
   maxConcurrentCrawlers: 2,
   maxUrlsPerScan: 1000,
   // Keep in sync with PATHS_TO_TRY in server/services/crawler.js
@@ -88,30 +87,16 @@ export function SettingsPage() {
           </label>
           <input
             type="number"
-            min={0.5}
-            step={0.5}
+            min={20}
+            max={300}
+            step={1}
             value={settings.delayBetweenEmails}
-            onChange={(e) => applyChange({ delayBetweenEmails: Math.max(0.5, Number(e.target.value) || 1) })}
+            onChange={(e) => applyChange({ delayBetweenEmails: Math.max(20, Number(e.target.value) || 20) })}
             className={inputClass}
           />
           <p className="text-xs text-blaster-muted mt-2">
-            Minimum 0.5 seconds. Higher values reduce risk of being rate-limited by email providers.
+            Minimum 20 seconds (enforced). Adjust manually; no automatic throttling.
           </p>
-          <label className="mt-3 flex items-start gap-2 text-xs md:text-sm text-blaster-fg">
-            <input
-              type="checkbox"
-              checked={!!settings.autoSafeSending}
-              onChange={(e) => applyChange({ autoSafeSending: e.target.checked })}
-              className="mt-0.5 rounded border-blaster-border"
-            />
-            <span>
-              <span className="font-medium">Auto-safe sending (recommended)</span>{' '}
-              <span className="text-blaster-muted">
-                Automatically suggests conservative send delays in Automation Setup based on your sender count, to
-                help keep Gmail and other providers from flagging campaigns as spam.
-              </span>
-            </span>
-          </label>
         </section>
 
         <section className="bg-blaster-bg-card rounded-xl border border-blaster-border card-body-mobile">

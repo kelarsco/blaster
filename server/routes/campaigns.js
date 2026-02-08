@@ -8,14 +8,10 @@ import { getPlanLimitsForUser } from '../services/planLimits.js';
 
 export const campaignRoutes = Router();
 
-function getDomain(email) {
-  const i = email.indexOf('@');
-  return i >= 0 ? email.slice(i + 1).toLowerCase() : '';
-}
+/** Minimum allowed delay between sends (seconds). No automatic throttling; user controls range, we only enforce this floor. */
+const MIN_SEND_INTERVAL_SEC = 20;
 
-const THROTTLE_DOMAINS = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com', 'live.com', 'icloud.com'];
-
-/** Random delay in ms; min/max can be fractional seconds (e.g. 0.5, 2). */
+/** Random delay in ms; min/max can be fractional seconds. Enforced minimum 20s. */
 function delayMs(min, max) {
   const minSec = Number(min) || 1;
   const maxSec = Number(max) != null && Number(max) >= minSec ? Number(max) : minSec;
@@ -61,8 +57,8 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       senderGroupId,
       subjects,
       templates,
-      delayMin = 2,
-      delayMax = 5,
+      delayMin = 20,
+      delayMax = 30,
       onePerStore = true,
     } = req.body || {};
 
@@ -125,8 +121,8 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
     }
 
     const campaignId = uuidv4();
-    const delayMinSec = Math.max(0.5, Number(delayMin) || 2);
-    const delayMaxSec = Math.max(delayMinSec, Number(delayMax) || 5);
+    const delayMinSec = Math.max(MIN_SEND_INTERVAL_SEC, Number(delayMin) || MIN_SEND_INTERVAL_SEC);
+    const delayMaxSec = Math.max(delayMinSec, Number(delayMax) || delayMinSec);
 
     // Build pending rows for batch insert
     const pendingRows = [];
@@ -177,8 +173,6 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
 
     for (let i = 0; i < pendingRows.length; i++) {
       const row = pendingRows[i];
-      const domain = getDomain(row.email);
-      const throttle = THROTTLE_DOMAINS.includes(domain) ? 2 : 1;
       setTimeout(async () => {
         await addSendJob({
           campaignId,
@@ -188,7 +182,7 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
           subject: row.subject,
           body: row.body,
         });
-      }, i * (delayMs(delayMinSec, delayMaxSec) * throttle));
+      }, i * delayMs(delayMinSec, delayMaxSec));
     }
 
     res.json({ campaignId, totalQueued: list.length });
@@ -266,11 +260,10 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
      )`,
     [campaignId]
   );
-  const delayMin = campaignRow.delay_min != null ? Number(campaignRow.delay_min) : 2;
-  const delayMax = campaignRow.delay_max != null ? Number(campaignRow.delay_max) : 5;
+  const delayMin = Math.max(20, campaignRow.delay_min != null ? Number(campaignRow.delay_min) : 20);
+  const delayMax = Math.max(delayMin, campaignRow.delay_max != null ? Number(campaignRow.delay_max) : delayMin);
   for (let i = 0; i < pending.rows.length; i++) {
     const row = pending.rows[i];
-    const throttle = THROTTLE_DOMAINS.includes(getDomain(row.email)) ? 2 : 1;
     setTimeout(async () => {
       await addSendJob({
         campaignId,
@@ -280,7 +273,7 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
         subject: row.subject || row.store_url,
         body: row.body || '',
       });
-    }, i * (delayMs(delayMin, delayMax) * throttle));
+    }, i * delayMs(delayMin, delayMax));
   }
   res.json({ ok: true, reQueued: pending.rows.length });
 });

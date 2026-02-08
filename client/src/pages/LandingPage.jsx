@@ -176,6 +176,13 @@ export function LandingPage() {
                 </a>
               ))}
               <Link
+                to="/login"
+                onClick={closeSidebar}
+                className="block py-3 text-black font-medium hover:opacity-80 transition"
+              >
+                Login
+              </Link>
+              <Link
                 to="/pricing"
                 onClick={closeSidebar}
                 className="block py-3 text-black font-medium hover:opacity-80 transition"

@@ -118,3 +118,22 @@ No `VITE_API_URL` in local `.env` – the client uses the Vite proxy and relativ
 1. **Where the frontend is built** (Vercel, Netlify, etc.): add or correct the env var **`VITE_API_URL`** = your **Railway backend URL** (e.g. `https://your-app.railway.app`). No trailing slash.
 2. **Redeploy the frontend** so a new build picks up `VITE_API_URL`. Changing the variable alone is not enough; you must trigger a new build.
 3. On **Railway**, set **`FRONTEND_URL`** to your **frontend origin** (e.g. `https://yourdomain.com` or your Vercel URL) so refresh-token cookies are allowed for your site.
+
+---
+
+## 8. Troubleshooting: Campaign “Connection timeout” / emails failing
+
+**Symptom:** Campaigns show “Last error: Connection timeout” and emails are marked failed.
+
+**Cause:** Campaign emails are sent from your **Railway server** to your **sender’s SMTP server** (e.g. Gmail, Outlook). The connection from Railway to that SMTP host (e.g. `smtp.gmail.com:587`) is timing out. Common reasons:
+
+1. **Outbound SMTP restricted** – Many cloud hosts (including some Railway regions/networks) block or throttle outbound SMTP (ports 25, 587, 465) to reduce spam. So the TCP connection never completes → “Connection timeout”.
+2. **Slow or flaky network** – TLS handshake or routing can be slow; we increased timeouts to 25s to help.
+
+**What we did in code:** Connection/greeting timeouts were increased, and on connection-type errors the SMTP transporter cache is cleared so the next send tries a fresh connection.
+
+**What you can do:**
+
+- **Confirm outbound SMTP from Railway** – Check Railway docs or support for “outbound SMTP” or “ports 587, 465”. If they’re blocked, campaigns that use “your own Gmail/Outlook” from the app will keep failing from that host.
+- **Use an SMTP relay that works from the cloud** – Some providers offer SMTP over ports that aren’t blocked, or an HTTP API. If you have Resend, you can use [Resend’s SMTP](https://resend.com/docs/send-with-smtp) and add a sender in the app with Resend’s SMTP host/port and API key as password; that may work if Railway allows the connection to Resend’s SMTP.
+- **Run the backend elsewhere** – If you need to send via Gmail/Outlook from the app, run the API on a VPS or host that allows outbound SMTP (e.g. a small VPS that doesn’t block port 587).

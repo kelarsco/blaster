@@ -132,12 +132,14 @@ export function DashboardPage() {
       ).toLocaleDateString(undefined, opts)}`;
     }
     switch (rangePreset) {
+      case 'this_year':
+        return 'This year';
+      case 'today':
+        return 'Today';
       case 'last_7_days':
         return 'Last 7 days';
       case 'last_30_days':
         return 'Last 30 days';
-      case 'this_year':
-        return 'This year';
       case 'all_time':
         return 'All time';
       default:
@@ -150,7 +152,9 @@ export function DashboardPage() {
     let start = '';
     let end = '';
 
-    if (preset === 'last_7_days') {
+    if (preset === 'today') {
+      start = end = today.toISOString().slice(0, 10);
+    } else if (preset === 'last_7_days') {
       const endDate = today;
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 6);
@@ -184,7 +188,9 @@ export function DashboardPage() {
     const today = new Date();
     let start = '';
     let end = '';
-    if (rangePreset === 'last_7_days') {
+    if (rangePreset === 'today') {
+      start = end = today.toISOString().slice(0, 10);
+    } else if (rangePreset === 'last_7_days') {
       const startDate = new Date();
       startDate.setDate(today.getDate() - 6);
       start = startDate.toISOString().slice(0, 10);
@@ -378,15 +384,16 @@ export function DashboardPage() {
             }}
             className="mx-[2px] bg-blaster-bg border border-blaster-border rounded-xl pl-[17px] pr-8 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
           >
+            <option value="this_year">This year</option>
+            <option value="today">Today</option>
             <option value="last_7_days">Last 7 days</option>
             <option value="last_30_days">Last 30 days</option>
-            <option value="this_year">This year</option>
             <option value="all_time">All time</option>
             <option value="custom">Custom range</option>
           </select>
         </div>
 
-        <div className="relative">
+        <div className="relative hidden md:block">
           <button
             type="button"
             onClick={() => {

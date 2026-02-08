@@ -33,10 +33,10 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 0.5 && d <= 60) return d;
+        if (d >= 20 && d <= 300) return d;
       }
     } catch (_) {}
-    return 2;
+    return 20;
   });
   const [delayMax, setDelayMax] = useState(() => {
     try {
@@ -44,20 +44,10 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 0.5 && d <= 60) return d;
+        if (d >= 20 && d <= 300) return Math.max(20, d);
       }
     } catch (_) {}
-    return 5;
-  });
-  const [autoDelay, setAutoDelay] = useState(() => {
-    try {
-      const raw = localStorage.getItem('blaster-settings');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed.autoSafeSending === 'boolean') return parsed.autoSafeSending;
-      }
-    } catch (_) {}
-    return true;
+    return 30;
   });
   const [onePerStore, setOnePerStore] = useState(true);
   const [providerFilter, setProviderFilter] = useState({
@@ -126,25 +116,6 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) || null;
 
-  // Compute conservative automatic delays based on sender count and typical Gmail-style limits.
-  useEffect(() => {
-    if (!autoDelay || !selectedGroup) return;
-    const senderCount = (selectedGroup.senders?.length || 0) || 1;
-    if (!filteredRecipients.length) return;
-
-    // Assume a safe ceiling of ~350 emails/day per sender.
-    const SAFE_PER_SENDER_PER_DAY = 350;
-    const totalSafePerDay = SAFE_PER_SENDER_PER_DAY * senderCount;
-    const safePerMinute = Math.max(1, Math.floor(totalSafePerDay / (24 * 60))); // floor to be extra safe
-    const secondsBetween = Math.max(5, Math.round(60 / safePerMinute));
-
-    const nextMin = Math.max(5, secondsBetween);
-    const nextMax = Math.max(nextMin + 5, Math.round(secondsBetween * 1.5));
-
-    setDelayMin(nextMin);
-    setDelayMax(nextMax);
-  }, [autoDelay, selectedGroup, filteredRecipients.length]);
-
   const addSubject = () => {
     setSubjectLines((prev) => [...prev, { id: Date.now(), value: '{{store_url}}' }]);
   };
@@ -163,8 +134,8 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
   const loadPreset = (preset) => {
     if (preset.subjects?.length) setSubjectLines(preset.subjects.map((v, i) => ({ id: i + 1, value: typeof v === 'string' ? v : v.value })));
     if (preset.templates?.length) setTemplates(preset.templates.map((t, i) => ({ id: i + 1, body: typeof t === 'string' ? t : t.body || t.text })));
-    if (preset.delayMin != null) setDelayMin(preset.delayMin);
-    if (preset.delayMax != null) setDelayMax(preset.delayMax);
+    if (preset.delayMin != null) setDelayMin(Math.max(20, Number(preset.delayMin)));
+    if (preset.delayMax != null) setDelayMax(Math.max(20, Number(preset.delayMax)));
     if (preset.senders?.length === 1 && groups.some((g) => g.id === preset.senders[0])) {
       setSelectedGroupId(preset.senders[0]);
     }
@@ -357,12 +328,13 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
           {/* Delay & options */}
           <section className={sectionClass}>
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Sending options</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Minimum 20 sec between emails is enforced. Set your own min/max above that.</p>
             <div className="flex flex-wrap gap-6 items-center">
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <span className="font-medium">Delay between emails (sec):</span>
-                <input type="number" min={0.5} max={60} step={0.5} value={delayMin} onChange={(e) => setDelayMin(Math.max(0.5, Number(e.target.value) || 0.5))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={20} max={300} step={1} value={delayMin} onChange={(e) => setDelayMin(Math.max(20, Number(e.target.value) || 20))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>min</span>
-                <input type="number" min={0.5} max={60} step={0.5} value={delayMax} onChange={(e) => setDelayMax(Math.max(0.5, Number(e.target.value) || 0.5))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={20} max={300} step={1} value={delayMax} onChange={(e) => setDelayMax(Math.max(20, Number(e.target.value) || 20))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>max</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">

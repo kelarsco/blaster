@@ -17,19 +17,29 @@ function getTransporter(senderId, config, auth) {
     pool: true,
     maxConnections: 1,
     maxMessages: 100,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
+    connectionTimeout: 25000,
+    greetingTimeout: 15000,
   });
   transporterCache.set(senderId, t);
   return t;
 }
+
+/** Clear cached transporter so next send gets a fresh connection (e.g. after timeout). */
+function clearTransporter(senderId) {
+  const t = transporterCache.get(senderId);
+  if (t && t.close) t.close().catch(() => {});
+  transporterCache.delete(senderId);
+}
+
+const MIN_SEND_INTERVAL_MS = 20000; // 20 sec minimum between sends, regardless of user/sender settings
 
 async function withSenderSerialization(senderId, maxPerMinute, fn) {
   const prev = senderQueue.get(senderId) || Promise.resolve();
   const run = async () => {
     const now = Date.now();
     const last = lastSendTime.get(senderId) || 0;
-    const minInterval = maxPerMinute > 0 ? Math.ceil(60000 / maxPerMinute) : 6000;
+    const userInterval = maxPerMinute > 0 ? Math.ceil(60000 / maxPerMinute) : MIN_SEND_INTERVAL_MS;
+    const minInterval = Math.max(MIN_SEND_INTERVAL_MS, userInterval);
     const wait = Math.max(0, minInterval - (now - last));
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     try {
@@ -104,6 +114,8 @@ export async function processSendEmail(payload) {
     await withSenderSerialization(senderId, maxPerMinute, doSend);
   } catch (err) {
     const errMsg = err.message || String(err);
+    const isConnectionError = /timeout|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|connection/i.test(errMsg);
+    if (isConnectionError) clearTransporter(senderId);
     console.error('[send] SMTP error:', errMsg, '| to:', email, '| from:', senderRow.email);
     const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', errMsg);
     if (inserted) await updateCampaignCounts(db, campaignId, 'failed');

@@ -69,7 +69,8 @@ export function AdminMessagesPage() {
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <h1 className="text-2xl font-bold text-blaster-fg mb-4">Messages</h1>
       <div className="flex-1 flex min-h-0 rounded-xl border border-blaster-border bg-blaster-bg-card overflow-hidden">
-        <div className="w-80 border-r border-blaster-border flex flex-col overflow-hidden">
+        {/* Thread list: on mobile hide when a thread is selected so chat can be full width */}
+        <div className={`w-80 border-r border-blaster-border flex flex-col overflow-hidden flex-shrink-0 ${selectedThread ? 'hidden md:flex' : ''}`}>
           {loading ? (
             <div className="p-4 space-y-2">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -97,16 +98,28 @@ export function AdminMessagesPage() {
             </div>
           )}
         </div>
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {!selectedThread ? (
             <div className="flex-1 flex items-center justify-center text-blaster-muted text-sm">
               Select a conversation
             </div>
           ) : (
             <>
-              <div className="px-4 py-3 border-b border-blaster-border bg-blaster-bg-app">
-                <p className="font-medium text-blaster-fg">{selectedThread.userName || selectedThread.userEmail}</p>
-                <p className="text-xs text-blaster-muted">{selectedThread.userEmail}</p>
+              <div className="px-4 py-3 border-b border-blaster-border bg-blaster-bg-app flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedThread(null)}
+                  className="md:hidden p-2 -ml-2 rounded-lg text-blaster-fg hover:bg-blaster-border/50"
+                  aria-label="Back to list"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-blaster-fg truncate">{selectedThread.userName || selectedThread.userEmail}</p>
+                  <p className="text-xs text-blaster-muted truncate">{selectedThread.userEmail}</p>
+                </div>
               </div>
               <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3">
                 {messages.map((m) => (
