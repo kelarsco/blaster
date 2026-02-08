@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { MoreVertical, Edit2, UserX, AlertCircle, Trash2 } from 'react-feather';
+import { AdminConfirmModal } from '../../components/AdminConfirmModal';
+import { AdminMessage } from '../../components/AdminMessage';
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -21,7 +23,8 @@ export function AdminUsersPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [plans, setPlans] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState(null); // { type: 'error'|'success', text }
+  const [confirmDelete, setConfirmDelete] = useState(null); // { kind: 'single'|'bulk', id?: string, count?: number }
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -83,38 +86,66 @@ export function AdminUsersPage() {
     } catch (_) {}
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Permanently delete this user and all their data?')) return;
+  const handleDeleteClick = (id) => {
+    setConfirmDelete({ kind: 'single', id });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmDelete?.id) return;
+    const id = confirmDelete.id;
+    setConfirmDelete(null);
+    setMessage(null);
     try {
-      await adminFetch(`/users/${id}`, { method: 'DELETE' });
+      const res = await adminFetch(`/users/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setMessage({ type: 'error', text: d.error || 'Delete failed' });
+        return;
+      }
       setOtherActionUser(null);
       setMenuUserId(null);
       setEditUser(null);
       setDetailUser(null);
+      setMessage({ type: 'success', text: 'User deleted.' });
       fetchUsers();
-    } catch (_) {}
+    } catch (_) {
+      setMessage({ type: 'error', text: 'Delete failed' });
+    }
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0 || !window.confirm(`Delete ${selectedIds.size} user(s) permanently?`)) return;
-    setError('');
+  const handleBulkDeleteClick = () => {
+    if (selectedIds.size === 0) return;
+    setConfirmDelete({ kind: 'bulk', count: selectedIds.size });
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (confirmDelete?.kind !== 'bulk' || selectedIds.size === 0) return;
+    setMessage(null);
+    const ids = [...selectedIds];
+    setConfirmDelete(null);
     try {
       const res = await adminFetch('/users/bulk-delete', {
         method: 'POST',
-        body: JSON.stringify({ ids: [...selectedIds] }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
       });
-      if (!res.ok) throw new Error('Failed');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error || 'Bulk delete failed' });
+        return;
+      }
       setSelectedIds(new Set());
+      setMessage({ type: 'success', text: `Deleted ${data.deleted ?? ids.length} user(s).` });
       fetchUsers();
     } catch (e) {
-      setError(e?.message || 'Bulk delete failed');
+      setMessage({ type: 'error', text: e?.message || 'Bulk delete failed' });
     }
   };
 
   const handleSaveEdit = async (payload) => {
     if (!editUser?.id) return;
     setSaving(true);
-    setError('');
+    setMessage(null);
     try {
       const res = await adminFetch(`/users/${editUser.id}`, {
         method: 'PATCH',
@@ -122,12 +153,14 @@ export function AdminUsersPage() {
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || 'Failed to update');
+        setMessage({ type: 'error', text: d.error || 'Update failed' });
+        return;
       }
       setEditUser(null);
+      setMessage({ type: 'success', text: 'User updated.' });
       fetchUsers();
     } catch (e) {
-      setError(e?.message || 'Update failed');
+      setMessage({ type: 'error', text: e?.message || 'Update failed' });
     } finally {
       setSaving(false);
     }
@@ -203,7 +236,7 @@ export function AdminUsersPage() {
           {selectionMode && selectedIds.size > 0 && (
             <button
               type="button"
-              onClick={handleBulkDelete}
+              onClick={handleBulkDeleteClick}
               className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
             >
               Delete {selectedIds.size} selected
@@ -211,11 +244,11 @@ export function AdminUsersPage() {
           )}
         </div>
       </div>
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 text-sm">
-          {error}
-        </div>
-      )}
+      <AdminMessage
+        type={message?.type}
+        message={message?.text}
+        onDismiss={message ? () => setMessage(null) : undefined}
+      />
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -340,6 +373,20 @@ export function AdminUsersPage() {
         </div>
       )}
 
+      {/* Confirm delete (single or bulk) – custom modal, no window.confirm */}
+      <AdminConfirmModal
+        open={confirmDelete !== null}
+        title={confirmDelete?.kind === 'bulk' ? 'Delete users' : 'Delete user'}
+        message={confirmDelete?.kind === 'bulk'
+          ? `Permanently delete ${confirmDelete.count} user(s) and all their data? This cannot be undone.`
+          : 'Permanently delete this user and all their data? This cannot be undone.'}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={confirmDelete?.kind === 'bulk' ? handleBulkDeleteConfirm : handleDeleteConfirm}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
       {/* Others (disable / suspend / delete) */}
       {otherActionUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setOtherActionUser(null)}>
@@ -359,7 +406,7 @@ export function AdminUsersPage() {
                   <AlertCircle className="w-4 h-4" /> Suspend
                 </button>
               )}
-              <button type="button" onClick={() => handleDelete(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm">
+              <button type="button" onClick={() => { handleDeleteClick(otherActionUser.id); setOtherActionUser(null); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm">
                 <Trash2 className="w-4 h-4" /> Delete user
               </button>
             </div>

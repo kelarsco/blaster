@@ -279,10 +279,23 @@ adminRoutes.post('/users/bulk-delete', async (req, res) => {
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x) => typeof x === 'string') : [];
     if (ids.length === 0) return res.status(400).json({ error: 'No user IDs provided' });
-    await db.query('DELETE FROM users WHERE id = ANY($1::text[])', [ids]);
-    res.json({ ok: true, deleted: ids.length });
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      // Revoke refresh tokens first so sessions are cleared
+      await client.query('DELETE FROM refresh_tokens WHERE user_id = ANY($1::text[])', [ids]);
+      await client.query('DELETE FROM users WHERE id = ANY($1::text[])', [ids]);
+      await client.query('COMMIT');
+      res.json({ ok: true, deleted: ids.length });
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (e) {
-    res.status(500).json({ error: e?.message || 'Failed' });
+    console.error('[admin bulk-delete]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Bulk delete failed' });
   }
 });
 
