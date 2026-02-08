@@ -224,7 +224,7 @@ export function LandingPage() {
               Start free trial
             </Link>
             <Link
-              to="#features"
+              to="#included"
               className="w-full sm:w-auto btn-blaster-accent text-sm px-5 py-2.5 rounded-lg whitespace-nowrap text-center btn-landing-pop"
             >
               Learn more
@@ -270,7 +270,7 @@ export function LandingPage() {
       </section>
 
       {/* What's included */}
-      <section className="py-16 px-4">
+      <section id="included" className="py-16 px-4">
         <div className="max-w-6xl mx-auto text-center aos-fade-up">
           <h2 className="text-2xl sm:text-3xl font-bold text-blaster-fg">
             What's included

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToolStateProvider } from './context/ToolStateContext';
@@ -37,6 +37,14 @@ import { AdminUsersPage } from './pages/bl-admin/AdminUsersPage';
 import { AdminSubscriptionsPage } from './pages/bl-admin/AdminSubscriptionsPage';
 import { AdminMessagesPage } from './pages/bl-admin/AdminMessagesPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -136,6 +144,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AuthProvider>
         <GlobalPreloaderGate>
           <AppRoutes />
