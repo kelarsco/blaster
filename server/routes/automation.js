@@ -4,7 +4,6 @@ import { getDb } from '../db.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { getSenderLimitForUser } from '../services/planLimits.js';
-import { createConnectToken, getGmailConnectStartUrl } from '../services/gmailConnect.js';
 
 export const MAX_SENDERS_PER_GROUP = 10;
 
@@ -13,21 +12,9 @@ export const automationRoutes = Router();
 automationRoutes.get('/senders', requireAuth, async (req, res) => {
   const db = getDb();
   if (!db) return res.json({ senders: [] });
-  const result = await db.query(
-    `SELECT id, email, max_per_minute, is_active, created_at, provider, oauth_status FROM senders WHERE user_id = $1 AND is_active = 1`,
-    [req.user.id]
-  );
+  const result = await db.query('SELECT id, email, max_per_minute, is_active, created_at FROM senders WHERE user_id = $1 AND is_active = 1', [req.user.id]);
   const rows = result.rows;
-  res.json({
-    senders: rows.map((r) => ({
-      id: r.id,
-      email: r.email,
-      maxPerMinute: r.max_per_minute,
-      createdAt: r.created_at,
-      provider: r.provider || 'smtp',
-      oauthStatus: r.oauth_status || null,
-    })),
-  });
+  res.json({ senders: rows.map((r) => ({ id: r.id, email: r.email, maxPerMinute: r.max_per_minute, createdAt: r.created_at })) });
 });
 
 /** Sender limit and current count for the current user (for UI). */
@@ -84,40 +71,6 @@ automationRoutes.delete('/senders/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-/** GET so you can verify this endpoint is deployed (e.g. open in browser). Returns 405 for POST-only. */
-automationRoutes.get('/senders/connect-gmail', (_req, res) => {
-  res.status(405).json({ error: 'Use POST to get the Connect Gmail redirect URL.', method: 'POST' });
-});
-
-/** Get URL to start "Connect Gmail inbox" OAuth flow. Frontend redirects the user to this URL. */
-automationRoutes.post('/senders/connect-gmail', requireAuth, async (req, res) => {
-  try {
-    const db = getDb();
-    if (!db) return res.status(503).json({ error: 'Database not available.' });
-    const userId = req.user.id;
-    const countResult = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
-    const count = parseInt(countResult.rows?.[0]?.c, 10) || 0;
-    const { limit } = await getSenderLimitForUser(userId);
-    if (count >= limit) {
-      return res.status(403).json({
-        error: 'Sender limit reached for your plan.',
-        code: 'SENDER_LIMIT_REACHED',
-        limit,
-        count,
-      });
-    }
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-      return res.status(503).json({ error: 'Google OAuth is not configured. Contact support.' });
-    }
-    const connectToken = createConnectToken(userId);
-    const url = getGmailConnectStartUrl(connectToken);
-    res.json({ url });
-  } catch (e) {
-    console.error('[connect-gmail]', e?.message || e);
-    res.status(500).json({ error: e?.message || 'Failed' });
-  }
-});
-
 automationRoutes.get('/senders/groups/in-use', requireAuth, async (req, res) => {
   const db = getDb();
   if (!db) return res.json({ groupIds: [] });
@@ -134,7 +87,7 @@ automationRoutes.get('/senders/groups', requireAuth, async (req, res) => {
   const result = await db.query(`
     SELECT sg.id, sg.name, sg.created_at,
       COALESCE(
-        (SELECT json_agg(json_build_object('id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute, 'provider', s.provider, 'oauthStatus', s.oauth_status))
+        (SELECT json_agg(json_build_object('id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute))
          FROM senders s
          JOIN sender_group_members sgm ON sgm.sender_id = s.id
          WHERE sgm.group_id = sg.id AND s.is_active = 1),
@@ -150,13 +103,7 @@ automationRoutes.get('/senders/groups', requireAuth, async (req, res) => {
       id: r.id,
       name: r.name,
       createdAt: r.created_at,
-      senders: (r.senders || []).map((s) => ({
-        id: s.id,
-        email: s.email,
-        maxPerMinute: s.maxPerMinute,
-        provider: s.provider || 'smtp',
-        oauthStatus: s.oauthStatus || null,
-      })),
+      senders: r.senders || [],
     })),
   });
 });

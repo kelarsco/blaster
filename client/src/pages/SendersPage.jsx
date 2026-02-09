@@ -34,25 +34,8 @@ export function SendersPage() {
     maxPerMinute: 10,
   });
   const [error, setError] = useState('');
-  const [gmailMessage, setGmailMessage] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const gmail = params.get('gmail');
-    const message = params.get('message');
-    if (gmail === 'connected') {
-      setGmailMessage({ type: 'success', text: 'Gmail inbox connected.' });
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (gmail === 'error' && message) {
-      setGmailMessage({ type: 'error', text: decodeURIComponent(message) });
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (gmail === 'denied') {
-      setGmailMessage({ type: 'error', text: 'Google sign-in was cancelled or denied.' });
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []);
 
   const fetchData = useCallback(() => {
     if (!authFetch) return;
@@ -115,26 +98,6 @@ export function SendersPage() {
     }
   };
 
-  const connectGmail = async () => {
-    if (!authFetch) return;
-    setError('');
-    setGmailMessage(null);
-    try {
-      const res = await authFetch(`${API}/automation/senders/connect-gmail`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 403 && data.code === 'SENDER_LIMIT_REACHED') {
-          setError(data.error || 'Sender limit reached for your plan.');
-        } else throw new Error(data.error || 'Failed');
-        return;
-      }
-      if (data.url) window.location.href = data.url;
-      else throw new Error('No redirect URL');
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
   const removeSender = async (senderId) => {
     if (!authFetch) return;
     try {
@@ -146,15 +109,6 @@ export function SendersPage() {
       setError(e.message);
     }
   };
-
-  function senderStatusBadge(s) {
-    if ((s.provider || 'smtp') !== 'gmail_oauth') return null;
-    const status = s.oauthStatus || 'active';
-    if (status === 'active') return <span className="text-xs text-emerald-600 dark:text-emerald-400">(Active)</span>;
-    if (status === 'reconnect_needed') return <span className="text-xs text-amber-600 dark:text-amber-400">(Reconnect needed)</span>;
-    if (status === 'daily_limit_reached') return <span className="text-xs text-blaster-muted">(Daily limit reached)</span>;
-    return null;
-  }
 
   const addGroup = async () => {
     if (!newGroupName.trim() || !authFetch) return;
@@ -248,40 +202,26 @@ export function SendersPage() {
             )}
           </p>
         </div>
-        <div className="flex gap-2 shrink-0 flex-wrap">
+        <div className="flex gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => { setShowAddGroup(true); setError(''); setGmailMessage(null); }}
+            onClick={() => { setShowAddGroup(true); setError(''); }}
             className="btn-blaster-accent"
           >
             + Add Group
           </button>
           <button
             type="button"
-            onClick={connectGmail}
+            onClick={() => { setShowAdd(true); setError(''); }}
             disabled={senderCount >= senderLimit}
-            title={senderCount >= senderLimit ? 'Sender limit reached. Upgrade your plan to add more.' : 'Connect a Gmail inbox to send campaigns'}
-            className="px-4 py-2 rounded-xl bg-blaster-accent text-blaster-accent-fg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            + Connect Gmail inbox
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowAdd(true); setError(''); setGmailMessage(null); }}
-            disabled={senderCount >= senderLimit}
-            title={senderCount >= senderLimit ? 'Sender limit reached.' : 'Add sender with SMTP (e.g. Gmail App Password)'}
+            title={senderCount >= senderLimit ? 'Sender limit reached. Upgrade your plan to add more.' : ''}
             className="px-4 py-2 rounded-xl border border-blaster-border text-blaster-fg hover:bg-blaster-sidebar-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Add Sender (SMTP)
+            + Add Sender
           </button>
         </div>
       </div>
 
-      {gmailMessage && (
-        <p className={`mb-4 text-sm ${gmailMessage.type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600'}`}>
-          {gmailMessage.text}
-        </p>
-      )}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {/* Sender groups */}
@@ -337,7 +277,7 @@ export function SendersPage() {
                   <ul className="space-y-2 mb-4">
                     {(group.senders || []).map((s) => (
                       <li key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-blaster-bg-card border border-blaster-border">
-                        <span className="font-medium text-blaster-fg">{s.email} {senderStatusBadge(s)}</span>
+                        <span className="font-medium text-blaster-fg">{s.email}</span>
                         <button
                           type="button"
                           onClick={() => removeSenderFromGroup(group.id, s.id)}
@@ -418,7 +358,6 @@ export function SendersPage() {
                 <li key={s.id} className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
                   <div>
                     <span className="font-medium text-blaster-fg">{s.email}</span>
-                    {senderStatusBadge(s)}
                     <span className="ml-2 text-sm text-blaster-muted">(max {s.maxPerMinute}/min)</span>
                   </div>
                   <div className="relative shrink-0" ref={openMenuId === s.id ? menuRef : null}>

@@ -74,7 +74,6 @@ The backend (Railway) handles the Google redirect. The callback URL must be your
    - `https://yourdomain.com` (if you use the non-www version)
 3. **Authorized redirect URIs** (add both; use your real Railway public URL, no trailing slash):
    - `https://your-railway-app.railway.app/api/auth/google/callback`
-   - `https://your-railway-app.railway.app/api/auth/gmail-connect/callback` (for “Connect Gmail inbox” on Senders page)
 4. **Railway variables:** set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and:
    - `GOOGLE_CALLBACK_URL` = `https://your-railway-app.railway.app/api/auth/google/callback`
    - `FRONTEND_URL` = `https://www.yourdomain.com` (so the backend redirects users back to your site after login)

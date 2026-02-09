@@ -1,6 +1,5 @@
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
-import { sendEmailViaGmail } from './gmailSend.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -68,44 +67,6 @@ export async function processSendEmail(payload) {
     return;
   }
 
-  const provider = (senderRow.provider || 'smtp').toLowerCase();
-  const storeDomain = (() => {
-    try {
-      return new URL(storeUrl).hostname;
-    } catch {
-      return storeUrl;
-    }
-  })();
-  const finalBody = (body || '')
-    .replace(/\{\{store_url\}\}/g, storeUrl)
-    .replace(/\{\{store_domain\}\}/g, storeDomain);
-  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
-
-  if (provider === 'gmail_oauth') {
-    const accessToken = senderRow.oauth_access_token;
-    const refreshToken = senderRow.oauth_refresh_token || null;
-    if (!accessToken) {
-      console.error('[send] Gmail sender has no token. Reconnect in Senders.');
-      await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Gmail not connected');
-      return;
-    }
-    const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 2));
-    const doSend = async () => {
-      await sendEmailViaGmail(senderId, senderRow.email, accessToken, refreshToken, email, finalSubject, finalBody);
-      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
-      if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
-    };
-    try {
-      await withSenderSerialization(senderId, maxPerMinute, doSend);
-    } catch (err) {
-      const errMsg = err.message || String(err);
-      console.error('[send] Gmail API error:', errMsg, '| to:', email, '| from:', senderRow.email);
-      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', errMsg);
-      if (inserted) await updateCampaignCounts(db, campaignId, 'failed');
-    }
-    return;
-  }
-
   let config;
   try {
     config = JSON.parse(senderRow.config || '{}');
@@ -117,9 +78,21 @@ export async function processSendEmail(payload) {
     : undefined;
   if (!auth || !auth.user || !auth.pass) {
     console.error('[send] Sender has no SMTP user/password. Edit the sender in Automation Setup and fill SMTP user + App Password.');
-    await safeInsertCampaignSend(db, campaignId, storeUrl, email, null, 'failed', 'Sender missing SMTP user/password');
+    await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Sender missing SMTP user/password');
     return;
   }
+
+  const storeDomain = (() => {
+    try {
+      return new URL(storeUrl).hostname;
+    } catch {
+      return storeUrl;
+    }
+  })();
+  const finalBody = (body || '')
+    .replace(/\{\{store_url\}\}/g, storeUrl)
+    .replace(/\{\{store_domain\}\}/g, storeDomain);
+  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
 
   const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 10));
   const transporter = getTransporter(senderId, config, auth);

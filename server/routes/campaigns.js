@@ -81,11 +81,7 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       senderIds = groupSenders.rows.map((r) => r.sender_id);
     }
     if (senderIds.length === 0 && (!senders || !senders.length)) {
-      const senderList = (await db.query(
-        `SELECT id FROM senders WHERE user_id = $1 AND is_active = 1
-         AND (provider IS NULL OR provider = 'smtp' OR (provider = 'gmail_oauth' AND oauth_status = 'active'))`,
-        [userId]
-      )).rows;
+      const senderList = (await db.query('SELECT id, email FROM senders WHERE user_id = $1 AND is_active = 1', [userId])).rows;
       senderIds = senderList.map((s) => s.id);
     } else if (senders && senders.length) {
       senderIds = senders;
@@ -93,16 +89,6 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
     if (senderIds.length === 0) {
       return res.status(400).json({ error: 'Add at least one sender to a group in Senders, then select a group.' });
     }
-    const sendable = await db.query(
-      `SELECT id FROM senders WHERE id = ANY($1::text[]) AND user_id = $2 AND is_active = 1
-       AND (provider IS NULL OR provider = 'smtp' OR (provider = 'gmail_oauth' AND oauth_status = 'active'))`,
-      [senderIds, userId]
-    );
-    const sendableIds = sendable.rows.map((r) => r.id);
-    if (sendableIds.length === 0) {
-      return res.status(400).json({ error: 'No senders are ready to send. Connect Gmail inboxes or add SMTP senders and ensure they are active.' });
-    }
-    senderIds = sendableIds;
     let list = recipients;
     if (onePerStore) {
       const byStore = new Map();
