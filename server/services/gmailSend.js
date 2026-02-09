@@ -85,19 +85,28 @@ export async function sendEmailViaGmail(senderId, fromEmail, accessToken, refres
 
     if (res.status === 403 || res.status === 429) {
       const errText = await res.text();
-      const isQuota = /quota|rate|limit|429/i.test(errText);
-      if (db && isQuota) {
-        await db.query(
-          "UPDATE senders SET oauth_status = 'daily_limit_reached' WHERE id = $1",
-          [senderId]
-        ).catch(() => {});
+      // Only treat as daily limit when clearly quota/rate (429 or explicit quota wording). Unverified app / access denied 403 often contains "limit" but is not a send quota.
+      const isQuota = res.status === 429 || /quota exceeded|rate limit|daily limit|user rate limit|resource has been exhausted/i.test(errText);
+      const isAccessBlocked = /access denied|blocked|verification|verified this app|forbidden|restricted/i.test(errText);
+      if (db) {
+        if (isQuota) {
+          await db.query(
+            "UPDATE senders SET oauth_status = 'daily_limit_reached' WHERE id = $1",
+            [senderId]
+          ).catch(() => {});
+        } else if (isAccessBlocked || res.status === 403) {
+          await db.query(
+            "UPDATE senders SET oauth_status = 'reconnect_needed' WHERE id = $1",
+            [senderId]
+          ).catch(() => {});
+        }
       }
-      throw new Error(isQuota ? 'Gmail daily send limit reached for this account.' : 'Gmail API denied (check permissions).');
+      throw new Error(isQuota ? 'Gmail daily send limit reached for this account.' : 'Gmail access blocked. If you see "app not verified", add this account as a test user in Google Cloud Console or verify the app. Reconnect this inbox in Senders.');
     }
 
     if (!res.ok) {
       const errText = await res.text();
-      if (/revoked|invalid|access denied/i.test(errText) && db) {
+      if (/revoked|invalid|access denied|blocked|verification/i.test(errText) && db) {
         await db.query(
           "UPDATE senders SET oauth_status = 'reconnect_needed' WHERE id = $1",
           [senderId]
