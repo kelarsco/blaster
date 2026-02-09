@@ -51,13 +51,21 @@ function normalizeObfuscated(text) {
     .trim();
 }
 
-/** Trim trailing letters accidentally glued to the domain (e.g. gmail.comstrada → gmail.com, .comhorario → .com). */
+/** Trim trailing letters accidentally glued to common TLDs. Very conservative - preserves valid domains like .community, .company, etc. */
 function trimTrailingFromDomain(match) {
   const atIdx = match.indexOf('@');
   if (atIdx === -1) return match;
   const domain = match.slice(atIdx + 1);
-  const trimmed = domain.replace(/(\.[a-zA-Z]{2,})[a-zA-Z]*$/, '$1');
-  return match.slice(0, atIdx + 1) + trimmed;
+  // Only trim if domain ends with .com/.net/.org followed by 7+ trailing letters (very likely junk)
+  // This preserves valid domains: example.community (6 chars), example.company (4 chars), etc.
+  // Threshold of 7+ ensures we don't trim valid domain parts
+  const junkPattern = /^(.+?)(\.(com|net|org))([a-z]{7,})$/i;
+  const m = domain.match(junkPattern);
+  if (m && m[4].length >= 7 && !m[4].includes('.')) {
+    // Only trim if trailing is 7+ chars with no dots (very unlikely to be valid domain part)
+    return match.slice(0, atIdx + 1) + m[1] + m[2];
+  }
+  return match;
 }
 
 function extractFromText(text, storeHost = '') {
