@@ -4,7 +4,7 @@ import { Clock, Folder, Globe } from 'react-feather';
 const STORAGE_KEY = 'blaster-settings';
 
 const DEFAULT_SETTINGS = {
-  delayBetweenEmails: 20,
+  delayBetweenEmails: 10,
   maxConcurrentCrawlers: 2,
   maxUrlsPerScan: 1000,
   // Keep in sync with PATHS_TO_TRY in server/services/crawler.js
@@ -95,7 +95,7 @@ export function SettingsPage() {
             className={inputClass}
           />
           <p className="text-xs text-blaster-muted mt-2">
-            Minimum 20 seconds (enforced). Adjust manually; no automatic throttling.
+            Minimum 10 seconds (enforced). You can increase for a slower, more conservative pace.
           </p>
         </section>
 

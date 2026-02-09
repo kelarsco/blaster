@@ -33,10 +33,10 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 20 && d <= 300) return d;
+        if (d >= 10 && d <= 300) return d;
       }
     } catch (_) {}
-    return 20;
+    return 10;
   });
   const [delayMax, setDelayMax] = useState(() => {
     try {
@@ -44,7 +44,7 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
       if (raw) {
         const parsed = JSON.parse(raw);
         const d = Number(parsed.delayBetweenEmails);
-        if (d >= 20 && d <= 300) return Math.max(20, d);
+        if (d >= 10 && d <= 300) return Math.max(10, d);
       }
     } catch (_) {}
     return 30;
@@ -134,8 +134,8 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
   const loadPreset = (preset) => {
     if (preset.subjects?.length) setSubjectLines(preset.subjects.map((v, i) => ({ id: i + 1, value: typeof v === 'string' ? v : v.value })));
     if (preset.templates?.length) setTemplates(preset.templates.map((t, i) => ({ id: i + 1, body: typeof t === 'string' ? t : t.body || t.text })));
-    if (preset.delayMin != null) setDelayMin(Math.max(20, Number(preset.delayMin)));
-    if (preset.delayMax != null) setDelayMax(Math.max(20, Number(preset.delayMax)));
+    if (preset.delayMin != null) setDelayMin(Math.max(10, Number(preset.delayMin)));
+    if (preset.delayMax != null) setDelayMax(Math.max(10, Number(preset.delayMax)));
     if (preset.senders?.length === 1 && groups.some((g) => g.id === preset.senders[0])) {
       setSelectedGroupId(preset.senders[0]);
     }
@@ -328,13 +328,13 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
           {/* Delay & options */}
           <section className={sectionClass}>
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Sending options</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Minimum 20 sec between emails is enforced. Set your own min/max above that.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Minimum 10 sec between emails. Increase min/max for a slower, safer pace.</p>
             <div className="flex flex-wrap gap-6 items-center">
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <span className="font-medium">Delay between emails (sec):</span>
-                <input type="number" min={20} max={300} step={1} value={delayMin} onChange={(e) => setDelayMin(Math.max(20, Number(e.target.value) || 20))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={10} max={300} step={1} value={delayMin} onChange={(e) => setDelayMin(Math.max(10, Number(e.target.value) || 10))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>min</span>
-                <input type="number" min={20} max={300} step={1} value={delayMax} onChange={(e) => setDelayMax(Math.max(20, Number(e.target.value) || 20))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
+                <input type="number" min={10} max={300} step={1} value={delayMax} onChange={(e) => setDelayMax(Math.max(10, Number(e.target.value) || 10))} className="w-14 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100" />
                 <span>max</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">

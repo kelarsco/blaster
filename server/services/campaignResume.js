@@ -1,9 +1,9 @@
 import { getDb } from '../db.js';
 import { addSendJob } from './queue.js';
 
-const MIN_SEND_INTERVAL_SEC = 20;
+const MIN_SEND_INTERVAL_SEC = 10;
 
-/** Random delay in ms; min/max in seconds. Enforced minimum 20s between sends. */
+/** Random delay in ms; min/max in seconds. Enforced minimum 10s between sends. */
 function delayMs(min, max) {
   const minSec = Number(min) || 1;
   const maxSec = Number(max) != null && Number(max) >= minSec ? Number(max) : minSec;

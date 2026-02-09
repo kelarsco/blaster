@@ -31,7 +31,7 @@ function clearTransporter(senderId) {
   transporterCache.delete(senderId);
 }
 
-const MIN_SEND_INTERVAL_MS = 20000; // 20 sec minimum between sends, regardless of user/sender settings
+const MIN_SEND_INTERVAL_MS = 10000; // 10 sec minimum between sends; users can set higher in campaign options
 
 async function withSenderSerialization(senderId, maxPerMinute, fn) {
   const prev = senderQueue.get(senderId) || Promise.resolve();

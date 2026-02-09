@@ -8,10 +8,10 @@ import { getPlanLimitsForUser } from '../services/planLimits.js';
 
 export const campaignRoutes = Router();
 
-/** Minimum allowed delay between sends (seconds). No automatic throttling; user controls range, we only enforce this floor. */
-const MIN_SEND_INTERVAL_SEC = 20;
+/** Minimum allowed delay between sends (seconds). Users can set higher in campaign options. */
+const MIN_SEND_INTERVAL_SEC = 10;
 
-/** Random delay in ms; min/max can be fractional seconds. Enforced minimum 20s. */
+/** Random delay in ms; min/max can be fractional seconds. Enforced minimum 10s. */
 function delayMs(min, max) {
   const minSec = Number(min) || 1;
   const maxSec = Number(max) != null && Number(max) >= minSec ? Number(max) : minSec;
@@ -57,7 +57,7 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       senderGroupId,
       subjects,
       templates,
-      delayMin = 20,
+      delayMin = 10,
       delayMax = 30,
       onePerStore = true,
     } = req.body || {};
@@ -260,7 +260,7 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
      )`,
     [campaignId]
   );
-  const delayMin = Math.max(20, campaignRow.delay_min != null ? Number(campaignRow.delay_min) : 20);
+  const delayMin = Math.max(MIN_SEND_INTERVAL_SEC, campaignRow.delay_min != null ? Number(campaignRow.delay_min) : MIN_SEND_INTERVAL_SEC);
   const delayMax = Math.max(delayMin, campaignRow.delay_max != null ? Number(campaignRow.delay_max) : delayMin);
   for (let i = 0; i < pending.rows.length; i++) {
     const row = pending.rows[i];
