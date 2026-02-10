@@ -84,18 +84,38 @@ function hasCleanDomainEnding(domain) {
   return true;
 }
 
-/** Accept all valid-looking emails. Only reject FAKE_DOMAINS, file extensions, and .com.xxx junk. */
+/** Reject local parts that are clearly from code/CSS/URLs (e.g. }@media, '/@theme, /@vipeclub). */
+function isCodeOrPathLocalPart(local) {
+  if (!local || local.length < 2) return true;
+  if (/[{}'"\\\/]/.test(local)) return true;
+  if (/^[.\-]|[.\-]$/.test(local)) return true;
+  return false;
+}
+
+/** Domain must have a real TLD (at least one dot, suffix 2+ letters). Rejects @any, @media, @1191, @axenvipe. */
+function hasValidDomainStructure(domain) {
+  if (!domain || domain.length < 4) return false;
+  if (/^\d+$/.test(domain)) return false;
+  if (!domain.includes('.')) return false;
+  const tld = domain.split('.').pop();
+  return /^[a-zA-Z]{2,63}$/.test(tld);
+}
+
+/** Accept only emails with valid structure: real domain (with TLD), no code/CSS/URL fragments. */
 function isValidEmail(email, storeOriginHost = '') {
   const lower = email.toLowerCase().trim();
   if (lower.length < 6 || lower.length > 254 || !lower.includes('@')) return false;
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(lower)) return false;
   const at = lower.indexOf('@');
+  const local = lower.slice(0, at);
   const domain = lower.slice(at + 1);
+  if (isCodeOrPathLocalPart(local)) return false;
+  if (!hasValidDomainStructure(domain)) return false;
   if (!hasCleanDomainEnding(domain)) return false;
   if (FAKE_DOMAINS.has(domain)) return false;
   if (storeOriginHost && (domain === storeOriginHost || domain.endsWith('.' + storeOriginHost))) return true;
   if (/^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/.test(domain)) return true;
-  return true;
+  return false;
 }
 
 function getStoreHost(storeUrl) {
