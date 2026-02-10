@@ -7,17 +7,16 @@ import https from 'https';
 import http from 'http';
 import { load } from 'cheerio';
 
-const REQUEST_TIMEOUT_MS = 18000;
-const PRIVACY_POLICY_TIMEOUT_MS = 25000;
+const REQUEST_TIMEOUT_MS = 15000;
+const PRIVACY_POLICY_TIMEOUT_MS = 20000;
 const PAGE_LOAD_TIMEOUT_MS = 20000;
-const CRAWL_TOTAL_TIMEOUT_MS = 120000;
-const DEFAULT_DELAY_MIN_MS = 2000;
-const DEFAULT_DELAY_MAX_MS = 4000;
-const DELAY_BEFORE_FIRST_REQUEST_MS = 2000;
-const STEALTH_DELAY_MIN_MS = 2500;
-const STEALTH_DELAY_MAX_MS = 5000;
-const MAX_PAGES_PER_STORE = 18;
-const MAX_FOOTER_LINKS = 10;
+const CRAWL_TOTAL_TIMEOUT_MS = 85000;
+const DEFAULT_DELAY_MIN_MS = 800;
+const DEFAULT_DELAY_MAX_MS = 1500;
+const STEALTH_DELAY_MIN_MS = 1200;
+const STEALTH_DELAY_MAX_MS = 2500;
+const MAX_PAGES_PER_STORE = 8;
+const MAX_FOOTER_LINKS = 5;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -64,6 +63,7 @@ function randomBetween(minMs, maxMs) {
 }
 
 function fetchHtml(url, options = {}) {
+  const maxRedirects = options.maxRedirects ?? 3;
   return new Promise((resolve) => {
     let req;
     const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
@@ -90,9 +90,9 @@ function fetchHtml(url, options = {}) {
       };
       req = lib.get(reqOptions, (res) => {
         const redirect = res.statusCode >= 300 && res.statusCode < 400 && res.headers.location;
-        if (redirect) {
+        if (redirect && maxRedirects > 0) {
           clearTimeout(timer);
-          fetchHtml(new URL(redirect, url).href, { ...options, userAgent }).then(resolve);
+          fetchHtml(new URL(redirect, url).href, { ...options, userAgent, maxRedirects: maxRedirects - 1 }).then(resolve);
           return;
         }
         if (res.statusCode !== 200) {
@@ -231,60 +231,40 @@ export async function crawlStore(storeUrl, options = {}) {
       const p = new URL(url).pathname || '/';
       if (fetchedPaths.has(p)) return;
       fetchedPaths.add(p);
-      if (html && typeof html === 'string' && html.length > 100) results.push({ url, html, tier });
+      if (html && typeof html === 'string' && html.trim().length > 0) results.push({ url, html, tier });
     } catch (_) {}
   };
 
   const timedOut = () => Date.now() >= deadline;
 
-  // Give each store time: delay before first request so we don't hammer the server
-  await delay(DELAY_BEFORE_FIRST_REQUEST_MS);
-  if (timedOut()) return results;
-
-  // 1) Always fetch /policies/privacy-policy first (main page to scan)
-  const privacyUrl = baseOrigin + PRIVACY_POLICY_PATH;
-  const privacyHtml = await fetchHtml(privacyUrl, { userAgent, timeout: PRIVACY_POLICY_TIMEOUT_MS });
-  addPage(privacyUrl, privacyHtml, 'priority');
-  await delay(randomBetween(delayMin, delayMax));
-  if (timedOut()) return results;
-
-  // 2) Then homepage
+  // 1) Homepage first (most stores respond; contact info often in footer)
   const homeUrl = baseOrigin + '/';
   const homeHtml = await fetchHtml(homeUrl, { userAgent, timeout: REQUEST_TIMEOUT_MS });
   addPage(homeUrl, homeHtml, 'priority');
-  await delay(randomBetween(delayMin, delayMax));
   if (timedOut()) return results;
+  await delay(randomBetween(delayMin, delayMax));
 
-  // 3) Optional: try Playwright for same pages if explicitly enabled (e.g. for JS-heavy sites)
-  if (useHeadless && results.length < 2) {
-    const headlessResults = await crawlWithPlaywright(baseOrigin, [
-      { url: privacyUrl, tier: 'priority' },
-      { url: homeUrl, tier: 'priority' },
-    ], {
-      userAgent,
-      totalTimeoutMs: 30000,
-      pageTimeoutMs: PAGE_LOAD_TIMEOUT_MS,
-    });
-    if (headlessResults && headlessResults.length > 0) {
-      for (const r of headlessResults) addPage(r.url, r.html, r.tier);
-    }
-  }
+  // 2) Privacy policy (Shopify and many stores list contact here)
+  const privacyUrl = baseOrigin + PRIVACY_POLICY_PATH;
+  const privacyHtml = await fetchHtml(privacyUrl, { userAgent, timeout: PRIVACY_POLICY_TIMEOUT_MS });
+  addPage(privacyUrl, privacyHtml, 'priority');
+  if (timedOut()) return results;
+  await delay(randomBetween(delayMin, delayMax));
 
-  // 4) Additional priority pages (contact, about, etc.) with delays so each store has time
-  const extraPaths = PRIORITY_PATHS.slice(2, 10);
-  for (const path of extraPaths) {
+  // 3) Contact page
+  const contactPaths = ['/pages/contact', '/contact', '/contact-us', '/about', '/pages/about'];
+  for (const path of contactPaths) {
     if (results.length >= maxPages || timedOut()) break;
-    await delay(randomBetween(delayMin, delayMax));
-    if (timedOut()) break;
-    const url = path === '/' ? baseOrigin + '/' : baseOrigin + path;
+    const url = baseOrigin + path;
     const html = await fetchHtml(url, { userAgent, timeout: REQUEST_TIMEOUT_MS });
     addPage(url, html, 'priority');
+    await delay(randomBetween(delayMin, delayMax));
   }
 
+  // 4) Footer links from already-fetched pages (no extra delay loop)
   if (results.length < maxPages && !timedOut()) {
     const footerCandidates = new Map();
     for (const { url, html } of results) {
-      if (timedOut()) break;
       for (const { url: linkUrl, path } of extractFooterAndContactLinks(html, baseOrigin)) {
         if (!fetchedPaths.has(path)) footerCandidates.set(path, linkUrl);
       }
@@ -293,7 +273,6 @@ export async function crawlStore(storeUrl, options = {}) {
     for (const [, linkUrl] of footerList) {
       if (results.length >= maxPages || timedOut()) break;
       await delay(randomBetween(delayMin, delayMax));
-      if (timedOut()) break;
       const html = await fetchHtml(linkUrl, { userAgent, timeout: REQUEST_TIMEOUT_MS });
       addPage(linkUrl, html, 'footer');
     }
