@@ -7,14 +7,15 @@ import https from 'https';
 import http from 'http';
 import { load } from 'cheerio';
 
-const REQUEST_TIMEOUT_MS = 14000;
-const PRIVACY_POLICY_TIMEOUT_MS = 20000;
-const PAGE_LOAD_TIMEOUT_MS = 18000;
-const CRAWL_TOTAL_TIMEOUT_MS = 90000;
-const DEFAULT_DELAY_MIN_MS = 500;
-const DEFAULT_DELAY_MAX_MS = 1200;
-const STEALTH_DELAY_MIN_MS = 1200;
-const STEALTH_DELAY_MAX_MS = 2500;
+const REQUEST_TIMEOUT_MS = 18000;
+const PRIVACY_POLICY_TIMEOUT_MS = 25000;
+const PAGE_LOAD_TIMEOUT_MS = 20000;
+const CRAWL_TOTAL_TIMEOUT_MS = 120000;
+const DEFAULT_DELAY_MIN_MS = 2000;
+const DEFAULT_DELAY_MAX_MS = 4000;
+const DELAY_BEFORE_FIRST_REQUEST_MS = 2000;
+const STEALTH_DELAY_MIN_MS = 2500;
+const STEALTH_DELAY_MAX_MS = 5000;
 const MAX_PAGES_PER_STORE = 18;
 const MAX_FOOTER_LINKS = 10;
 
@@ -26,16 +27,18 @@ const USER_AGENTS = [
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ];
 
-/** Priority order: privacy first, then homepage, then contact/about/support/help. */
+/** First page to scan per store (Shopify and many stores put contact/email here). */
+const PRIVACY_POLICY_PATH = '/policies/privacy-policy';
+
+/** After privacy policy: homepage, then contact/about/support. */
 const PRIORITY_PATHS = [
-  '/policies/privacy-policy',
+  PRIVACY_POLICY_PATH,
   '/',
   '/pages/contact',
   '/contact',
   '/contact-us',
   '/pages/about',
   '/about',
-  '/about-us',
   '/support',
   '/help',
   '/help-center',
@@ -218,7 +221,7 @@ export async function crawlStore(storeUrl, options = {}) {
   const delayMax = options.delayMaxMs ?? (stealth ? STEALTH_DELAY_MAX_MS : DEFAULT_DELAY_MAX_MS);
   const maxPages = Math.min(options.maxPages ?? MAX_PAGES_PER_STORE, 25);
   const userAgent = options.userAgent || pickUserAgent();
-  const useHeadless = options.useHeadless !== false;
+  const useHeadless = options.useHeadless === true;
   const fetchedPaths = new Set();
   const totalTimeout = options.totalTimeoutMs ?? CRAWL_TOTAL_TIMEOUT_MS;
   const deadline = Date.now() + totalTimeout;
@@ -228,58 +231,53 @@ export async function crawlStore(storeUrl, options = {}) {
       const p = new URL(url).pathname || '/';
       if (fetchedPaths.has(p)) return;
       fetchedPaths.add(p);
-      if (html && typeof html === 'string') results.push({ url, html, tier });
+      if (html && typeof html === 'string' && html.length > 100) results.push({ url, html, tier });
     } catch (_) {}
   };
 
   const timedOut = () => Date.now() >= deadline;
 
-  // Build list of URLs to fetch: priority paths first
-  const pathsToFetch = [];
-  for (const path of PRIORITY_PATHS) {
-    if (pathsToFetch.length >= maxPages || timedOut()) break;
-    const pathNorm = path === '/' ? '/' : path;
-    if (fetchedPaths.has(pathNorm)) continue;
-    const url = path === '/' ? baseOrigin + '/' : baseOrigin + path;
-    pathsToFetch.push({ url, path: pathNorm, tier: 'priority' });
-    fetchedPaths.add(pathNorm);
-  }
+  // Give each store time: delay before first request so we don't hammer the server
+  await delay(DELAY_BEFORE_FIRST_REQUEST_MS);
+  if (timedOut()) return results;
 
-  // Try Playwright first if requested (fixes many "no email found" on JS-rendered sites)
-  if (useHeadless && pathsToFetch.length > 0) {
-    const headlessResults = await crawlWithPlaywright(baseOrigin, pathsToFetch, {
+  // 1) Always fetch /policies/privacy-policy first (main page to scan)
+  const privacyUrl = baseOrigin + PRIVACY_POLICY_PATH;
+  const privacyHtml = await fetchHtml(privacyUrl, { userAgent, timeout: PRIVACY_POLICY_TIMEOUT_MS });
+  addPage(privacyUrl, privacyHtml, 'priority');
+  await delay(randomBetween(delayMin, delayMax));
+  if (timedOut()) return results;
+
+  // 2) Then homepage
+  const homeUrl = baseOrigin + '/';
+  const homeHtml = await fetchHtml(homeUrl, { userAgent, timeout: REQUEST_TIMEOUT_MS });
+  addPage(homeUrl, homeHtml, 'priority');
+  await delay(randomBetween(delayMin, delayMax));
+  if (timedOut()) return results;
+
+  // 3) Optional: try Playwright for same pages if explicitly enabled (e.g. for JS-heavy sites)
+  if (useHeadless && results.length < 2) {
+    const headlessResults = await crawlWithPlaywright(baseOrigin, [
+      { url: privacyUrl, tier: 'priority' },
+      { url: homeUrl, tier: 'priority' },
+    ], {
       userAgent,
-      totalTimeoutMs: Math.min(45000, totalTimeout),
+      totalTimeoutMs: 30000,
       pageTimeoutMs: PAGE_LOAD_TIMEOUT_MS,
     });
     if (headlessResults && headlessResults.length > 0) {
       for (const r of headlessResults) addPage(r.url, r.html, r.tier);
-      // Discover footer/contact links from first page, then fetch them (keep fetch for extra pages)
-      const firstHtml = headlessResults[0]?.html;
-      if (firstHtml && results.length < maxPages && !timedOut()) {
-        const extra = extractFooterAndContactLinks(firstHtml, baseOrigin);
-        for (const { url, path } of extra) {
-          if (results.length >= maxPages || timedOut()) break;
-          if (fetchedPaths.has(path)) continue;
-          fetchedPaths.add(path);
-          await delay(randomBetween(delayMin, delayMax));
-          const html = await fetchHtml(url, { userAgent, timeout: REQUEST_TIMEOUT_MS });
-          addPage(url, html, 'footer');
-        }
-      }
-      return results;
     }
   }
 
-  // Fallback: fetch with http/https
-  fetchedPaths.clear();
-  for (const path of PRIORITY_PATHS) {
+  // 4) Additional priority pages (contact, about, etc.) with delays so each store has time
+  const extraPaths = PRIORITY_PATHS.slice(2, 10);
+  for (const path of extraPaths) {
     if (results.length >= maxPages || timedOut()) break;
     await delay(randomBetween(delayMin, delayMax));
     if (timedOut()) break;
     const url = path === '/' ? baseOrigin + '/' : baseOrigin + path;
-    const pageTimeout = path === '/policies/privacy-policy' ? PRIVACY_POLICY_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
-    const html = await fetchHtml(url, { userAgent, timeout: pageTimeout });
+    const html = await fetchHtml(url, { userAgent, timeout: REQUEST_TIMEOUT_MS });
     addPage(url, html, 'priority');
   }
 
@@ -304,4 +302,4 @@ export async function crawlStore(storeUrl, options = {}) {
   return results;
 }
 
-export { PRIORITY_PATHS, CONTACT_KEYWORDS, USER_AGENTS };
+export { PRIORITY_PATHS, PRIVACY_POLICY_PATH, CONTACT_KEYWORDS, USER_AGENTS };

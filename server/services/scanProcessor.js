@@ -6,9 +6,9 @@ import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
 const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 8);
-const DELAY_BETWEEN_STORES_MS = 600;
+const DELAY_BETWEEN_STORES_MS = 2500;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 90000;
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -137,6 +137,8 @@ export async function processScan(payload) {
         const pages = await crawlStore(storeUrl, {
           stealthMode,
           maxPages: 10,
+          delayMinMs: 2000,
+          delayMaxMs: 4000,
         });
         const results = await extractEmailsFromPages(storeUrl, pages, emailFilters);
         const best = results[0];
