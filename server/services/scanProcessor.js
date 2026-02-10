@@ -134,12 +134,7 @@ export async function processScan(payload) {
           }
         }
 
-        const pages = await crawlStore(storeUrl, {
-          stealthMode,
-          maxPages: 8,
-          delayMinMs: 800,
-          delayMaxMs: 1500,
-        });
+        const pages = await crawlStore(storeUrl);
         const results = await extractEmailsFromPages(storeUrl, pages, emailFilters);
         const best = results[0];
         if (best) {

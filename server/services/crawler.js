@@ -1,73 +1,32 @@
 /**
- * Store crawler: priority-based pages (privacy, homepage, contact, about, footer/help links),
- * optional Playwright headless browser for JS-rendered content, with fetch fallback.
- * To use headless: npm install playwright && npx playwright install chromium (in server/).
+ * Simple store crawler for Shopify and similar stores.
+ * Based on typical structure: Home, Contact, Privacy policy (where emails appear).
+ * Only fetches: homepage, /pages/contact, /policies/privacy-policy.
  */
 import https from 'https';
 import http from 'http';
-import { load } from 'cheerio';
 
 const REQUEST_TIMEOUT_MS = 15000;
-const PRIVACY_POLICY_TIMEOUT_MS = 20000;
-const PAGE_LOAD_TIMEOUT_MS = 20000;
-const CRAWL_TOTAL_TIMEOUT_MS = 85000;
-const DEFAULT_DELAY_MIN_MS = 800;
-const DEFAULT_DELAY_MAX_MS = 1500;
-const STEALTH_DELAY_MIN_MS = 1200;
-const STEALTH_DELAY_MAX_MS = 2500;
-const MAX_PAGES_PER_STORE = 8;
-const MAX_FOOTER_LINKS = 5;
+const DELAY_BETWEEN_PAGES_MS = 600;
 
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** Pages where Shopify stores typically show contact/email: Contact, Privacy policy, Home (footer). */
+const PAGES_TO_SCAN = [
+  { path: '/', name: 'home' },
+  { path: '/pages/contact', name: 'contact' },
+  { path: '/policies/privacy-policy', name: 'privacy' },
 ];
-
-/** First page to scan per store (Shopify and many stores put contact/email here). */
-const PRIVACY_POLICY_PATH = '/policies/privacy-policy';
-
-/** After privacy policy: homepage, then contact/about/support. */
-const PRIORITY_PATHS = [
-  PRIVACY_POLICY_PATH,
-  '/',
-  '/pages/contact',
-  '/contact',
-  '/contact-us',
-  '/pages/about',
-  '/about',
-  '/support',
-  '/help',
-  '/help-center',
-  '/customer-service',
-  '/legal',
-  '/impressum',
-  '/terms',
-  '/terms-of-service',
-];
-
-const CONTACT_KEYWORDS = /contact|support|help|legal|customer-service|impressum|about|privacy|terms|faq/i;
-
-function pickUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
 
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function randomBetween(minMs, maxMs) {
-  return minMs + Math.random() * (maxMs - minMs);
-}
-
 function fetchHtml(url, options = {}) {
+  const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? 3;
   return new Promise((resolve) => {
     let req;
-    const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
-    const userAgent = options.userAgent || pickUserAgent();
     const timer = setTimeout(() => {
       if (req) req.destroy();
       resolve(null);
@@ -82,17 +41,17 @@ function fetchHtml(url, options = {}) {
         path: (parsed.pathname || '/') + (parsed.search || ''),
         method: 'GET',
         headers: {
-          'User-Agent': userAgent,
+          'User-Agent': USER_AGENT,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
         },
         rejectUnauthorized: false,
       };
       req = lib.get(reqOptions, (res) => {
-        const redirect = res.statusCode >= 300 && res.statusCode < 400 && res.headers.location;
-        if (redirect && maxRedirects > 0) {
+        const location = res.statusCode >= 300 && res.statusCode < 400 && res.headers.location;
+        if (location && maxRedirects > 0) {
           clearTimeout(timer);
-          fetchHtml(new URL(redirect, url).href, { ...options, userAgent, maxRedirects: maxRedirects - 1 }).then(resolve);
+          fetchHtml(new URL(location, url).href, { timeout, maxRedirects: maxRedirects - 1 }).then(resolve);
           return;
         }
         if (res.statusCode !== 200) {
@@ -122,163 +81,29 @@ function fetchHtml(url, options = {}) {
   });
 }
 
-/** Extract same-origin links from footer or any page whose href/text matches contact/support/help/about. */
-function extractFooterAndContactLinks(html, baseOrigin) {
-  if (!html || typeof html !== 'string') return [];
-  const seen = new Set();
-  const out = [];
-  try {
-    const maxLen = 600000;
-    const toParse = html.length > maxLen ? html.slice(0, maxLen) : html;
-    const $ = load(toParse, { decodeEntities: true });
-    const origin = new URL(baseOrigin).origin;
-    const $footer = $('footer, [role="contentinfo"], .footer, #footer, .site-footer');
-    const $links = $footer.length ? $footer.find('a[href]').addBack().end().find('a[href]') : $('a[href]');
-    $links.each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const text = $(el).text().trim();
-      let full;
-      try {
-        full = href.startsWith('http') ? href : new URL(href, baseOrigin).href;
-      } catch (_) {
-        return;
-      }
-      let sameOrigin = false;
-      try {
-        sameOrigin = new URL(full).origin === origin;
-      } catch (_) {}
-      if (!sameOrigin) return;
-      const path = new URL(full).pathname || '/';
-      if (seen.has(path)) return;
-      if (!CONTACT_KEYWORDS.test(href) && !CONTACT_KEYWORDS.test(text)) return;
-      seen.add(path);
-      out.push({ url: full, path });
-    });
-  } catch (_) {}
-  return out.slice(0, MAX_FOOTER_LINKS);
-}
-
-/** Crawl using Playwright (headless browser): wait for DOM/networkidle, then get HTML. Returns null on any failure. */
-async function crawlWithPlaywright(baseOrigin, pathsToFetch, options) {
-  let browser;
-  try {
-    const { chromium } = await import('playwright');
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-    const context = await browser.newContext({
-      userAgent: options.userAgent || pickUserAgent(),
-      ignoreHTTPSErrors: true,
-    });
-    const results = [];
-    const deadline = Date.now() + (options.totalTimeoutMs ?? CRAWL_TOTAL_TIMEOUT_MS);
-    const pageTimeout = options.pageTimeoutMs ?? PAGE_LOAD_TIMEOUT_MS;
-
-    for (const { url, tier } of pathsToFetch) {
-      if (Date.now() >= deadline) break;
-      try {
-        const page = await context.newPage();
-        await page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: pageTimeout,
-        }).catch(() => null);
-        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-        const html = await page.content();
-        await page.close();
-        if (html && typeof html === 'string') results.push({ url, html, tier });
-      } catch (_) {
-        // skip this page
-      }
-    }
-    await context.close();
-    return results;
-  } catch (_) {
-    return null;
-  } finally {
-    if (browser) await browser.close().catch(() => {});
-  }
-}
-
 /**
- * Crawl a store: priority pages first (privacy, homepage, contact, about, support, help),
- * then footer/contact links. Tries Playwright when available for JS-rendered content; falls back to fetch.
- * options: { stealthMode, delayMinMs, delayMaxMs, maxPages, userAgent, useHeadless }
+ * Crawl a store: fetch homepage, contact page, and privacy policy (where emails usually are).
+ * Returns array of { url, html } for each page that returned content.
  */
-export async function crawlStore(storeUrl, options = {}) {
-  const results = [];
-  const base = (storeUrl || '').replace(/\/$/, '') || storeUrl;
-  const origin = base.startsWith('http') ? base : `https://${base}`;
-  let baseOrigin;
+export async function crawlStore(storeUrl) {
+  const out = [];
+  let base = (storeUrl || '').trim().replace(/\/$/, '') || storeUrl;
+  if (!base.startsWith('http')) base = 'https://' + base;
+  let origin;
   try {
-    baseOrigin = new URL(origin).origin;
+    origin = new URL(base).origin;
   } catch {
-    return results;
+    return out;
   }
 
-  const stealth = !!options.stealthMode;
-  const delayMin = options.delayMinMs ?? (stealth ? STEALTH_DELAY_MIN_MS : DEFAULT_DELAY_MIN_MS);
-  const delayMax = options.delayMaxMs ?? (stealth ? STEALTH_DELAY_MAX_MS : DEFAULT_DELAY_MAX_MS);
-  const maxPages = Math.min(options.maxPages ?? MAX_PAGES_PER_STORE, 25);
-  const userAgent = options.userAgent || pickUserAgent();
-  const useHeadless = options.useHeadless === true;
-  const fetchedPaths = new Set();
-  const totalTimeout = options.totalTimeoutMs ?? CRAWL_TOTAL_TIMEOUT_MS;
-  const deadline = Date.now() + totalTimeout;
-
-  const addPage = (url, html, tier) => {
-    try {
-      const p = new URL(url).pathname || '/';
-      if (fetchedPaths.has(p)) return;
-      fetchedPaths.add(p);
-      if (html && typeof html === 'string' && html.trim().length > 0) results.push({ url, html, tier });
-    } catch (_) {}
-  };
-
-  const timedOut = () => Date.now() >= deadline;
-
-  // 1) Homepage first (most stores respond; contact info often in footer)
-  const homeUrl = baseOrigin + '/';
-  const homeHtml = await fetchHtml(homeUrl, { userAgent, timeout: REQUEST_TIMEOUT_MS });
-  addPage(homeUrl, homeHtml, 'priority');
-  if (timedOut()) return results;
-  await delay(randomBetween(delayMin, delayMax));
-
-  // 2) Privacy policy (Shopify and many stores list contact here)
-  const privacyUrl = baseOrigin + PRIVACY_POLICY_PATH;
-  const privacyHtml = await fetchHtml(privacyUrl, { userAgent, timeout: PRIVACY_POLICY_TIMEOUT_MS });
-  addPage(privacyUrl, privacyHtml, 'priority');
-  if (timedOut()) return results;
-  await delay(randomBetween(delayMin, delayMax));
-
-  // 3) Contact page
-  const contactPaths = ['/pages/contact', '/contact', '/contact-us', '/about', '/pages/about'];
-  for (const path of contactPaths) {
-    if (results.length >= maxPages || timedOut()) break;
-    const url = baseOrigin + path;
-    const html = await fetchHtml(url, { userAgent, timeout: REQUEST_TIMEOUT_MS });
-    addPage(url, html, 'priority');
-    await delay(randomBetween(delayMin, delayMax));
-  }
-
-  // 4) Footer links from already-fetched pages (no extra delay loop)
-  if (results.length < maxPages && !timedOut()) {
-    const footerCandidates = new Map();
-    for (const { url, html } of results) {
-      for (const { url: linkUrl, path } of extractFooterAndContactLinks(html, baseOrigin)) {
-        if (!fetchedPaths.has(path)) footerCandidates.set(path, linkUrl);
-      }
+  for (const { path } of PAGES_TO_SCAN) {
+    const url = path === '/' ? origin + '/' : origin + path;
+    const html = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+    if (html && typeof html === 'string' && html.trim().length > 0) {
+      out.push({ url, html });
     }
-    const footerList = [...footerCandidates.entries()].slice(0, MAX_FOOTER_LINKS);
-    for (const [, linkUrl] of footerList) {
-      if (results.length >= maxPages || timedOut()) break;
-      await delay(randomBetween(delayMin, delayMax));
-      const html = await fetchHtml(linkUrl, { userAgent, timeout: REQUEST_TIMEOUT_MS });
-      addPage(linkUrl, html, 'footer');
-    }
+    await delay(DELAY_BETWEEN_PAGES_MS);
   }
 
-  return results;
+  return out;
 }
-
-export { PRIORITY_PATHS, PRIVACY_POLICY_PATH, CONTACT_KEYWORDS, USER_AGENTS };
