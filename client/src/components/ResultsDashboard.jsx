@@ -182,7 +182,7 @@ export function ResultsDashboard({
                   {store.storeUrl}
                 </a>
                 <span className="text-blaster-muted">
-                  {store.emails?.length ? `${store.emails.length} email(s)` : 'No email found'}
+                  {store.emails?.length ? `${store.emails.length} email(s)` : 'No public email detected'}
                 </span>
                 {store.sourcePages?.length ? (
                   <span className="text-xs text-blaster-muted block">
@@ -208,7 +208,7 @@ export function ResultsDashboard({
 
       {flatRows.some((r) => !r.hasEmail) && (
         <p className="mt-3 text-sm text-blaster-muted">
-          {flatRows.filter((r) => !r.hasEmail).length} store(s) with no email found (flagged).
+          {flatRows.filter((r) => !r.hasEmail).length} store(s) with no public email detected (flagged).
         </p>
       )}
 

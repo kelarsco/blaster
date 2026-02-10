@@ -62,7 +62,7 @@ export function UrlInput({
           rawUrls,
           maxConcurrentCrawlers,
           maxUrlsPerScan,
-          emailFilters: { includeProviders: [] },
+          emailFilters: { includeProviders: [], onePerStore: false },
         }),
       });
 

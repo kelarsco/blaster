@@ -1,31 +1,45 @@
 /**
- * Enterprise email extraction: DOM-aware (mailto, href, footer, schema.org, JSON-LD),
- * obfuscation normalization, HTML entities, provider filter applied during extraction.
+ * Email extraction: visible text, mailto:, href, data-*, JSON-LD and script tags.
+ * Accepts all email types (Gmail, Outlook, Yahoo, Proton, Zoho, custom domains).
+ * Filter by domain only when user explicitly requests it (includeProviders).
  */
 import { load } from 'cheerio';
 
-/** Matches valid emails; local part may contain dots (e.g. georgios.d.l.laskaris@gmail.com). */
+/** Matches valid emails; local part may contain dots. */
 const EMAIL_REGEX = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*/g;
 
-const REAL_MAIL_DOMAINS = new Set([
-  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.co.uk', 'hotmail.com', 'hotmail.co.uk',
-  'live.com', 'live.co.uk', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'yahoo.fr', 'yahoo.de',
-  'icloud.com', 'me.com', 'mac.com', 'protonmail.com', 'proton.me', 'protonmail.me',
-  'aol.com', 'zoho.com', 'mail.com', 'gmx.com', 'gmx.de', 'yandex.com', 'yandex.ru',
-  'fastmail.com', 'tutanota.com', 'att.net', 'comcast.net', 'verizon.net', 'btinternet.com',
-  'virginmedia.com', 'sky.com',
-]);
-
+/** Only reject obvious placeholders and test domains. Do NOT filter by provider. */
 const FAKE_DOMAINS = new Set([
   'example.com', 'example.org', 'example.net', 'test.com', 'email.com', 'domain.com',
   'yourdomain.com', 'youremail.com', 'placeholder.com', 'sample.com', 'mailinator.com',
   'sentry.io', 'wixpress.com', 'schema.org',
 ]);
 
-const SKIP_PREFIXES = ['example@', 'test@', 'you@', 'email@', 'user@', 'noreply@', 'no-reply@'];
-const CONTACT_PREFIXES = ['support@', 'info@', 'contact@', 'hello@', 'sales@', 'help@'];
-
 const CONFIDENCE = { mailto: 100, schema: 90, footer: 70, nav: 65, plain: 50 };
+
+export function getEmailProvider(email, storeOriginHost = '') {
+  const lower = (email || '').toLowerCase().trim();
+  const at = lower.indexOf('@');
+  if (at === -1) return 'other';
+  const domain = lower.slice(at + 1);
+  const storeHost = (storeOriginHost || '').toLowerCase();
+  if (storeHost && (domain === storeHost || domain.endsWith('.' + storeHost))) return 'domain';
+  if (domain === 'gmail.com' || domain === 'googlemail.com') return 'gmail';
+  if (domain === 'hotmail.com' || domain === 'hotmail.co.uk') return 'hotmail';
+  if (['outlook.com', 'outlook.co.uk', 'live.com', 'live.co.uk', 'msn.com'].includes(domain)) return 'outlook';
+  if (domain.startsWith('yahoo.')) return 'yahoo';
+  if (domain === 'protonmail.com' || domain === 'proton.me' || domain === 'protonmail.me') return 'protonmail';
+  return 'other';
+}
+
+export function getEmailType(email) {
+  const lower = (email || '').toLowerCase();
+  const skip = ['example@', 'test@', 'you@', 'email@', 'user@', 'noreply@', 'no-reply@'];
+  const contact = ['support@', 'info@', 'contact@', 'hello@', 'sales@', 'help@'];
+  for (const p of skip) if (lower.startsWith(p)) return 'noreply';
+  for (const p of contact) if (lower.startsWith(p)) return 'contact';
+  return 'other';
+}
 
 function decodeHtmlEntities(str) {
   if (!str || typeof str !== 'string') return '';
@@ -51,65 +65,37 @@ function normalizeObfuscated(text) {
     .trim();
 }
 
-/** Trim trailing letters accidentally glued to common TLDs. Very conservative - preserves valid domains like .community, .company, etc. */
-function trimTrailingFromDomain(match) {
+function trimTrailingJunkFromDomain(match) {
   const atIdx = match.indexOf('@');
   if (atIdx === -1) return match;
   const domain = match.slice(atIdx + 1);
-  // Only trim if domain ends with .com/.net/.org followed by 7+ trailing letters (very likely junk)
-  // This preserves valid domains: example.community (6 chars), example.company (4 chars), etc.
-  // Threshold of 7+ ensures we don't trim valid domain parts
   const junkPattern = /^(.+?)(\.(com|net|org))([a-z]{7,})$/i;
   const m = domain.match(junkPattern);
   if (m && m[4].length >= 7 && !m[4].includes('.')) {
-    // Only trim if trailing is 7+ chars with no dots (very unlikely to be valid domain part)
     return match.slice(0, atIdx + 1) + m[1] + m[2];
   }
   return match;
 }
 
-function extractFromText(text, storeHost = '') {
-  const normalized = normalizeObfuscated(decodeHtmlEntities(text));
-  const matches = normalized.match(EMAIL_REGEX) || [];
-  return matches
-    .map((e) => trimTrailingFromDomain(e.toLowerCase().trim()))
-    .filter((e) => isValidEmail(e, storeHost));
+/** Reject domains with extra junk after TLD, e.g. gmail.com.uk */
+function hasCleanDomainEnding(domain) {
+  const d = domain.toLowerCase().trim();
+  if (/\.(com|net|org)\.([a-z0-9.-]+)$/i.test(d)) return false;
+  return true;
 }
 
-/** Accepts known providers (gmail, outlook, etc.), store/domain emails (e.g. info@elurch.com, contact@store.com), and any other valid domain. Rejects only FAKE_DOMAINS and image/CSS extensions. */
+/** Accept all valid-looking emails. Only reject FAKE_DOMAINS, file extensions, and .com.xxx junk. */
 function isValidEmail(email, storeOriginHost = '') {
   const lower = email.toLowerCase().trim();
   if (lower.length < 6 || lower.length > 254 || !lower.includes('@')) return false;
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(lower)) return false;
   const at = lower.indexOf('@');
   const domain = lower.slice(at + 1);
+  if (!hasCleanDomainEnding(domain)) return false;
   if (FAKE_DOMAINS.has(domain)) return false;
-  if (REAL_MAIL_DOMAINS.has(domain)) return true;
   if (storeOriginHost && (domain === storeOriginHost || domain.endsWith('.' + storeOriginHost))) return true;
   if (/^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/.test(domain)) return true;
-  return false;
-}
-
-export function getEmailProvider(email, storeOriginHost = '') {
-  const lower = (email || '').toLowerCase().trim();
-  const at = lower.indexOf('@');
-  if (at === -1) return 'other';
-  const domain = lower.slice(at + 1);
-  const storeHost = (storeOriginHost || '').toLowerCase();
-  if (storeHost && (domain === storeHost || domain.endsWith('.' + storeHost))) return 'domain';
-  if (domain === 'gmail.com' || domain === 'googlemail.com') return 'gmail';
-  if (domain === 'hotmail.com' || domain === 'hotmail.co.uk') return 'hotmail';
-  if (['outlook.com', 'outlook.co.uk', 'live.com', 'live.co.uk', 'msn.com'].includes(domain)) return 'outlook';
-  if (domain.startsWith('yahoo.')) return 'yahoo';
-  if (domain === 'protonmail.com' || domain === 'proton.me' || domain === 'protonmail.me') return 'protonmail';
-  return 'other';
-}
-
-export function getEmailType(email) {
-  const lower = (email || '').toLowerCase();
-  for (const p of SKIP_PREFIXES) if (lower.startsWith(p)) return 'noreply';
-  for (const p of CONTACT_PREFIXES) if (lower.startsWith(p)) return 'contact';
-  return 'other';
+  return true;
 }
 
 function getStoreHost(storeUrl) {
@@ -121,7 +107,6 @@ function getStoreHost(storeUrl) {
   }
 }
 
-/** When includeProviders is empty, allow all: extract every valid email (gmail, outlook, yahoo, icloud, and any other valid domain). No provider filter during extraction. */
 function allowedByProviders(email, includeProviders, storeHost) {
   if (!Array.isArray(includeProviders) || includeProviders.length === 0) return true;
   const provider = getEmailProvider(email, storeHost);
@@ -137,19 +122,35 @@ function detectPlatform(html) {
   return null;
 }
 
-function extractJsonLdEmails(html) {
+function extractFromText(text, storeHost) {
+  const normalized = normalizeObfuscated(decodeHtmlEntities(text));
+  const matches = normalized.match(EMAIL_REGEX) || [];
+  return matches
+    .map((e) => trimTrailingJunkFromDomain(e.toLowerCase().trim()))
+    .filter((e) => isValidEmail(e, storeHost));
+}
+
+function extractJsonLdAndScriptEmails(html) {
   const out = [];
-  const scriptMatch = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const scriptMatch = /<script[^>]*>([\s\S]*?)<\/script>/gi;
   let m;
   while ((m = scriptMatch.exec(html)) !== null) {
     try {
       const raw = m[1].replace(/<!--[\s\S]*?-->/g, '').trim();
-      const obj = JSON.parse(raw);
-      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
-      const emails = str.match(EMAIL_REGEX) || [];
-      for (const e of emails) {
-        const norm = trimTrailingFromDomain(e.toLowerCase().trim());
-        if (norm.includes('@') && !norm.endsWith('.png') && !norm.endsWith('.jpg')) out.push(norm);
+      if (/application\/ld\+json/i.test(html.slice(m.index, m.index + 150))) {
+        const obj = JSON.parse(raw);
+        const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+        const emails = str.match(EMAIL_REGEX) || [];
+        for (const e of emails) {
+          const norm = trimTrailingJunkFromDomain(e.toLowerCase().trim());
+          if (norm.includes('@') && !/\.(png|jpg|js|css)$/i.test(norm)) out.push(norm);
+        }
+      } else {
+        const emails = raw.match(EMAIL_REGEX) || [];
+        for (const e of emails) {
+          const norm = trimTrailingJunkFromDomain(e.toLowerCase().trim());
+          if (norm.includes('@') && !/\.(png|jpg|js|css)$/i.test(norm)) out.push(norm);
+        }
       }
     } catch (_) {}
   }
@@ -157,8 +158,7 @@ function extractJsonLdEmails(html) {
 }
 
 /**
- * DOM-aware extraction from a single page: mailto, href, data-*, footer, header, JSON-LD, plain text.
- * Extracts all valid emails (e.g. @gmail.com, @outlook.com, @yahoo.com, @icloud.com and any other valid domain). No provider filter when includeProviders is empty.
+ * Extract from one page: visible text (body), mailto:, href, data-*, footer, header, JSON-LD and script tags.
  */
 function extractFromPage(pageUrl, html, storeHost, includeProviders = []) {
   const byEmail = new Map();
@@ -183,47 +183,46 @@ function extractFromPage(pageUrl, html, storeHost, includeProviders = []) {
   }
 
   try {
-  $('a[href^="mailto:"]').each((_, el) => {
-    const href = $(el).attr('href') || '';
-    const mailto = href.replace(/^mailto:/i, '').split(/[?,;&]/)[0].trim();
-    extractFromText(mailto, storeHost).forEach((e) => add(e, 'mailto', CONFIDENCE.mailto));
-  });
+    $('a[href^="mailto:"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const mailto = href.replace(/^mailto:/i, '').split(/[?,;&]/)[0].trim();
+      extractFromText(mailto, storeHost).forEach((e) => add(e, 'mailto', CONFIDENCE.mailto));
+    });
 
-  $('a[href]').each((_, el) => {
-    const href = $(el).attr('href') || '';
-    if (href.startsWith('mailto:')) return;
-    extractFromText(href, storeHost).forEach((e) => add(e, 'nav', CONFIDENCE.nav));
-  });
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      if (href.startsWith('mailto:')) return;
+      extractFromText(href, storeHost).forEach((e) => add(e, 'nav', CONFIDENCE.nav));
+    });
 
-  $('[data-email], [data-contact], [data-e-mail]').each((_, el) => {
-    const val = $(el).attr('data-email') || $(el).attr('data-contact') || $(el).attr('data-e-mail') || '';
-    extractFromText(val, storeHost).forEach((e) => add(e, 'plain', CONFIDENCE.plain));
-  });
+    $('[data-email], [data-contact], [data-e-mail]').each((_, el) => {
+      const val = $(el).attr('data-email') || $(el).attr('data-contact') || $(el).attr('data-e-mail') || '';
+      extractFromText(val, storeHost).forEach((e) => add(e, 'plain', CONFIDENCE.plain));
+    });
 
-  $('footer, [role="contentinfo"], .footer, #footer, .site-footer').each((_, el) => {
-    const text = $(el).text();
-    extractFromText(text, storeHost).forEach((e) => add(e, 'footer', CONFIDENCE.footer));
-  });
+    $('footer, [role="contentinfo"], .footer, #footer, .site-footer').each((_, el) => {
+      extractFromText($(el).text(), storeHost).forEach((e) => add(e, 'footer', CONFIDENCE.footer));
+    });
 
-  $('header, [role="banner"], .header, .nav, nav').each((_, el) => {
-    const text = $(el).text();
-    extractFromText(text, storeHost).forEach((e) => add(e, 'nav', CONFIDENCE.nav));
-  });
+    $('header, [role="banner"], .header, .nav, nav').each((_, el) => {
+      extractFromText($(el).text(), storeHost).forEach((e) => add(e, 'nav', CONFIDENCE.nav));
+    });
 
-  extractFromText($('body').text(), storeHost).forEach((e) => add(e, 'plain', CONFIDENCE.plain));
+    extractFromText($('body').text(), storeHost).forEach((e) => add(e, 'plain', CONFIDENCE.plain));
 
-  extractJsonLdEmails(html).forEach((e) => {
-    if (isValidEmail(e, storeHost) && allowedByProviders(e, includeProviders, storeHost)) {
-      add(e, 'schema', CONFIDENCE.schema);
-    }
-  });
+    extractJsonLdAndScriptEmails(html).forEach((e) => {
+      if (isValidEmail(e, storeHost) && allowedByProviders(e, includeProviders, storeHost)) {
+        add(e, 'schema', CONFIDENCE.schema);
+      }
+    });
   } catch (_) {}
 
   return [...byEmail.values()];
 }
 
 /**
- * Extract from multiple pages; one best email per store (by confidence), provider filter applied.
+ * Extract from multiple pages. Returns one best email per store by default (options.onePerStore = false for all).
+ * When no email is found, caller should store the store as "No public email detected" (has_email=0).
  */
 export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const storeHost = getStoreHost(storeUrl);
@@ -232,6 +231,7 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
     : Array.isArray(options.include_providers)
       ? options.include_providers
       : [];
+  const onePerStore = options.onePerStore !== false;
 
   const byEmail = new Map();
   let platform = null;
@@ -251,7 +251,10 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   }
 
   const list = [...byEmail.values()];
-  const best = list.length === 0 ? null : list.reduce((a, b) => (a.confidence >= b.confidence ? a : b));
-  const onePerStore = best ? [{ email: best.email, storeUrl: best.storeUrl, sourcePage: best.sourcePage, sourceType: best.sourceType, platform }] : [];
-  return onePerStore;
+  if (list.length === 0) return [];
+  if (onePerStore) {
+    const best = list.reduce((a, b) => (a.confidence >= b.confidence ? a : b));
+    return [{ email: best.email, storeUrl: best.storeUrl, sourcePage: best.sourcePage, sourceType: best.sourceType, platform }];
+  }
+  return list.map((c) => ({ email: c.email, storeUrl: c.storeUrl, sourcePage: c.sourcePage, sourceType: c.sourceType, platform }));
 }

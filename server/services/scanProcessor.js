@@ -47,6 +47,7 @@ export async function processScan(payload) {
       : Array.isArray(rawEmailFilters.include_providers)
         ? rawEmailFilters.include_providers
         : [],
+    onePerStore: rawEmailFilters.onePerStore !== false,
   };
 
   const db = getDb();
@@ -122,12 +123,15 @@ export async function processScan(payload) {
     });
     const workPromise = (async () => {
       try {
-        const cached = await getCachedResult(storeUrl);
-        if (cached) {
-          const results = cached.email
-            ? [{ email: cached.email, storeUrl, sourcePage: cached.source_page || '', sourceType: cached.source_type, platform: cached.platform }]
-            : [];
-          return { storeUrl, results };
+        const wantAllEmails = emailFilters.onePerStore === false;
+        if (!wantAllEmails) {
+          const cached = await getCachedResult(storeUrl);
+          if (cached) {
+            const results = cached.email
+              ? [{ email: cached.email, storeUrl, sourcePage: cached.source_page || '', sourceType: cached.source_type, platform: cached.platform }]
+              : [];
+            return { storeUrl, results };
+          }
         }
 
         const pages = await crawlStore(storeUrl, {
@@ -182,6 +186,7 @@ export async function processScan(payload) {
               `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, NULL, 0)`,
               [scanId, storeUrl]
             );
+            /* Store saved as "No public email detected" (has_email=0, email=NULL) */
           }
         } else {
           for (const r of results) {
@@ -189,7 +194,7 @@ export async function processScan(payload) {
             foundCount++;
           }
           if (results.length === 0) {
-            memoryResults.push({ store_url: storeUrl, email: null, source_page: null, has_email: 0 });
+            memoryResults.push({ store_url: storeUrl, email: null, source_page: null, has_email: 0 }); /* No public email detected */
           }
           memoryStore.results.set(scanId, memoryResults);
         }
