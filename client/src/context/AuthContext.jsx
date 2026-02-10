@@ -101,9 +101,67 @@ export function AuthProvider({ children }) {
     if (userData) setUser(userData);
   }, []);
 
-  const loginWithGoogle = () => {
-    window.location.href = `${API}/auth/google`;
-  };
+  /** Open Google OAuth in a popup when possible; fallback to full-page redirect. */
+  const loginWithGoogle = useCallback(() => {
+    const url = `${API}/auth/google`;
+
+    // Try popup first
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.innerWidth - width) / 2;
+    const top = window.screenY + (window.innerHeight - height) / 2;
+    const popup = window.open(
+      url,
+      'google-login',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+    );
+
+    // If popup was blocked, fallback to full redirect
+    if (!popup) {
+      window.location.href = url;
+      return;
+    }
+
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data || {};
+      if (data.type === 'oauth-success' && data.token) {
+        window.removeEventListener('message', handleMessage);
+        try {
+          popup.close();
+        } catch (_) {}
+
+        const token = data.token;
+        setAccessToken(token);
+
+        // Fetch user with new token, then send them into the app
+        fetch(`${API}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((userData) => {
+            if (userData) {
+              setUser(userData);
+              window.location.href = '/app/dashboard';
+            }
+          })
+          .catch(() => {
+            // On failure just go to login; user can retry
+            window.location.href = '/login?error=google_failed';
+          });
+      } else if (data.type === 'oauth-error') {
+        window.removeEventListener('message', handleMessage);
+        try {
+          popup.close();
+        } catch (_) {}
+        const msg = data.message ? encodeURIComponent(data.message) : '';
+        window.location.href = `/login?error=google_failed&message=${msg}`;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+  }, [setAccessToken, setUser]);
 
   const logout = () => {
     fetch(`${API}/auth/logout`, { method: 'POST', credentials: 'include' })

@@ -9,6 +9,7 @@ export function AuthCallbackPage() {
   const { setAccessToken, setUser } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
+  const isPopup = typeof window !== 'undefined' && window.opener && window.opener !== window;
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -16,6 +17,23 @@ export function AuthCallbackPage() {
       setError('Missing token');
       return;
     }
+
+    // If we're in a popup, notify the opener and close. The main window will finish login.
+    if (isPopup) {
+      try {
+        window.opener.postMessage({ type: 'oauth-success', token }, window.location.origin);
+      } catch (_) {
+        // If postMessage fails, just fall back to normal flow below.
+      }
+      try {
+        window.close();
+        return;
+      } catch (_) {
+        // ignore if the browser blocks close; we'll still render the fallback UI.
+      }
+    }
+
+    // Normal full-page callback flow
     setAccessToken(token);
     fetch(`${API}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
