@@ -27,7 +27,18 @@ function getTransporter(senderId, config, auth) {
 /** Clear cached transporter so next send gets a fresh connection (e.g. after timeout). */
 function clearTransporter(senderId) {
   const t = transporterCache.get(senderId);
-  if (t && t.close) t.close().catch(() => {});
+  if (t && t.close) {
+    try {
+      // Nodemailer transporters expose a synchronous close in most setups.
+      // If it ever returns a Promise, we ignore rejections.
+      const maybePromise = t.close();
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.catch(() => {});
+      }
+    } catch (_) {
+      // ignore close errors – we just want to drop the cached transport
+    }
+  }
   transporterCache.delete(senderId);
 }
 
