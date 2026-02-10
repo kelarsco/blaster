@@ -11,10 +11,12 @@ const DELAY_BETWEEN_PAGES_MS = 600;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** Pages where Shopify stores typically show contact/email: Contact, Privacy policy, Home (footer). */
+/** Pages where Shopify/stores typically show contact/email. */
 const PAGES_TO_SCAN = [
   { path: '/', name: 'home' },
   { path: '/pages/contact', name: 'contact' },
+  { path: '/pages/contact-us', name: 'contact-us' },
+  { path: '/contact', name: 'contact-alt' },
   { path: '/policies/privacy-policy', name: 'privacy' },
 ];
 

@@ -15,11 +15,51 @@ const ALLOWED_PROVIDERS = new Set([
   'icloud.com', 'me.com', 'mac.com',
 ]);
 
+/** Valid TLDs for trimming trailing junk (e.g. .comtelefonnummer -> .com). Longest first. */
+const KNOWN_TLDS = [
+  'co.uk', 'org.uk', 'com.au', 'co.nz', 'co.za', 'com.br', 'com.mx',
+  'com', 'org', 'net', 'co', 'io', 'uk', 'eu', 'de', 'fr', 'es', 'it', 'nl', 'info', 'biz', 'me', 'us', 'ca', 'au', 'nz', 'store', 'shop', 'email', 'online', 'site', 'website', 'cloud', 'tech', 'app', 'dev',
+];
+
 const FAKE_DOMAINS = new Set([
   'example.com', 'example.org', 'example.net', 'test.com', 'email.com', 'domain.com',
   'yourdomain.com', 'youremail.com', 'placeholder.com', 'sample.com', 'mailinator.com',
   'sentry.io', 'wixpress.com', 'schema.org',
 ]);
+
+/**
+ * Trim domain to last valid TLD so we don't keep .comtelefonnummer or .coaddress.
+ */
+function normalizeDomain(domain) {
+  if (!domain || typeof domain !== 'string') return null;
+  const d = domain.toLowerCase().trim();
+  for (const tld of KNOWN_TLDS) {
+    const suffix = '.' + tld;
+    const idx = d.indexOf(suffix);
+    if (idx === -1) continue;
+    const after = d.slice(idx + suffix.length);
+    if (after.length === 0) return d;
+    if (/^[a-zA-Z0-9.-]+$/.test(after)) return d.slice(0, idx + suffix.length);
+  }
+  const lastDot = d.lastIndexOf('.');
+  if (lastDot > 0) {
+    const tld = d.slice(lastDot + 1);
+    if (/^[a-zA-Z]{2,6}$/.test(tld) && !/[0-9]/.test(tld)) return d;
+  }
+  return null;
+}
+
+/** Normalize raw match: trim trailing junk from domain. Returns clean email or null. */
+function normalizeEmail(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.trim();
+  const at = s.indexOf('@');
+  if (at <= 0 || at >= s.length - 1) return null;
+  const local = s.slice(0, at).trim();
+  const domain = normalizeDomain(s.slice(at + 1).trim());
+  if (!domain) return null;
+  return local + '@' + domain;
+}
 
 function decodeHtmlEntities(str) {
   if (!str || typeof str !== 'string') return '';
@@ -65,11 +105,13 @@ function hasCleanEnding(domain) {
 }
 
 /**
- * Keep only: (1) gmail/yahoo/outlook/hotmail/icloud, or (2) any domain email (info@company.com, support@brand.io, etc).
+ * Keep only: (1) gmail/yahoo/outlook/hotmail/icloud, or (2) domain emails. Reject junk.
  */
 function isAllowedEmail(email) {
-  const lower = email.toLowerCase().trim();
-  if (lower.length < 6 || lower.length > 254 || !lower.includes('@')) return false;
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  if (lower.length < 6 || lower.length > 254) return false;
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(lower)) return false;
   const at = lower.indexOf('@');
   const local = lower.slice(0, at);
@@ -81,6 +123,12 @@ function isAllowedEmail(email) {
   if (ALLOWED_PROVIDERS.has(domain)) return true;
   if (/^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/.test(domain)) return true;
   return false;
+}
+
+/** Canonical form for storage (normalized, lowercased). */
+function toCanonicalEmail(email) {
+  const n = normalizeEmail(email);
+  return n && isAllowedEmail(n) ? n.toLowerCase().trim() : null;
 }
 
 function getStoreHost(storeUrl) {
@@ -123,8 +171,8 @@ function extractFromText(text) {
   const matches = normalized.match(EMAIL_REGEX) || [];
   const out = [];
   for (const m of matches) {
-    const e = m.toLowerCase().trim();
-    if (isAllowedEmail(e)) out.push(e);
+    const canonical = toCanonicalEmail(m);
+    if (canonical) out.push(canonical);
   }
   return out;
 }
@@ -213,7 +261,11 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const list = [...byEmail.values()];
   if (list.length === 0) return [];
   if (onePerStore) {
-    const preferred = list.find((x) => x.sourceType === 'mailto') || list[0];
+    const domain = (e) => (e.email || '').split('@')[1] || '';
+    const isProvider = (e) => ALLOWED_PROVIDERS.has(domain(e));
+    const byMailto = list.find((x) => x.sourceType === 'mailto');
+    const byProvider = list.find(isProvider);
+    const preferred = byMailto || byProvider || list[0];
     return [{ email: preferred.email, storeUrl: preferred.storeUrl, sourcePage: preferred.sourcePage, sourceType: preferred.sourceType, platform }];
   }
   return list.map((c) => ({ email: c.email, storeUrl: c.storeUrl, sourcePage: c.sourcePage, sourceType: c.sourceType, platform }));
