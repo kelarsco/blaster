@@ -1,7 +1,6 @@
 /**
  * Simple store crawler for Shopify and similar stores.
- * Based on typical structure: Home, Contact, Privacy policy (where emails appear).
- * Only fetches: homepage, /pages/contact, /policies/privacy-policy.
+ * Priority: privacy policy page first, then homepage, then contact-style pages.
  */
 import https from 'https';
 import http from 'http';
@@ -11,13 +10,13 @@ const DELAY_BETWEEN_PAGES_MS = 600;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** Pages where Shopify/stores typically show contact/email. */
+/** Pages where Shopify/stores typically show contact/email (in priority order). */
 const PAGES_TO_SCAN = [
+  { path: '/policies/privacy-policy', name: 'privacy' },
   { path: '/', name: 'home' },
   { path: '/pages/contact', name: 'contact' },
   { path: '/pages/contact-us', name: 'contact-us' },
   { path: '/contact', name: 'contact-alt' },
-  { path: '/policies/privacy-policy', name: 'privacy' },
 ];
 
 function delay(ms) {
