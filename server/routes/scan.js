@@ -5,6 +5,7 @@ import { addScanJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
+import { normalizeStoreUrl } from '../services/crawler.js';
 
 export const scanRoutes = Router();
 
@@ -13,15 +14,12 @@ function parseUrls(text) {
   const seen = new Set();
   const urls = [];
   for (const s of raw) {
-    let u = s;
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    try {
-      const parsed = new URL(u);
-      if (!seen.has(parsed.origin)) {
-        seen.add(parsed.origin);
-        urls.push(parsed.origin);
-      }
-    } catch (_) {}
+    const normalized = normalizeStoreUrl(s);
+    if (!normalized) continue;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      urls.push(normalized);
+    }
   }
   return urls.slice(0, 1000);
 }
@@ -162,13 +160,15 @@ function buildStoresFromRows(rows) {
   const byStore = new Map();
   for (const r of rows) {
     if (!byStore.has(r.store_url)) {
-      byStore.set(r.store_url, { storeUrl: r.store_url, emails: [], sourcePages: new Set(), hasEmail: false });
+      byStore.set(r.store_url, { storeUrl: r.store_url, emails: [], sourcePages: new Set(), hasEmail: false, status: null });
     }
     const rec = byStore.get(r.store_url);
     if (r.email) {
       rec.emails.push({ email: r.email, sourcePage: r.source_page });
       rec.hasEmail = true;
       if (r.source_page) rec.sourcePages.add(r.source_page);
+    } else if (!rec.status && r.source_page) {
+      rec.status = r.source_page;
     }
   }
   for (const [url, rec] of byStore) {
@@ -177,6 +177,7 @@ function buildStoresFromRows(rows) {
       emails: rec.emails,
       sourcePages: [...rec.sourcePages],
       hasEmail: rec.hasEmail,
+      status: rec.status,
     });
   }
   return stores;
@@ -193,6 +194,16 @@ scanRoutes.get('/results/:scanId', requireAuth, async (req, res) => {
         [req.params.scanId, req.user.id]
       );
       const rows = result?.rows ?? [];
+      const buffered = memoryStore.results.get(req.params.scanId) || [];
+      if (buffered.length) {
+        const seen = new Set(rows.map((r) => `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`));
+        for (const r of buffered) {
+          const key = `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          rows.push(r);
+        }
+      }
       return res.json({ results: buildStoresFromRows(rows) });
     }
     const rows = memoryStore.results.get(req.params.scanId) ?? [];

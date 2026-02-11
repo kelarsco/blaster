@@ -3,20 +3,38 @@ import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
+const URL_TOKEN_REGEX = /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
+
+function normalizeStoreUrl(input) {
+  const raw = (input || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
+  if (!raw) return null;
+  const token = raw.match(URL_TOKEN_REGEX)?.[0] || raw;
+  const withScheme = /^https?:\/\//i.test(token) ? token : `https://${token}`;
+  try {
+    const parsed = new URL(withScheme);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (!host) return null;
+    return `https://${host}`;
+  } catch (_) {
+    return null;
+  }
+}
+
 function parseUrls(text) {
-  const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
+  const raw = (text || '')
+    .replace(/,/g, '\n')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const seen = new Set();
   const urls = [];
   for (const s of raw) {
-    let u = s;
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    try {
-      const parsed = new URL(u);
-      if (!seen.has(parsed.origin)) {
-        seen.add(parsed.origin);
-        urls.push(parsed.origin);
-      }
-    } catch (_) {}
+    const normalized = normalizeStoreUrl(s);
+    if (!normalized) continue;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      urls.push(normalized);
+    }
   }
   return urls.slice(0, 1000);
 }
@@ -34,10 +52,29 @@ export function UrlInput({
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
   const [upgradeRequired, setUpgradeRequired] = useState(false);
+  const [csvName, setCsvName] = useState('');
 
   const urlCount = parseUrls(rawUrls).length;
   const isScanRunning = isScanning || (scanStatus && scanStatus.status === 'running');
   const isValid = urlCount >= 1 && urlCount <= 1000 && !isScanRunning;
+
+  const onCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const cells = text.split(/[\n,\r\t;]+/).map((item) => item.trim()).filter(Boolean);
+      const merged = [rawUrls, ...cells].filter(Boolean).join('\n');
+      const normalizedUrls = parseUrls(merged);
+      setRawUrls(normalizedUrls.join('\n'));
+      setCsvName(file.name);
+      setError('');
+    } catch (_) {
+      setError('Failed to read CSV file. Please upload a valid CSV with store URLs.');
+    } finally {
+      event.target.value = '';
+    }
+  };
 
   const startScan = async () => {
     setError('');
@@ -62,7 +99,7 @@ export function UrlInput({
           rawUrls,
           maxConcurrentCrawlers,
           maxUrlsPerScan,
-          emailFilters: { includeProviders: [], onePerStore: false },
+          emailFilters: { includeProviders: [], onePerStore: true },
         }),
       });
 
@@ -89,6 +126,7 @@ export function UrlInput({
 
       onScanStart(data.scanId);
       setRawUrls('');
+      setCsvName('');
     } catch (e) {
       const msg = e?.message ?? '';
       const isNetworkError =
@@ -115,7 +153,7 @@ export function UrlInput({
         Bulk Website URLs
       </h2>
       <p className="text-xs md:text-sm text-blaster-muted mb-2 md:mb-3">
-        Paste website links (one per line or comma-separated). 100–1000 URLs per scan.
+        Paste website links (one per line), or upload a CSV. URLs are normalized to HTTPS base domains.
       </p>
       <textarea
         value={rawUrls}
@@ -125,8 +163,21 @@ export function UrlInput({
         className="w-full px-4 py-3 rounded-xl bg-blaster-input-bg border border-blaster-input-border text-blaster-fg placeholder-blaster-muted focus:outline-none focus:ring-2 focus:ring-blaster-accent/40 focus:border-blaster-accent transition"
         disabled={isScanning}
       />
+      <div className="mt-3">
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blaster-border text-blaster-fg hover:bg-blaster-sidebar-hover cursor-pointer text-sm">
+          <input
+            type="file"
+            accept=".csv,text/csv,.txt"
+            onChange={onCsvUpload}
+            className="hidden"
+            disabled={isScanning}
+          />
+          Upload CSV
+        </label>
+        {csvName ? <span className="ml-2 text-xs text-blaster-muted">Loaded: {csvName}</span> : null}
+      </div>
       <p className="text-xs text-blaster-muted mt-2 mb-3">
-        We extract every email found (e.g. @gmail.com, @domain.com). You can filter by provider when starting a campaign.
+        Scanner checks privacy pages first, applies ordered fallback paths, and picks one best email per store.
       </p>
       <p className="text-sm text-blaster-muted">
         Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>

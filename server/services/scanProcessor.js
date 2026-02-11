@@ -1,7 +1,7 @@
 /**
  * Scan processor: cache check, priority crawler, one-email-per-store, enrichment.
  */
-import { crawlStore } from './crawler.js';
+import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
@@ -9,24 +9,51 @@ const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 
 const DELAY_BETWEEN_STORES_MS = 1200;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
 const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 85000;
+const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
   const urls = [];
   const seen = new Set();
   for (const s of raw) {
-    let u = s;
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-    try {
-      const parsed = new URL(u);
-      const origin = parsed.origin;
-      if (!seen.has(origin)) {
-        seen.add(origin);
-        urls.push(origin);
-      }
-    } catch (_) {}
+    const normalized = normalizeStoreUrl(s);
+    if (!normalized) continue;
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      urls.push(normalized);
+    }
   }
   return urls;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientDbError(err) {
+  const msg = (err?.message || '').toLowerCase();
+  return (
+    msg.includes('enotfound') ||
+    msg.includes('econnreset') ||
+    msg.includes('connection terminated unexpectedly') ||
+    msg.includes('could not connect') ||
+    msg.includes('timeout') ||
+    msg.includes('terminating connection')
+  );
+}
+
+async function runDbQueryWithRetry(db, query, params, retries = DB_WRITE_RETRIES) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      return await db.query(query, params);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || attempt === retries) break;
+      await sleep(Math.min(250 * attempt, 1000));
+    }
+  }
+  throw lastErr;
 }
 
 export async function processScan(payload) {
@@ -66,7 +93,8 @@ export async function processScan(payload) {
 
   let processed = 0;
   let foundCount = 0;
-  const memoryResults = db ? null : (memoryStore.results.get(scanId) || []);
+  const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
+  memoryStore.results.set(scanId, memoryResults);
 
   if (db) {
     await db.query(
@@ -134,18 +162,23 @@ export async function processScan(payload) {
           }
         }
 
-        const pages = await crawlStore(storeUrl);
-        const results = await extractEmailsFromPages(storeUrl, pages, emailFilters);
+        const crawl = await crawlStore(storeUrl);
+        const results = await extractEmailsFromPages(storeUrl, crawl.pages, {
+          ...emailFilters,
+          privacyPageFound: crawl.privacyPageFound,
+          fallbackUsed: crawl.fallbackUsed,
+        });
         const best = results[0];
         if (best) {
           await setCachedResult(storeUrl, best.email, best.sourcePage, best.sourceType || null, best.platform || null);
         } else {
           await setCachedResult(storeUrl, null, null, null, null);
         }
-        return { storeUrl, results };
+        const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
+        return { storeUrl, results, noEmailReason };
       } catch (err) {
         console.error('[scanProcessor] store error:', storeUrl, err?.message || err);
-        return { storeUrl, results: [] };
+        return { storeUrl, results: [], noEmailReason: 'No Email Found' };
       }
     })();
     return Promise.race([workPromise, timeoutPromise]).then((r) => (r.timedOut ? { storeUrl: r.storeUrl, results: [] } : r));
@@ -168,22 +201,37 @@ export async function processScan(payload) {
       return { storeUrl: batch[idx], results: [] };
     });
 
-    for (const { storeUrl, results } of outcomes) {
+    for (const { storeUrl, results, noEmailReason } of outcomes) {
       try {
         if (db) {
+          foundCount += results.length;
           for (const r of results) {
-            await db.query(
-              `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, $3, $4, 1)`,
-              [scanId, r.storeUrl, r.email, r.sourcePage || '']
-            );
-            foundCount++;
+            const row = { store_url: r.storeUrl, email: r.email, source_page: r.sourcePage || '', has_email: 1 };
+            try {
+              await runDbQueryWithRetry(
+                db,
+                `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, $3, $4, 1)`,
+                [scanId, row.store_url, row.email, row.source_page]
+              );
+            } catch (dbInsertErr) {
+              console.warn('[scanProcessor] buffered result after DB insert failure:', row.store_url, dbInsertErr?.message || dbInsertErr);
+              memoryResults.push(row);
+              memoryStore.results.set(scanId, memoryResults);
+            }
           }
           if (results.length === 0) {
-            await db.query(
-              `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, NULL, 0)`,
-              [scanId, storeUrl]
-            );
-            /* Store saved as "No public email detected" (has_email=0, email=NULL) */
+            const noEmailRow = { store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 };
+            try {
+              await runDbQueryWithRetry(
+                db,
+                `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email) VALUES ($1, $2, NULL, $3, 0)`,
+                [scanId, noEmailRow.store_url, noEmailRow.source_page]
+              );
+            } catch (dbInsertErr) {
+              console.warn('[scanProcessor] buffered no-email row after DB insert failure:', storeUrl, dbInsertErr?.message || dbInsertErr);
+              memoryResults.push(noEmailRow);
+              memoryStore.results.set(scanId, memoryResults);
+            }
           }
         } else {
           for (const r of results) {
@@ -191,7 +239,7 @@ export async function processScan(payload) {
             foundCount++;
           }
           if (results.length === 0) {
-            memoryResults.push({ store_url: storeUrl, email: null, source_page: null, has_email: 0 }); /* No public email detected */
+            memoryResults.push({ store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 });
           }
           memoryStore.results.set(scanId, memoryResults);
         }
@@ -203,7 +251,8 @@ export async function processScan(payload) {
 
     try {
       if (db) {
-        await db.query(
+        await runDbQueryWithRetry(
+          db,
           `UPDATE scans SET processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
           [processed, foundCount, scanId]
         );
@@ -221,7 +270,8 @@ export async function processScan(payload) {
   }
 
   if (db) {
-    await db.query(
+    await runDbQueryWithRetry(
+      db,
       `UPDATE scans SET status = 'completed', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
       [processed, foundCount, scanId]
     );

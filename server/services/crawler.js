@@ -1,6 +1,6 @@
 /**
- * Simple store crawler for Shopify and similar stores.
- * Priority: privacy policy page first, then homepage, then contact-style pages.
+ * Store crawler focused on privacy-policy extraction flow.
+ * Priority: privacy page first with ordered fallbacks, then contact/home fallback when needed.
  */
 import https from 'https';
 import http from 'http';
@@ -10,14 +10,19 @@ const DELAY_BETWEEN_PAGES_MS = 600;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-/** Pages where Shopify/stores typically show contact/email (in priority order). */
-const PAGES_TO_SCAN = [
-  { path: '/policies/privacy-policy', name: 'privacy' },
-  { path: '/', name: 'home' },
-  { path: '/pages/contact', name: 'contact' },
-  { path: '/pages/contact-us', name: 'contact-us' },
-  { path: '/contact', name: 'contact-alt' },
+const PRIVACY_PATHS = [
+  '/policies/privacy-policy',
+  '/privacy-policy',
+  '/privacy',
+  '/pages/privacy-policy',
 ];
+
+const FINAL_FALLBACK_PATHS = [
+  '/pages/contact',
+  '/',
+];
+
+const URL_TOKEN_REGEX = /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
 
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -30,7 +35,7 @@ function fetchHtml(url, options = {}) {
     let req;
     const timer = setTimeout(() => {
       if (req) req.destroy();
-      resolve(null);
+      resolve({ ok: false, statusCode: 0, html: null });
     }, timeout);
     try {
       const parsed = new URL(url);
@@ -57,54 +62,92 @@ function fetchHtml(url, options = {}) {
         }
         if (res.statusCode !== 200) {
           clearTimeout(timer);
-          resolve(null);
+          resolve({ ok: false, statusCode: res.statusCode || 0, html: null });
           return;
         }
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           clearTimeout(timer);
-          resolve(Buffer.concat(chunks).toString('utf8'));
+          resolve({ ok: true, statusCode: 200, html: Buffer.concat(chunks).toString('utf8') });
         });
         res.on('error', () => {
           clearTimeout(timer);
-          resolve(null);
+          resolve({ ok: false, statusCode: 0, html: null });
         });
       });
       req.on('error', () => {
         clearTimeout(timer);
-        resolve(null);
+        resolve({ ok: false, statusCode: 0, html: null });
       });
     } catch {
       clearTimeout(timer);
-      resolve(null);
+      resolve({ ok: false, statusCode: 0, html: null });
     }
   });
 }
 
+export function normalizeStoreUrl(storeUrl) {
+  const raw = (storeUrl || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
+  if (!raw) return null;
+  const token = raw.match(URL_TOKEN_REGEX)?.[0] || raw;
+  const withScheme = /^https?:\/\//i.test(token) ? token : `https://${token}`;
+  try {
+    const parsed = new URL(withScheme);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (!host) return null;
+    return `https://${host}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Crawl a store: fetch homepage, contact page, and privacy policy (where emails usually are).
- * Returns array of { url, html } for each page that returned content.
+ * Crawl one store with strict flow:
+ * 1) Try privacy-policy paths in order.
+ * 2) If none works, try /pages/contact then homepage.
  */
 export async function crawlStore(storeUrl) {
-  const out = [];
-  let base = (storeUrl || '').trim().replace(/\/$/, '') || storeUrl;
-  if (!base.startsWith('http')) base = 'https://' + base;
-  let origin;
-  try {
-    origin = new URL(base).origin;
-  } catch {
-    return out;
+  const pages = [];
+  const seenPages = new Set();
+  const addPage = (url, html) => {
+    if (!url || !html || seenPages.has(url)) return;
+    seenPages.add(url);
+    pages.push({ url, html });
+  };
+  const normalized = normalizeStoreUrl(storeUrl);
+  if (!normalized) {
+    return { pages, privacyPageFound: false, privacyPageUrl: null, fallbackUsed: false };
   }
+  const origin = normalized;
+  let privacyPageFound = false;
+  let privacyPageUrl = null;
+  let fallbackUsed = false;
 
-  for (const { path } of PAGES_TO_SCAN) {
-    const url = path === '/' ? origin + '/' : origin + path;
-    const html = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
-    if (html && typeof html === 'string' && html.trim().length > 0) {
-      out.push({ url, html });
+  for (const path of PRIVACY_PATHS) {
+    const url = path === '/' ? `${origin}/` : `${origin}${path}`;
+    const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+    if (response.ok && response.html && response.html.trim().length > 0) {
+      addPage(url, response.html);
+      if (!privacyPageFound) {
+        privacyPageFound = true;
+        privacyPageUrl = url;
+      }
     }
     await delay(DELAY_BETWEEN_PAGES_MS);
   }
 
-  return out;
+  if (!privacyPageFound) {
+    fallbackUsed = true;
+    for (const path of FINAL_FALLBACK_PATHS) {
+      const url = path === '/' ? `${origin}/` : `${origin}${path}`;
+      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+      if (response.ok && response.html && response.html.trim().length > 0) {
+        addPage(url, response.html);
+      }
+      await delay(DELAY_BETWEEN_PAGES_MS);
+    }
+  }
+
+  return { pages, privacyPageFound, privacyPageUrl, fallbackUsed };
 }

@@ -21,7 +21,7 @@ export function ScannerPage() {
     <div className="p-4 sm:p-6 md:p-8">
       <div className="mb-4 md:mb-6">
         <h1 className="page-title-mobile">Store Scanner</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Extract contact emails from store privacy and contact pages</p>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Extract one best contact email from each store using privacy-first fallback scanning</p>
       </div>
       <div className="space-y-4 md:space-y-6">
         <UrlInput

@@ -22,6 +22,16 @@ exportRoutes.get('/excel/:scanId', requireAuth, async (req, res) => {
       [scanId, req.user.id]
     );
     rows = result.rows;
+    const buffered = (memoryStore.results.get(scanId) || []).filter((r) => r.has_email === 1 && r.email);
+    if (buffered.length) {
+      const seen = new Set(rows.map((r) => `${r.store_url || r.storeUrl}|${r.email}`));
+      for (const r of buffered) {
+        const key = `${r.store_url || r.storeUrl}|${r.email}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(r);
+      }
+    }
     if (rows.length === 0) {
       const scanCheck = await db.query('SELECT 1 FROM scans WHERE id = $1 AND user_id = $2', [scanId, req.user.id]);
       if (!scanCheck.rows?.length) return res.status(404).json({ error: 'Scan not found' });
