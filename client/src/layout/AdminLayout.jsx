@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
+import { API_BASE } from '../api';
 
-const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '';
 const ADMIN_API = `${API_BASE}/api/bl-admin`;
 const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
 
