@@ -64,13 +64,17 @@ If these are not set, the server falls back to `SESSION_SECRET` (or a dev defaul
 To enable “Sign in with Google”:
 
 1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create OAuth 2.0 credentials (Web application).
-2. Set **Authorized redirect URI** to your callback URL, e.g. `http://localhost:3000/api/auth/google/callback` (dev) or `https://yourdomain.com/api/auth/google/callback` (prod).
+2. Set **Authorized redirect URI** to your **backend** callback URL:
+   - Dev (Vite proxy): `http://localhost:3000/api/auth/google/callback`
+   - Render backend: `https://your-backend.onrender.com/api/auth/google/callback`
 3. In **server/.env** set:
    ```env
    GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=xxx
-   GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
-   FRONTEND_URL=http://localhost:3000
+   # The URL Google redirects back to (must match Authorized redirect URI exactly)
+   GOOGLE_CALLBACK_URL=https://your-backend.onrender.com/api/auth/google/callback
+   # Where your app UI lives (used after backend finishes auth)
+   FRONTEND_URL=https://your-frontend-domain.com
    ```
 
 ---

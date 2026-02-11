@@ -30,16 +30,28 @@ const hasGoogleConfig =
   process.env.GOOGLE_CLIENT_SECRET &&
   process.env.SESSION_SECRET;
 
-const FRONTEND_URL = () => (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const normalizeUrl = (value, fallback = '') => {
+  const raw = (value || fallback || '').trim();
+  if (!raw) return '';
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withScheme.replace(/\/$/, '');
+};
+
+const FRONTEND_URL = () => normalizeUrl(process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000');
+const OAUTH_CALLBACK_BASE_URL = () => normalizeUrl(
+  process.env.GOOGLE_CALLBACK_BASE_URL ||
+  process.env.BACKEND_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  FRONTEND_URL()
+);
 
 // Session serialization
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 if (hasGoogleConfig) {
-  const baseUrl = FRONTEND_URL();
   const callbackPath = '/api/auth/google/callback';
-  const callbackURL = process.env.GOOGLE_CALLBACK_URL || baseUrl + callbackPath;
+  const callbackURL = normalizeUrl(process.env.GOOGLE_CALLBACK_URL || `${OAUTH_CALLBACK_BASE_URL()}${callbackPath}`);
   passport.use(
     new GoogleStrategy(
       {
