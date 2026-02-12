@@ -99,6 +99,8 @@ export function UrlInput({
           rawUrls,
           maxConcurrentCrawlers,
           maxUrlsPerScan,
+          forceRefresh: true,
+          useCache: false,
           emailFilters: { includeProviders: [], onePerStore: true },
         }),
       });

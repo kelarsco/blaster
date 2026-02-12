@@ -64,7 +64,8 @@ export async function processScan(payload) {
     emailFilters: rawEmailFilters = {},
     maxConcurrentCrawlers,
     maxUrlsPerScan,
-    forceRefresh = false,
+    forceRefresh = true,
+    useCache = false,
     stealthMode = false,
   } = payload;
 
@@ -114,7 +115,7 @@ export async function processScan(payload) {
   const cacheCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
   async function getCachedResult(storeUrl) {
-    if (!db || !cacheUserId || forceRefresh) return null;
+    if (!db || !cacheUserId || forceRefresh || !useCache) return null;
     try {
       const r = await db.query(
         `SELECT email, source_page, source_type, platform FROM scan_cache
