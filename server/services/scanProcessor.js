@@ -26,6 +26,19 @@ function parseUrls(text) {
   return urls;
 }
 
+function upsertMemoryScan(scanId, patch = {}) {
+  const prev = memoryStore.scans.get(scanId) || {
+    status: 'pending',
+    total_urls: 0,
+    processed: 0,
+    found_count: 0,
+    created_at: new Date(),
+  };
+  const next = { ...prev, ...patch };
+  memoryStore.scans.set(scanId, next);
+  return next;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -82,12 +95,20 @@ export async function processScan(payload) {
   let urls = parseUrls(rawInput || '');
   const cap = typeof maxUrlsPerScan === 'number' && maxUrlsPerScan > 0 ? Math.min(maxUrlsPerScan, 5000) : 1000;
   urls = urls.slice(0, cap);
+  upsertMemoryScan(scanId, { total_urls: urls.length, status: 'pending', processed: 0, found_count: 0 });
 
   if (urls.length === 0) {
-    if (db) await db.query(`UPDATE scans SET status = 'completed', processed = 0, found_count = 0, updated_at = NOW() WHERE id = $1`, [scanId]);
-    else {
-      const rec = memoryStore.scans.get(scanId);
-      if (rec) { rec.status = 'completed'; rec.processed = 0; rec.found_count = 0; memoryStore.scans.set(scanId, rec); }
+    upsertMemoryScan(scanId, { status: 'completed', processed: 0, found_count: 0 });
+    if (db) {
+      try {
+        await runDbQueryWithRetry(
+          db,
+          `UPDATE scans SET status = 'completed', processed = 0, found_count = 0, updated_at = NOW() WHERE id = $1`,
+          [scanId]
+        );
+      } catch (e) {
+        console.warn('[scanProcessor] finalize-empty update failed:', e?.message || e);
+      }
     }
     return;
   }
@@ -97,17 +118,16 @@ export async function processScan(payload) {
   const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
   memoryStore.results.set(scanId, memoryResults);
 
+  upsertMemoryScan(scanId, { status: 'running', total_urls: urls.length });
   if (db) {
-    await db.query(
-      `UPDATE scans SET total_urls = $1, status = 'running', updated_at = NOW() WHERE id = $2`,
-      [urls.length, scanId]
-    );
-  } else {
-    const rec = memoryStore.scans.get(scanId);
-    if (rec) {
-      rec.status = 'running';
-      rec.total_urls = urls.length;
-      memoryStore.scans.set(scanId, rec);
+    try {
+      await runDbQueryWithRetry(
+        db,
+        `UPDATE scans SET total_urls = $1, status = 'running', updated_at = NOW() WHERE id = $2`,
+        [urls.length, scanId]
+      );
+    } catch (e) {
+      console.warn('[scanProcessor] start status update failed:', e?.message || e);
     }
   }
 
@@ -251,38 +271,29 @@ export async function processScan(payload) {
     }
 
     try {
+      upsertMemoryScan(scanId, { processed, found_count: foundCount });
       if (db) {
         await runDbQueryWithRetry(
           db,
           `UPDATE scans SET processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
           [processed, foundCount, scanId]
         );
-      } else {
-        const rec = memoryStore.scans.get(scanId);
-        if (rec) {
-          rec.processed = processed;
-          rec.found_count = foundCount;
-          memoryStore.scans.set(scanId, rec);
-        }
       }
     } catch (dbErr) {
       console.error('[scanProcessor] progress update error:', dbErr?.message || dbErr);
     }
   }
 
+  upsertMemoryScan(scanId, { status: 'completed', processed, found_count: foundCount });
   if (db) {
-    await runDbQueryWithRetry(
-      db,
-      `UPDATE scans SET status = 'completed', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
-      [processed, foundCount, scanId]
-    );
-  } else {
-    const rec = memoryStore.scans.get(scanId);
-    if (rec) {
-      rec.status = 'completed';
-      rec.processed = processed;
-      rec.found_count = foundCount;
-      memoryStore.scans.set(scanId, rec);
+    try {
+      await runDbQueryWithRetry(
+        db,
+        `UPDATE scans SET status = 'completed', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
+        [processed, foundCount, scanId]
+      );
+    } catch (e) {
+      console.warn('[scanProcessor] final status update failed:', e?.message || e);
     }
   }
 }

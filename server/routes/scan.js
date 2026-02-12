@@ -86,20 +86,23 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     }
     const scanId = uuidv4();
     if (db) {
-      await db.query(
-        `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count) VALUES ($1, $2, 'pending', $3, 0, 0)`,
-        [scanId, userId, totalStores]
-      );
-    } else {
-      memoryStore.scans.set(scanId, {
-        status: 'pending',
-        total_urls: totalStores,
-        processed: 0,
-        found_count: 0,
-        created_at: new Date(),
-      });
-      memoryStore.results.set(scanId, []);
+      try {
+        await db.query(
+          `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count) VALUES ($1, $2, 'pending', $3, 0, 0)`,
+          [scanId, userId, totalStores]
+        );
+      } catch (dbErr) {
+        console.warn('[scan/start] DB insert failed, continuing in memory:', dbErr?.message || dbErr);
+      }
     }
+    memoryStore.scans.set(scanId, {
+      status: 'pending',
+      total_urls: totalStores,
+      processed: 0,
+      found_count: 0,
+      created_at: new Date(),
+    });
+    memoryStore.results.set(scanId, []);
     await addScanJob({
       scanId,
       userId: userId || undefined,
@@ -127,17 +130,22 @@ scanRoutes.get('/status/:scanId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     if (db) {
-      const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [req.params.scanId, req.user.id]);
-      const row = result?.rows?.[0];
-      if (!row) return res.status(404).json({ error: 'Scan not found' });
-      return res.json({
-        scanId: row.id,
-        status: row.status ?? 'unknown',
-        totalUrls: row.total_urls ?? 0,
-        processed: row.processed ?? 0,
-        foundCount: row.found_count ?? 0,
-        createdAt: row.created_at,
-      });
+      try {
+        const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [req.params.scanId, req.user.id]);
+        const row = result?.rows?.[0];
+        if (row) {
+          return res.json({
+            scanId: row.id,
+            status: row.status ?? 'unknown',
+            totalUrls: row.total_urls ?? 0,
+            processed: row.processed ?? 0,
+            foundCount: row.found_count ?? 0,
+            createdAt: row.created_at,
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[scan status] DB read failed, falling back to memory:', dbErr?.message || dbErr);
+      }
     }
     const row = memoryStore.scans.get(req.params.scanId);
     if (!row) return res.status(404).json({ error: 'Scan not found' });
@@ -188,24 +196,28 @@ scanRoutes.get('/results/:scanId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     if (db) {
-      const result = await db.query(
-        `SELECT sr.store_url, sr.email, sr.source_page, sr.has_email FROM scan_results sr
-         JOIN scans s ON s.id = sr.scan_id WHERE sr.scan_id = $1 AND s.user_id = $2
-         ORDER BY sr.has_email DESC, sr.store_url`,
-        [req.params.scanId, req.user.id]
-      );
-      const rows = result?.rows ?? [];
-      const buffered = memoryStore.results.get(req.params.scanId) || [];
-      if (buffered.length) {
-        const seen = new Set(rows.map((r) => `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`));
-        for (const r of buffered) {
-          const key = `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          rows.push(r);
+      try {
+        const result = await db.query(
+          `SELECT sr.store_url, sr.email, sr.source_page, sr.has_email FROM scan_results sr
+           JOIN scans s ON s.id = sr.scan_id WHERE sr.scan_id = $1 AND s.user_id = $2
+           ORDER BY sr.has_email DESC, sr.store_url`,
+          [req.params.scanId, req.user.id]
+        );
+        const rows = result?.rows ?? [];
+        const buffered = memoryStore.results.get(req.params.scanId) || [];
+        if (buffered.length) {
+          const seen = new Set(rows.map((r) => `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`));
+          for (const r of buffered) {
+            const key = `${r.store_url}|${r.email || ''}|${r.source_page || ''}|${r.has_email}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            rows.push(r);
+          }
         }
+        return res.json({ results: buildStoresFromRows(rows) });
+      } catch (dbErr) {
+        console.warn('[scan results] DB read failed, falling back to memory:', dbErr?.message || dbErr);
       }
-      return res.json({ results: buildStoresFromRows(rows) });
     }
     const rows = memoryStore.results.get(req.params.scanId) ?? [];
     res.json({ results: buildStoresFromRows(rows) });
