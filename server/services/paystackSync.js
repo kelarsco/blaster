@@ -8,6 +8,7 @@ import { getDb } from '../db.js';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE = 'https://api.paystack.co';
 const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'NGN';
+const PAYSTACK_SYNC_VERBOSE = process.env.PAYSTACK_SYNC_VERBOSE === '1';
 const USD_TO_NGN_ENV = Number(process.env.PAYSTACK_USD_TO_NGN) || 0;
 /** Paystack minimum for NGN is 100 NGN = 10,000 kobo. Amounts below this cause "Invalid Amount Sent". */
 const PAYSTACK_MIN_NGN_KOBO = 10000;
@@ -104,7 +105,9 @@ export async function syncPaystackPlans() {
           `UPDATE plans SET paystack_plan_code = $1 WHERE id = $2`,
           [data.data.plan_code, plan.id]
         );
-        console.log('[Paystack] Created plan:', plan.id, data.data.plan_code);
+        if (PAYSTACK_SYNC_VERBOSE) {
+          console.log('[Paystack] Created plan:', plan.id, data.data.plan_code);
+        }
       } else {
         console.warn('[Paystack] Plan create failed for', plan.id, data.message || data);
       }
