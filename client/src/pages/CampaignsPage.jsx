@@ -183,7 +183,7 @@ export function CampaignsPage() {
         {scannedEmailCount > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 rounded-xl border border-blaster-border bg-blaster-bg px-3 py-2">
-              <span className="text-sm font-medium text-blaster-fg">Current scan: {scannedEmailCount} email{scannedEmailCount !== 1 ? 's' : ''}</span>
+              <span className="text-sm font-normal text-[#1a1a21]">Current scan: {scannedEmailCount} email{scannedEmailCount !== 1 ? 's' : ''}</span>
               <input
                 type="text"
                 value={saveListName}
@@ -217,7 +217,7 @@ export function CampaignsPage() {
                 className="w-full p-4 text-left hover:bg-blaster-bg-app/50 transition"
               >
                 <div className="font-medium text-blaster-fg truncate text-sm" title={list.name}>{list.name}</div>
-                <div className="text-lg font-semibold text-blaster-accent mt-1">{list.recipients?.length ?? 0}</div>
+                <div className="text-lg font-normal text-[#1a1a21] mt-1">{list.recipients?.length ?? 0}</div>
                 <div className="text-xs text-blaster-muted">emails</div>
               </button>
               {expandedListId === list.id && (
@@ -285,7 +285,7 @@ export function CampaignsPage() {
               >
                 {selectedIds.size === campaigns.length ? 'Deselect all' : 'Select all'}
               </button>
-              <span className="text-sm text-blaster-muted">
+              <span className="text-sm text-[#1a1a21] font-normal">
                 {selectedIds.size} selected
               </span>
               {selectedIds.size > 0 && (
@@ -349,7 +349,7 @@ export function CampaignsPage() {
                         />
                       )}
                       <div>
-                        <span className="font-medium text-blaster-fg">{c.sent} / {c.totalQueued} sent</span>
+                        <span className="font-normal text-[#1a1a21]">{c.sent} / {c.totalQueued} sent</span>
                         <span className="ml-3 text-sm text-blaster-muted capitalize">
                           {c.status === 'running' && c.sent >= (c.totalQueued || 0) ? 'completed' : c.status}
                         </span>
@@ -430,7 +430,7 @@ export function CampaignsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
             <div className="px-4 py-3 border-b border-blaster-border flex items-center justify-between">
-              <h3 className="text-sm md:text-base font-semibold text-blaster-fg">
+              <h3 className="text-sm md:text-base font-normal text-[#1a1a21]">
                 {viewingList.name} ({viewingList.recipients?.length || 0})
               </h3>
               <button
