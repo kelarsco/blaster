@@ -324,6 +324,16 @@ async function runSchema(p) {
       );
       CREATE INDEX IF NOT EXISTS idx_scan_cache_user_cached ON scan_cache(user_id, cached_at);
 
+      CREATE TABLE IF NOT EXISTS email_lists (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        recipients_json TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_lists_user_created ON email_lists(user_id, created_at DESC);
+
       CREATE TABLE IF NOT EXISTS session (
         sid varchar NOT NULL,
         sess json NOT NULL,

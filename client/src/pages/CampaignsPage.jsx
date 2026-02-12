@@ -6,19 +6,6 @@ import { RecipientSourceModal } from '../components/RecipientSourceModal';
 import { ExecutionDashboard } from '../components/ExecutionDashboard';
 import { API } from '../api.js';
 
-const EMAIL_LISTS_KEY = 'storereach-email-lists';
-
-function loadEmailLists() {
-  try {
-    const raw = localStorage.getItem(EMAIL_LISTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 function recipientsFromResults(results) {
   if (!results || !Array.isArray(results)) return [];
   return results.flatMap((s) =>
@@ -45,7 +32,7 @@ export function CampaignsPage() {
   const [deleting, setDeleting] = useState(false);
   const [recipientSourceOpen, setRecipientSourceOpen] = useState(false);
   const [csvRecipients, setCsvRecipients] = useState([]);
-  const [emailLists, setEmailLists] = useState(loadEmailLists);
+  const [emailLists, setEmailLists] = useState([]);
   const [expandedListId, setExpandedListId] = useState(null);
   const [saveListName, setSaveListName] = useState('');
   const [savingList, setSavingList] = useState(false);
@@ -55,30 +42,38 @@ export function CampaignsPage() {
   const scannedEmailCount = scannedRecipients.length;
 
   useEffect(() => {
-    try {
-      localStorage.setItem(EMAIL_LISTS_KEY, JSON.stringify(emailLists));
-    } catch (_) {}
-  }, [emailLists]);
+    if (!authFetch) return;
+    authFetch(`${API}/email-lists`)
+      .then((r) => (r.ok ? r.json() : { lists: [] }))
+      .then((data) => setEmailLists(Array.isArray(data?.lists) ? data.lists : []))
+      .catch(() => {});
+  }, [authFetch]);
 
-  const saveCurrentScanAsList = () => {
+  const saveCurrentScanAsList = async () => {
     const name = (saveListName || `Scan ${new Date().toLocaleDateString()}`).trim();
     if (!name || scannedRecipients.length === 0) return;
     setSavingList(true);
-    setEmailLists((prev) => [
-      ...prev,
-      {
-        id: `list-${Date.now()}`,
-        name,
-        createdAt: new Date().toISOString(),
-        recipients: [...scannedRecipients],
-      },
-    ]);
-    setSaveListName('');
-    setSavingList(false);
+    try {
+      const res = await authFetch(`${API}/email-lists`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, recipients: scannedRecipients }),
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (data?.list) setEmailLists((prev) => [data.list, ...prev]);
+      setSaveListName('');
+    } finally {
+      setSavingList(false);
+    }
   };
 
-  const removeEmailList = (id) => {
-    setEmailLists((prev) => prev.filter((l) => l.id !== id));
+  const removeEmailList = async (id) => {
+    if (!authFetch) return;
+    try {
+      await authFetch(`${API}/email-lists/${id}`, { method: 'DELETE' });
+      setEmailLists((prev) => prev.filter((l) => l.id !== id));
+    } catch (_) {}
     if (expandedListId === id) setExpandedListId(null);
   };
 
