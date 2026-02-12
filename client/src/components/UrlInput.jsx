@@ -167,7 +167,7 @@ export function UrlInput({
       />
       <div className="mt-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#dfe3ee] bg-[#f9faff] text-[#4f566b] hover:bg-[#f1f3fb] cursor-pointer text-sm">
+          <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-[10px] border border-[#dfe3ee] bg-[#f9faff] text-[#4f566b] hover:bg-[#f1f3fb] cursor-pointer text-sm">
             <input
               type="file"
               accept=".csv,text/csv,.txt"
@@ -186,7 +186,7 @@ export function UrlInput({
           type="button"
           onClick={startScan}
           disabled={!isValid || isScanRunning}
-          className="px-7 py-2.5 rounded-xl bg-[#7f89ff] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#6f7afb] transition"
+          className="px-5 py-2 rounded-[10px] bg-[#1a1a21] text-white text-sm font-semibold hover:bg-[#252530] disabled:bg-[#c7cad5] disabled:text-[#8b92a7] disabled:cursor-not-allowed transition"
         >
           {isScanning ? 'Scanning…' : 'Start Scan'}
         </button>

@@ -134,7 +134,7 @@ export function ResultsDashboard({
             type="button"
             onClick={() => setExportOpen(true)}
             disabled={!canExport}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#dfe3ee] text-[#667089] hover:bg-[#f3f5fc] text-sm transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[10px] border border-[#dfe3ee] text-[#667089] hover:bg-[#f3f5fc] text-sm transition disabled:opacity-50"
           >
             <IconDownload />
             Export
@@ -143,13 +143,13 @@ export function ResultsDashboard({
             type="button"
             onClick={onStartAutomation}
             disabled={!canStartAutomation}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#5561ff] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#4956f2] transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] bg-[#1a1a21] text-white text-sm font-semibold hover:bg-[#252530] disabled:bg-[#c7cad5] disabled:text-[#8b92a7] transition"
           >
             <IconPlay />
             Automate
           </button>
           {onClearResults && (
-            <button type="button" onClick={onClearResults} className="inline-flex items-center justify-center px-2.5 py-2 rounded-xl border border-[#dfe3ee] text-[#667089] hover:bg-[#f3f5fc] text-sm transition">
+            <button type="button" onClick={onClearResults} className="inline-flex items-center justify-center px-2 py-1.5 rounded-[10px] border border-[#dfe3ee] text-[#667089] hover:bg-[#f3f5fc] text-sm transition">
               <IconTrash />
             </button>
           )}
