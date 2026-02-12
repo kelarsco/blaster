@@ -21,6 +21,14 @@ function DotsIcon({ className }) {
   );
 }
 
+function CheckIcon({ className }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
 export function CampaignsPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
@@ -34,6 +42,8 @@ export function CampaignsPage() {
   const [csvRecipients, setCsvRecipients] = useState([]);
   const [emailLists, setEmailLists] = useState([]);
   const [expandedListId, setExpandedListId] = useState(null);
+  const [viewingList, setViewingList] = useState(null);
+  const [messagedEmails, setMessagedEmails] = useState(() => new Set());
   const [saveListName, setSaveListName] = useState('');
   const [savingList, setSavingList] = useState(false);
   const menuRef = useRef(null);
@@ -48,6 +58,17 @@ export function CampaignsPage() {
       .then((data) => setEmailLists(Array.isArray(data?.lists) ? data.lists : []))
       .catch(() => {});
   }, [authFetch]);
+
+  useEffect(() => {
+    if (!authFetch) return;
+    authFetch(`${API}/campaigns/messaged-emails`)
+      .then((r) => (r.ok ? r.json() : { emails: [] }))
+      .then((data) => {
+        const set = new Set((Array.isArray(data?.emails) ? data.emails : []).map((e) => String(e).toLowerCase()));
+        setMessagedEmails(set);
+      })
+      .catch(() => {});
+  }, [authFetch, campaigns.length]);
 
   const saveCurrentScanAsList = async () => {
     const name = (saveListName || `Scan ${new Date().toLocaleDateString()}`).trim();
@@ -75,7 +96,10 @@ export function CampaignsPage() {
       setEmailLists((prev) => prev.filter((l) => l.id !== id));
     } catch (_) {}
     if (expandedListId === id) setExpandedListId(null);
+    if (viewingList?.id === id) setViewingList(null);
   };
+
+  const isMessaged = (email) => messagedEmails.has(String(email || '').toLowerCase());
 
   const fetchCampaigns = useCallback(() => {
     if (!authFetch) return;
@@ -210,10 +234,25 @@ export function CampaignsPage() {
                   </div>
                   <ul className="text-xs text-blaster-fg space-y-1">
                     {(list.recipients || []).slice(0, 50).map((r, i) => (
-                      <li key={i} className="truncate" title={r.email}>{r.email}</li>
+                      <li key={i} className="truncate flex items-center gap-1.5" title={r.email}>
+                        {isMessaged(r.email) ? (
+                          <span className="inline-flex items-center text-green-600" title="Already messaged">
+                            <CheckIcon className="w-3.5 h-3.5" />
+                          </span>
+                        ) : null}
+                        <span className="truncate">{r.email}</span>
+                      </li>
                     ))}
                     {(list.recipients?.length || 0) > 50 && (
-                      <li className="text-blaster-muted">+ {(list.recipients?.length || 0) - 50} more</li>
+                      <li>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setViewingList(list); }}
+                          className="text-blaster-accent hover:underline"
+                        >
+                          + {(list.recipients?.length || 0) - 50} more
+                        </button>
+                      </li>
                     )}
                   </ul>
                 </div>
@@ -385,6 +424,41 @@ export function CampaignsPage() {
             }
           }}
         />
+      )}
+
+      {viewingList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
+            <div className="px-4 py-3 border-b border-blaster-border flex items-center justify-between">
+              <h3 className="text-sm md:text-base font-semibold text-blaster-fg">
+                {viewingList.name} ({viewingList.recipients?.length || 0})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setViewingList(null)}
+                className="text-sm text-blaster-muted hover:text-blaster-fg"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <ul className="text-sm text-blaster-fg space-y-1.5">
+                {(viewingList.recipients || []).map((r, i) => (
+                  <li key={`${r.email}-${i}`} className="flex items-center gap-2">
+                    {isMessaged(r.email) ? (
+                      <span className="inline-flex items-center text-green-600 shrink-0" title="Already messaged">
+                        <CheckIcon className="w-4 h-4" />
+                      </span>
+                    ) : (
+                      <span className="w-4 h-4 shrink-0" />
+                    )}
+                    <span className="truncate">{r.email}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

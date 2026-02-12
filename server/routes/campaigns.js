@@ -44,6 +44,25 @@ campaignRoutes.get('/', requireAuth, async (req, res) => {
   }
 });
 
+campaignRoutes.get('/messaged-emails', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ emails: [] });
+    const result = await db.query(
+      `SELECT DISTINCT LOWER(cs.email) AS email
+       FROM campaign_sends cs
+       JOIN campaigns c ON c.id = cs.campaign_id
+       WHERE c.user_id = $1 AND cs.status = 'sent' AND cs.email IS NOT NULL
+       ORDER BY LOWER(cs.email)`,
+      [req.user.id]
+    );
+    return res.json({ emails: (result.rows || []).map((r) => r.email).filter(Boolean) });
+  } catch (err) {
+    console.error('[campaigns GET /messaged-emails]', err?.message || err);
+    return res.status(503).json({ emails: [] });
+  }
+});
+
 campaignRoutes.post('/start', requireAuth, async (req, res) => {
   const db = getDb();
   const userId = req.user.id;
