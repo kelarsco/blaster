@@ -18,10 +18,10 @@ export function ScannerPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="p-4 sm:p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8 bg-[#f5f6fb] min-h-full">
       <div className="mb-4 md:mb-6">
-        <h1 className="page-title-mobile">Store Scanner</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Extract one best contact email from each store using privacy-first fallback scanning</p>
+        <h1 className="page-title-mobile">Scanner</h1>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Fetch store pages and extract contact emails</p>
       </div>
       <div className="space-y-4 md:space-y-6">
         <UrlInput
@@ -42,6 +42,7 @@ export function ScannerPage() {
             results={results}
             onResults={setResults}
             onExportExcel={(fields) => {
+              if (!scanId) return;
               const params = new URLSearchParams();
               if (fields && fields.length) params.set('fields', fields.join(','));
               const qs = params.toString();

@@ -150,42 +150,50 @@ export function UrlInput({
   }, [scanStatus?.status]);
 
   return (
-    <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-sm card-body-mobile">
-      <h2 className="card-title-mobile mb-3 md:mb-4">
-        Bulk Website URLs
+    <section className="bg-white rounded-2xl border border-[#e7e8f0] shadow-sm p-6">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-[#6d7385] mb-1">
+        Input
       </h2>
-      <p className="text-xs md:text-sm text-blaster-muted mb-2 md:mb-3">
-        Paste website links (one per line), or upload a CSV. URLs are normalized to HTTPS base domains.
+      <p className="text-sm text-[#9aa0b3] mb-4">
+        Paste store URLs (one per line) or upload a CSV file
       </p>
       <textarea
         value={rawUrls}
         onChange={(e) => setRawUrls(e.target.value)}
-        placeholder={"https://site1.com\nhttps://site2.com\n..."}
+        placeholder={"https://store1.com\nhttps://store2.com\nhttps://store3.com"}
         rows={6}
-        className="w-full px-4 py-3 rounded-xl bg-blaster-input-bg border border-blaster-input-border text-blaster-fg placeholder-blaster-muted focus:outline-none focus:ring-2 focus:ring-blaster-accent/40 focus:border-blaster-accent transition"
+        className="w-full px-4 py-3 rounded-xl bg-[#f6f7fb] border border-[#e4e7f0] text-[#222] placeholder-[#b5bbca] focus:outline-none focus:ring-2 focus:ring-[#6b6ee8]/30 focus:border-[#6b6ee8] transition"
         disabled={isScanning}
       />
-      <div className="mt-3">
-        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blaster-border text-blaster-fg hover:bg-blaster-sidebar-hover cursor-pointer text-sm">
-          <input
-            type="file"
-            accept=".csv,text/csv,.txt"
-            onChange={onCsvUpload}
-            className="hidden"
-            disabled={isScanning}
-          />
-          Upload CSV
-        </label>
-        {csvName ? <span className="ml-2 text-xs text-blaster-muted">Loaded: {csvName}</span> : null}
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#dfe3ee] bg-[#f9faff] text-[#4f566b] hover:bg-[#f1f3fb] cursor-pointer text-sm">
+            <input
+              type="file"
+              accept=".csv,text/csv,.txt"
+              onChange={onCsvUpload}
+              className="hidden"
+              disabled={isScanning}
+            />
+            Upload CSV
+          </label>
+          <span className="text-[#a3a9ba]">|</span>
+          <p className="text-sm text-[#5d6377]">
+            {urlCount} valid URLs
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startScan}
+          disabled={!isValid || isScanRunning}
+          className="px-7 py-2.5 rounded-xl bg-[#7f89ff] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#6f7afb] transition"
+        >
+          {isScanning ? 'Scanning…' : 'Start Scan'}
+        </button>
       </div>
-      <p className="text-xs text-blaster-muted mt-2 mb-3">
-        Scanner checks privacy pages first, applies ordered fallback paths, and picks one best email per store.
-      </p>
-      <p className="text-sm text-blaster-muted">
-        Valid URLs: <strong className="text-blaster-fg">{urlCount}</strong>
-      </p>
+      {csvName ? <p className="mt-2 text-xs text-[#8a91a5]">Loaded: {csvName}</p> : null}
       {error && (
-        <div className="mt-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
+        <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
           <p>{error}</p>
           {upgradeRequired && (
             <Link to="/app/account/billing/monthly-plan" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
@@ -194,16 +202,6 @@ export function UrlInput({
           )}
         </div>
       )}
-      <div className="mt-4 flex gap-3">
-        <button
-          type="button"
-          onClick={startScan}
-          disabled={!isValid || isScanRunning}
-          className="btn-blaster-accent disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isScanning ? 'Scanning…' : 'Start Scan'}
-        </button>
-      </div>
     </section>
   );
 }
