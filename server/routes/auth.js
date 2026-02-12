@@ -41,6 +41,8 @@ const FRONTEND_URL = () => normalizeUrl(process.env.FRONTEND_URL || process.env.
 const OAUTH_CALLBACK_BASE_URL = () => normalizeUrl(
   process.env.GOOGLE_CALLBACK_BASE_URL ||
   process.env.BACKEND_URL ||
+  process.env.RAILWAY_STATIC_URL ||
+  process.env.RAILWAY_PUBLIC_DOMAIN ||
   process.env.RENDER_EXTERNAL_URL ||
   FRONTEND_URL()
 );
