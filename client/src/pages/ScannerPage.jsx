@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UrlInput } from '../components/UrlInput';
 import { ResultsDashboard } from '../components/ResultsDashboard';
 import { useToolState } from '../context/ToolStateContext';
+import { useAuth } from '../context/AuthContext.jsx';
 import { API } from '../api.js';
 
 export function ScannerPage() {
@@ -15,6 +16,7 @@ export function ScannerPage() {
     setResults,
     setAutomationOpen,
   } = useToolState();
+  const { authFetch } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -41,13 +43,34 @@ export function ScannerPage() {
             scanStatus={scanStatus}
             results={results}
             onResults={setResults}
-            onExportExcel={(fields) => {
+            onExportExcel={async (fields) => {
               if (!scanId) return;
               const params = new URLSearchParams();
               if (fields && fields.length) params.set('fields', fields.join(','));
               const qs = params.toString();
               const url = `${API}/export/excel/${scanId}${qs ? `?${qs}` : ''}`;
-              window.open(url, '_blank');
+              try {
+                const res = await authFetch(url, { method: 'GET' });
+                if (!res.ok) {
+                  const data = await res.json().catch(() => ({}));
+                  alert(data?.error || `Export failed (${res.status})`);
+                  return;
+                }
+                const blob = await res.blob();
+                const contentDisposition = res.headers.get('content-disposition') || '';
+                const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+                const fileName = fileNameMatch?.[1] || `storereach-${scanId}.xlsx`;
+                const objectUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = objectUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(objectUrl);
+              } catch (e) {
+                alert(e?.message || 'Export failed');
+              }
             }}
             onStartAutomation={() => {
               navigate('/app/campaigns');
