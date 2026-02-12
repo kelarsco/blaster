@@ -3,12 +3,11 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ChevronDown } from 'react-feather';
 
 const settingsItems = [
-  { label: 'Users', to: '/app/account/settings/users' },
+  { label: 'Usage', to: '/app/account/settings/usage' },
   { label: 'Manage my plan', to: '/app/account/settings/manage-plan' },
 ];
 
 const billingItems = [
-  { label: 'Billing overview', to: '/app/account/billing' },
   { label: 'Monthly plan', to: '/app/account/billing/monthly-plan' },
   { label: 'Billing information', to: '/app/account/billing/information' },
   { label: 'Billing history', to: '/app/account/billing/history' },

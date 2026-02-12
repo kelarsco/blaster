@@ -14,7 +14,6 @@ import { SendersPage } from './pages/SendersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
-import { UsersPage } from './pages/UsersPage';
 import { ManagePlanPage } from './pages/ManagePlanPage';
 import { BillingOverviewPage } from './pages/BillingOverviewPage';
 import { BillingMonthlyPlanPage } from './pages/BillingMonthlyPlanPage';
@@ -120,10 +119,11 @@ function AppRoutes() {
           <Route path="settings" element={<SettingsPage />} />
           <Route path="account" element={<AccountLayout />}>
             <Route index element={<ProfilePage />} />
-            <Route path="settings" element={<Navigate to="/app/account/settings/users" replace />} />
-            <Route path="settings/users" element={<UsersPage />} />
+            <Route path="settings" element={<Navigate to="/app/account/settings/usage" replace />} />
+            <Route path="settings/usage" element={<BillingOverviewPage />} />
+            <Route path="settings/current-plan" element={<Navigate to="/app/account/settings/usage" replace />} />
             <Route path="settings/manage-plan" element={<ManagePlanPage />} />
-            <Route path="billing" element={<BillingOverviewPage />} />
+            <Route path="billing" element={<Navigate to="/app/account/settings/usage" replace />} />
             <Route path="billing/monthly-plan" element={<BillingMonthlyPlanPage />} />
             <Route path="billing/information" element={<BillingInformationPage />} />
             <Route path="billing/history" element={<BillingHistoryPage />} />
@@ -133,8 +133,8 @@ function AppRoutes() {
           <Route path="settings/*" element={<Navigate to="/app/settings" replace />} />
           <Route path="profile" element={<Navigate to="/app/account" replace />} />
           <Route path="profile/*" element={<Navigate to="/app/account" replace />} />
-          <Route path="billing" element={<Navigate to="/app/account/billing" replace />} />
-          <Route path="billing/*" element={<Navigate to="/app/account/billing" replace />} />
+          <Route path="billing" element={<Navigate to="/app/account/settings/usage" replace />} />
+          <Route path="billing/*" element={<Navigate to="/app/account/settings/usage" replace />} />
           <Route path="pricing" element={<Navigate to="/app/account/pricing" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

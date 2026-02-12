@@ -115,8 +115,8 @@ export function BillingOverviewPage() {
   return (
     <div className="p-4 sm:p-6 md:p-8">
       <div className="mb-6 md:mb-8">
-        <h1 className="page-title-mobile">Billing</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Manage your plans and payment methods</p>
+        <h1 className="page-title-mobile">Usage</h1>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Manage your usage</p>
       </div>
 
       {error && (
@@ -254,20 +254,6 @@ export function BillingOverviewPage() {
             )}
           </section>
 
-          <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile">
-            <h2 className="card-title-mobile mb-2">Billing information</h2>
-            {loading ? (
-              <p className="text-sm text-blaster-muted">Loading…</p>
-            ) : cards.length > 0 ? (
-              <Link to="/app/account/billing/information" className="text-blaster-accent hover:underline text-sm">
-                Manage payment method{cards.length !== 1 ? 's' : ''}
-              </Link>
-            ) : (
-              <Link to="/app/account/billing/information" className="text-blaster-accent hover:underline text-sm">
-                Add a payment method
-              </Link>
-            )}
-          </section>
         </div>
       </div>
     </div>

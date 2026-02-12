@@ -269,13 +269,6 @@ export function PricingPlansPage() {
                 <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
               </tr>
               <tr className="border-b border-blaster-border">
-                <td className="px-6 py-3 text-blaster-muted">Users</td>
-                <td className="px-6 py-3 text-blaster-fg">1 seat</td>
-                <td className="px-6 py-3 text-blaster-fg">3 seats</td>
-                <td className="px-6 py-3 text-blaster-fg">5 seats</td>
-                <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
-              </tr>
-              <tr className="border-b border-blaster-border">
                 <td className="px-6 py-3 text-blaster-muted">Personalized onboarding</td>
                 <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>
                 <td className="px-6 py-3"><X className="w-4 h-4 text-blaster-muted/60 inline" strokeWidth={2} /></td>

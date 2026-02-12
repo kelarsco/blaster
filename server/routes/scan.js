@@ -24,6 +24,36 @@ function parseUrls(text) {
   return urls.slice(0, 1000);
 }
 
+scanRoutes.get('/analytics', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not signed in' });
+
+    if (db) {
+      const result = await db.query(
+        `SELECT COALESCE(COUNT(*), 0) AS extracted
+         FROM scan_results sr
+         JOIN scans s ON s.id = sr.scan_id
+         WHERE s.user_id = $1 AND sr.has_email = 1 AND sr.email IS NOT NULL`,
+        [userId]
+      );
+      return res.json({ extracted: Number(result.rows?.[0]?.extracted || 0) });
+    }
+
+    let extracted = 0;
+    for (const [scanId, scan] of memoryStore.scans.entries()) {
+      if (scan?.user_id !== userId) continue;
+      const rows = memoryStore.results.get(scanId) || [];
+      extracted += rows.filter((r) => r.has_email === 1 && r.email).length;
+    }
+    return res.json({ extracted });
+  } catch (e) {
+    console.error('[scan analytics]', e?.message || e);
+    return res.status(500).json({ extracted: 0 });
+  }
+});
+
 scanRoutes.post('/start', requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
@@ -100,6 +130,7 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       total_urls: totalStores,
       processed: 0,
       found_count: 0,
+      user_id: userId,
       created_at: new Date(),
     });
     memoryStore.results.set(scanId, []);

@@ -14,6 +14,7 @@ export function DashboardPage() {
   const { authFetch } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
+  const [emailsExtracted, setEmailsExtracted] = useState(0);
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [rangePreset, setRangePreset] = useState('this_year');
@@ -231,6 +232,9 @@ export function DashboardPage() {
       authFetch(`${API}/activity/logs?limit=20`)
         .then((r) => (r.ok ? r.json() : { logs: [] }))
         .then((d) => setActivity(d.logs || [])),
+      authFetch(`${API}/scan/analytics`)
+        .then((r) => (r.ok ? r.json() : { extracted: 0 }))
+        .then((d) => setEmailsExtracted(Number(d.extracted || 0))),
     ]);
   }, [authFetch]);
 
@@ -527,7 +531,7 @@ export function DashboardPage() {
             { label: 'Total Campaigns', value: statsFromFiltered.total, Icon: Send },
             { label: 'Emails Sent', value: statsFromFiltered.sent, Icon: Check },
             { label: 'Failed Emails', value: statsFromFiltered.failed, Icon: X },
-            { label: 'Emails Extracted', value: '—', Icon: Mail, sub: 'From scans' },
+            { label: 'Emails Extracted', value: emailsExtracted, Icon: Mail, sub: 'From scans' },
           ].map((s) => (
             <div key={s.label} className="px-4 py-3 md:px-6 md:py-4">
               <div className="flex items-center gap-2 text-xs md:text-sm text-blaster-muted">

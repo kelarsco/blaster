@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Send, Mail, Users } from 'react-feather';
+import { Search, Send, Mail, CreditCard } from 'react-feather';
 
 export function OverviewPage() {
   return (
@@ -36,12 +36,12 @@ export function OverviewPage() {
           <p className="text-sm text-blaster-muted mt-1">Configure email accounts</p>
         </Link>
         <Link
-          to="/app/account/settings/users"
+          to="/app/account/settings/usage"
           className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile hover:border-blaster-accent/40 transition group"
         >
-          <Users className="w-10 h-10 text-blaster-accent mb-3 group-hover:scale-105 transition" strokeWidth={2} />
-          <h3 className="card-title-mobile">Team</h3>
-          <p className="text-sm text-blaster-muted mt-1">Invite users to collaborate</p>
+          <CreditCard className="w-10 h-10 text-blaster-accent mb-3 group-hover:scale-105 transition" strokeWidth={2} />
+          <h3 className="card-title-mobile">Usage</h3>
+          <p className="text-sm text-blaster-muted mt-1">Review limits, usage, and billing details</p>
         </Link>
       </div>
 
