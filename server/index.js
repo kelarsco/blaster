@@ -28,6 +28,7 @@ import { supportRoutes } from './routes/support.js';
 import { adminAuthRoutes } from './routes/adminAuth.js';
 import { adminRoutes } from './routes/admin.js';
 import { emailListRoutes } from './routes/emailLists.js';
+import { domainEmailRoutes } from './routes/domainEmail.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
 
 const require = createRequire(import.meta.url);
@@ -42,6 +43,7 @@ app.use(cookieParser());
 // Paystack webhook must receive raw body for signature verification (register before express.json)
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => handlePaystackWebhook(req, res));
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 const isDev = process.env.NODE_ENV !== 'production';
 const frontendUrl = process.env.FRONTEND_URL || '';
 // In production with a separate frontend origin, use SameSite=None so the cookie is sent cross-origin
@@ -116,6 +118,7 @@ async function start() {
   app.use('/api/billing', billingRoutes);
   app.use('/api/support', supportRoutes);
   app.use('/api/email-lists', emailListRoutes);
+  app.use('/api/domain-email', domainEmailRoutes);
   app.use('/api/bl-admin', adminAuthRoutes);
   app.use('/api/bl-admin', adminRoutes);
 

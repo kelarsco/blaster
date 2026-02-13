@@ -9,6 +9,8 @@ const navItems = [
   { to: '/app/scanner', label: 'Scanner', icon: ScannerIcon },
   { to: '/app/campaigns', label: 'Campaigns', icon: CampaignsIcon },
   { to: '/app/senders', label: 'Senders', icon: SendersIcon },
+  { to: '/app/domain-email-sending', label: 'Domain Email Sending', icon: DomainEmailIcon },
+  { to: '/app/domain-inbox', label: 'Domain Inbox', icon: InboxIcon },
   { to: '/app/settings', label: 'Scan settings', icon: SettingsIcon },
 ];
 
@@ -45,6 +47,23 @@ function SettingsIcon() {
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function DomainEmailIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10l9-6 9 6v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10l9 7 9-7" />
+    </svg>
+  );
+}
+
+function InboxIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v12h-4l-2 3h-4l-2-3H4V4z" />
     </svg>
   );
 }
@@ -198,7 +217,15 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
               <NavLink
                 key={to}
                 to={to}
-                end={to === '/app/dashboard' || to === '/app/scanner' || to === '/app/campaigns' || to === '/app/senders' || to === '/app/settings'}
+                end={
+                  to === '/app/dashboard' ||
+                  to === '/app/scanner' ||
+                  to === '/app/campaigns' ||
+                  to === '/app/senders' ||
+                  to === '/app/domain-email-sending' ||
+                  to === '/app/domain-inbox' ||
+                  to === '/app/settings'
+                }
                 onClick={onMobileClose}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${

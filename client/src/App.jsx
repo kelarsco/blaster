@@ -14,6 +14,8 @@ import { SendersPage } from './pages/SendersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
+import { DomainEmailSendingPage } from './pages/DomainEmailSendingPage';
+import { DomainInboxPage } from './pages/DomainInboxPage';
 import { ManagePlanPage } from './pages/ManagePlanPage';
 import { BillingOverviewPage } from './pages/BillingOverviewPage';
 import { BillingMonthlyPlanPage } from './pages/BillingMonthlyPlanPage';
@@ -116,6 +118,8 @@ function AppRoutes() {
           <Route path="scanner" element={<ScannerPage />} />
           <Route path="campaigns" element={<CampaignsPage />} />
           <Route path="senders" element={<SendersPage />} />
+          <Route path="domain-email-sending" element={<DomainEmailSendingPage />} />
+          <Route path="domain-inbox" element={<DomainInboxPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="account" element={<AccountLayout />}>
             <Route index element={<ProfilePage />} />

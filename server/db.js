@@ -334,6 +334,101 @@ async function runSchema(p) {
       );
       CREATE INDEX IF NOT EXISTS idx_email_lists_user_created ON email_lists(user_id, created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS sending_domains (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        domain TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_domain_id TEXT,
+        provider_api_key TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        verification_error TEXT,
+        dns_records_json TEXT,
+        last_verified_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sending_domains_user_domain ON sending_domains(user_id, domain);
+      CREATE INDEX IF NOT EXISTS idx_sending_domains_user_status ON sending_domains(user_id, status);
+
+      CREATE TABLE IF NOT EXISTS domain_sender_identities (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        domain_id TEXT NOT NULL REFERENCES sending_domains(id) ON DELETE CASCADE,
+        from_name TEXT,
+        from_email TEXT NOT NULL,
+        provider_identity_id TEXT,
+        is_active SMALLINT DEFAULT 1,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_sender_domain_email ON domain_sender_identities(domain_id, from_email);
+      CREATE INDEX IF NOT EXISTS idx_domain_sender_user ON domain_sender_identities(user_id);
+
+      CREATE TABLE IF NOT EXISTS domain_campaigns (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        domain_id TEXT NOT NULL REFERENCES sending_domains(id) ON DELETE CASCADE,
+        sender_id TEXT NOT NULL REFERENCES domain_sender_identities(id) ON DELETE CASCADE,
+        status TEXT NOT NULL,
+        total_queued INTEGER DEFAULT 0,
+        sent INTEGER DEFAULT 0,
+        failed INTEGER DEFAULT 0,
+        subject TEXT,
+        body TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_campaigns_user_created ON domain_campaigns(user_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS domain_inbox_threads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        domain_id TEXT NOT NULL REFERENCES sending_domains(id) ON DELETE CASCADE,
+        sender_email TEXT NOT NULL,
+        contact_email TEXT NOT NULL,
+        campaign_id TEXT REFERENCES domain_campaigns(id) ON DELETE SET NULL,
+        subject TEXT,
+        last_message_at TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_inbox_thread_unique
+        ON domain_inbox_threads(user_id, domain_id, sender_email, contact_email);
+      CREATE INDEX IF NOT EXISTS idx_domain_inbox_thread_user ON domain_inbox_threads(user_id, last_message_at DESC);
+
+      CREATE TABLE IF NOT EXISTS domain_inbox_messages (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES domain_inbox_threads(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        campaign_id TEXT REFERENCES domain_campaigns(id) ON DELETE SET NULL,
+        direction TEXT NOT NULL,
+        from_email TEXT NOT NULL,
+        to_email TEXT NOT NULL,
+        subject TEXT,
+        body_text TEXT,
+        provider_message_id TEXT,
+        in_reply_to TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_inbox_messages_thread_created
+        ON domain_inbox_messages(thread_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_domain_inbox_messages_user_created
+        ON domain_inbox_messages(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_domain_inbox_messages_provider_id
+        ON domain_inbox_messages(provider_message_id);
+
+      CREATE TABLE IF NOT EXISTS domain_campaign_sends (
+        id SERIAL PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES domain_campaigns(id) ON DELETE CASCADE,
+        to_email TEXT NOT NULL,
+        status TEXT NOT NULL,
+        provider_message_id TEXT,
+        error TEXT,
+        thread_id TEXT REFERENCES domain_inbox_threads(id) ON DELETE SET NULL,
+        sent_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_campaign_sends_campaign ON domain_campaign_sends(campaign_id);
+
       CREATE TABLE IF NOT EXISTS session (
         sid varchar NOT NULL,
         sess json NOT NULL,

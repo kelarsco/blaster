@@ -16,6 +16,8 @@ export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
   const [senders, setSenders] = useState([]);
+  const [domainIdentities, setDomainIdentities] = useState([]);
+  const [domainRecords, setDomainRecords] = useState([]);
   const [groups, setGroups] = useState([]);
   const [maxSendersPerGroup, setMaxSendersPerGroup] = useState(MAX_SENDERS_PER_GROUP);
   const [senderLimit, setSenderLimit] = useState(1);
@@ -34,6 +36,7 @@ export function SendersPage() {
     maxPerMinute: 10,
   });
   const [error, setError] = useState('');
+  const [domainSenderForm, setDomainSenderForm] = useState({ domainId: '', fromName: '', fromEmail: '' });
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
 
@@ -47,6 +50,12 @@ export function SendersPage() {
     authFetch(`${API}/automation/senders/limit`).then((r) => r.json()).then((d) => {
       setSenderLimit(d.limit ?? 1);
       setSenderCount(d.count ?? 0);
+    });
+    authFetch(`${API}/domain-email/domains`).then((r) => (r.ok ? r.json() : { domains: [] })).then((d) => {
+      setDomainRecords(d.domains || []);
+    });
+    authFetch(`${API}/domain-email/senders`).then((r) => (r.ok ? r.json() : { senders: [] })).then((d) => {
+      setDomainIdentities(d.senders || []);
     });
   }, [authFetch]);
 
@@ -188,7 +197,39 @@ export function SendersPage() {
     }
   };
 
+  const addDomainSender = async () => {
+    if (!authFetch) return;
+    setError('');
+    try {
+      const res = await authFetch(`${API}/domain-email/senders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(domainSenderForm),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to add domain sender identity');
+      setDomainSenderForm({ domainId: '', fromName: '', fromEmail: '' });
+      fetchData();
+    } catch (e) {
+      setError(e?.message || 'Failed to add domain sender identity');
+    }
+  };
+
+  const removeDomainSender = async (senderId) => {
+    if (!authFetch) return;
+    setError('');
+    try {
+      const res = await authFetch(`${API}/domain-email/senders/${senderId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to remove domain sender identity');
+      fetchData();
+    } catch (e) {
+      setError(e?.message || 'Failed to remove domain sender identity');
+    }
+  };
+
   const inputClass = 'w-full px-3 py-2 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg placeholder-blaster-muted focus:ring-2 focus:ring-blaster-accent/40 focus:border-blaster-accent';
+  const verifiedDomains = domainRecords.filter((d) => d.status === 'verified');
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
@@ -223,6 +264,82 @@ export function SendersPage() {
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      <div className="mb-6 md:mb-8">
+        <h2 className="card-title-mobile mb-2 md:mb-3">Domain sender identities</h2>
+        <p className="text-xs md:text-sm text-blaster-muted mb-3">
+          Add sender identities for verified domains. No SMTP or inbox passwords are needed.
+        </p>
+        {verifiedDomains.length === 0 ? (
+          <div className="bg-blaster-bg-card rounded-xl border border-blaster-border p-4 text-sm text-blaster-muted">
+            No verified domains yet. Complete domain onboarding first in{' '}
+            <a href="/app/domain-email-sending" className="text-blaster-accent hover:underline">
+              Domain Email Sending
+            </a>
+            .
+          </div>
+        ) : (
+          <>
+            <div className="bg-blaster-bg-card rounded-xl border border-blaster-border p-4 grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+              <select
+                value={domainSenderForm.domainId}
+                onChange={(e) => setDomainSenderForm((prev) => ({ ...prev, domainId: e.target.value }))}
+                className={inputClass}
+              >
+                <option value="">Select verified domain</option>
+                {verifiedDomains.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.domain}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={domainSenderForm.fromName}
+                onChange={(e) => setDomainSenderForm((prev) => ({ ...prev, fromName: e.target.value }))}
+                placeholder="From name"
+                className={inputClass}
+              />
+              <input
+                type="email"
+                value={domainSenderForm.fromEmail}
+                onChange={(e) => setDomainSenderForm((prev) => ({ ...prev, fromEmail: e.target.value }))}
+                placeholder="sales@example.com"
+                className={inputClass}
+              />
+              <button type="button" onClick={addDomainSender} className="btn-blaster-accent">
+                Add Domain Sender
+              </button>
+            </div>
+            <div className="bg-blaster-bg-card rounded-xl border border-blaster-border overflow-hidden">
+              {domainIdentities.length === 0 ? (
+                <div className="p-6 text-center text-blaster-muted text-sm">No domain sender identities yet.</div>
+              ) : (
+                <ul className="divide-y divide-blaster-border">
+                  {domainIdentities.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
+                      <div>
+                        <span className="font-medium text-blaster-fg">
+                          {s.fromName ? `${s.fromName} ` : ''}
+                          {`<${s.fromEmail}>`}
+                        </span>
+                        <span className="ml-2 text-sm text-blaster-muted">({s.domain})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDomainSender(s.id)}
+                        className="text-sm text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Sender groups */}
       <div className="mb-6 md:mb-8">
