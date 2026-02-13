@@ -253,6 +253,8 @@ export function AuthProvider({ children }) {
     popupClosedPoll = window.setInterval(() => {
       if (!popup.closed || handled) return;
       cleanup();
+      // Final fallback: move to full-page OAuth flow so login can still complete.
+      window.location.href = url;
     }, 500);
   }, [setAccessToken, setUser]);
 
