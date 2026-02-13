@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
+import { sendEmailViaProvider } from './domainEmailProviders.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -87,11 +88,6 @@ export async function processSendEmail(payload) {
   const auth = config.auth && (config.auth.user || config.auth.pass)
     ? { user: config.auth.user, pass: config.auth.pass }
     : undefined;
-  if (!auth || !auth.user || !auth.pass) {
-    console.error('[send] Sender has no SMTP user/password. Edit the sender in Automation Setup and fill SMTP user + App Password.');
-    await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Sender missing SMTP user/password');
-    return;
-  }
 
   const storeDomain = (() => {
     try {
@@ -106,6 +102,54 @@ export async function processSendEmail(payload) {
   const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
 
   const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 10));
+
+  if ((senderRow.provider || '').toLowerCase() === 'domain') {
+    const doDomainSend = async () => {
+      const domainSenderId = config?.domainSenderId || senderRow.id;
+      const domainSender = (
+        await db.query(
+          `SELECT s.from_name, s.from_email, d.provider, d.provider_api_key
+           FROM domain_sender_identities s
+           JOIN sending_domains d ON d.id = s.domain_id
+           WHERE s.id = $1`,
+          [domainSenderId]
+        )
+      ).rows?.[0];
+      if (!domainSender) {
+        await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Domain sender identity not found');
+        return;
+      }
+      await sendEmailViaProvider({
+        provider: domainSender.provider,
+        apiKey: domainSender.provider_api_key,
+        fromName: domainSender.from_name,
+        fromEmail: domainSender.from_email,
+        toEmail: email,
+        subject: finalSubject,
+        textBody: finalBody,
+        replyTo: domainSender.from_email,
+        metadata: { campaignId, senderId: senderRow.id },
+      });
+      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
+      if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
+    };
+
+    try {
+      await withSenderSerialization(senderId, maxPerMinute, doDomainSend);
+    } catch (err) {
+      const errMsg = err.message || String(err);
+      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', errMsg);
+      if (inserted) await updateCampaignCounts(db, campaignId, 'failed');
+    }
+    return;
+  }
+
+  if (!auth || !auth.user || !auth.pass) {
+    console.error('[send] Sender has no SMTP user/password. Edit the sender in Automation Setup and fill SMTP user + App Password.');
+    await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Sender missing SMTP user/password');
+    return;
+  }
+
   const transporter = getTransporter(senderId, config, auth);
 
   const doSend = async () => {

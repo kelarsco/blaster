@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { logActivity } from './activity.js';
+import { getSenderLimitForUser } from '../services/planLimits.js';
 import {
   createOrLocateProviderDomain,
   DOMAIN_EMAIL_PROVIDERS,
@@ -299,13 +300,52 @@ domainEmailRoutes.post('/senders', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Sender email must belong to ${domainRow.domain}` });
     }
 
+    const userId = req.user.id;
+    const [countResult, limitResult] = await Promise.all([
+      db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]),
+      getSenderLimitForUser(userId),
+    ]);
+    const count = parseInt(countResult.rows?.[0]?.c, 10) || 0;
+    if (count >= limitResult.limit) {
+      return res.status(403).json({
+        error: 'Sender limit reached for your plan.',
+        code: 'SENDER_LIMIT_REACHED',
+        limit: limitResult.limit,
+        count,
+      });
+    }
+
     const id = uuidv4();
-    await db.query(
-      `INSERT INTO domain_sender_identities
-       (id, user_id, domain_id, from_name, from_email, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [id, req.user.id, domainId, fromName || null, fromEmail]
-    );
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO domain_sender_identities
+         (id, user_id, domain_id, from_name, from_email, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [id, userId, domainId, fromName || null, fromEmail]
+      );
+      await client.query(
+        `INSERT INTO senders (id, user_id, email, config, max_per_minute, is_active, provider, created_at)
+         VALUES ($1, $2, $3, $4, 10, 1, 'domain', NOW())`,
+        [
+          id,
+          userId,
+          fromEmail,
+          JSON.stringify({
+            type: 'domain',
+            domainSenderId: id,
+          }),
+        ]
+      );
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
     logActivity('domain_email_sender_added', { fromEmail, domainId }, req.user.id);
     return res.status(201).json({ sender: { id, fromName, fromEmail, domainId } });
   } catch (e) {
@@ -320,8 +360,21 @@ domainEmailRoutes.delete('/senders/:senderId', requireAuth, async (req, res) => 
   try {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database required for domain email sending' });
-    const result = await db.query('DELETE FROM domain_sender_identities WHERE id = $1 AND user_id = $2', [req.params.senderId, req.user.id]);
-    if (!result.rowCount) return res.status(404).json({ error: 'Sender identity not found' });
+    const client = await db.connect();
+    let rowCount = 0;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('DELETE FROM domain_sender_identities WHERE id = $1 AND user_id = $2', [req.params.senderId, req.user.id]);
+      rowCount = result.rowCount;
+      await client.query('UPDATE senders SET is_active = 0 WHERE id = $1 AND user_id = $2', [req.params.senderId, req.user.id]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+    if (!rowCount) return res.status(404).json({ error: 'Sender identity not found' });
     return res.json({ ok: true });
   } catch (e) {
     console.error('[domain-email senders DELETE]', e?.message || e);

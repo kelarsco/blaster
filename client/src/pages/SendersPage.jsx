@@ -16,7 +16,6 @@ export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
   const [senders, setSenders] = useState([]);
-  const [domainIdentities, setDomainIdentities] = useState([]);
   const [domainRecords, setDomainRecords] = useState([]);
   const [groups, setGroups] = useState([]);
   const [maxSendersPerGroup, setMaxSendersPerGroup] = useState(MAX_SENDERS_PER_GROUP);
@@ -53,9 +52,6 @@ export function SendersPage() {
     });
     authFetch(`${API}/domain-email/domains`).then((r) => (r.ok ? r.json() : { domains: [] })).then((d) => {
       setDomainRecords(d.domains || []);
-    });
-    authFetch(`${API}/domain-email/senders`).then((r) => (r.ok ? r.json() : { senders: [] })).then((d) => {
-      setDomainIdentities(d.senders || []);
     });
   }, [authFetch]);
 
@@ -311,32 +307,9 @@ export function SendersPage() {
                 Add Domain Sender
               </button>
             </div>
-            <div className="bg-blaster-bg-card rounded-xl border border-blaster-border overflow-hidden">
-              {domainIdentities.length === 0 ? (
-                <div className="p-6 text-center text-blaster-muted text-sm">No domain sender identities yet.</div>
-              ) : (
-                <ul className="divide-y divide-blaster-border">
-                  {domainIdentities.map((s) => (
-                    <li key={s.id} className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
-                      <div>
-                        <span className="font-medium text-blaster-fg">
-                          {s.fromName ? `${s.fromName} ` : ''}
-                          {`<${s.fromEmail}>`}
-                        </span>
-                        <span className="ml-2 text-sm text-blaster-muted">({s.domain})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeDomainSender(s.id)}
-                        className="text-sm text-red-600 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <p className="text-xs text-blaster-muted mb-1">
+              Added domain senders appear in All senders below and can be added to groups for campaigns.
+            </p>
           </>
         )}
       </div>
@@ -475,6 +448,11 @@ export function SendersPage() {
                 <li key={s.id} className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
                   <div>
                     <span className="font-medium text-blaster-fg">{s.email}</span>
+                    {s.provider === 'domain' && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded-full border border-blaster-border text-blaster-muted">
+                        Domain
+                      </span>
+                    )}
                     <span className="ml-2 text-sm text-blaster-muted">(max {s.maxPerMinute}/min)</span>
                   </div>
                   <div className="relative shrink-0" ref={openMenuId === s.id ? menuRef : null}>
@@ -491,7 +469,11 @@ export function SendersPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            removeSender(s.id);
+                            if (s.provider === 'domain') {
+                              removeDomainSender(s.id);
+                            } else {
+                              removeSender(s.id);
+                            }
                             setOpenMenuId(null);
                           }}
                           className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-blaster-bg-app"

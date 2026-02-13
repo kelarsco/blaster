@@ -12,9 +12,23 @@ export const automationRoutes = Router();
 automationRoutes.get('/senders', requireAuth, async (req, res) => {
   const db = getDb();
   if (!db) return res.json({ senders: [] });
-  const result = await db.query('SELECT id, email, max_per_minute, is_active, created_at FROM senders WHERE user_id = $1 AND is_active = 1', [req.user.id]);
+  const result = await db.query(
+    `SELECT id, email, max_per_minute, is_active, created_at, provider
+     FROM senders
+     WHERE user_id = $1 AND is_active = 1
+     ORDER BY created_at DESC`,
+    [req.user.id]
+  );
   const rows = result.rows;
-  res.json({ senders: rows.map((r) => ({ id: r.id, email: r.email, maxPerMinute: r.max_per_minute, createdAt: r.created_at })) });
+  res.json({
+    senders: rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      maxPerMinute: r.max_per_minute,
+      provider: r.provider || 'smtp',
+      createdAt: r.created_at,
+    })),
+  });
 });
 
 /** Sender limit and current count for the current user (for UI). */
@@ -87,7 +101,7 @@ automationRoutes.get('/senders/groups', requireAuth, async (req, res) => {
   const result = await db.query(`
     SELECT sg.id, sg.name, sg.created_at,
       COALESCE(
-        (SELECT json_agg(json_build_object('id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute))
+        (SELECT json_agg(json_build_object('id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute, 'provider', COALESCE(s.provider, 'smtp')))
          FROM senders s
          JOIN sender_group_members sgm ON sgm.sender_id = s.id
          WHERE sgm.group_id = sg.id AND s.is_active = 1),
