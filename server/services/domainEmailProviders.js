@@ -306,11 +306,18 @@ export async function sendEmailViaProvider({
 export function parseInboundPayload(provider, body) {
   const p = normalizeProvider(provider);
   const b = body || {};
+  const toAddress = (v) => {
+    if (Array.isArray(v)) return toAddress(v[0]);
+    if (v && typeof v === 'object') return toAddress(v.email || v.address || v.value || '');
+    const s = String(v || '');
+    const m = s.match(/<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>?/i);
+    return (m?.[1] || '').toLowerCase();
+  };
 
   if (p === 'mailgun') {
     return {
-      fromEmail: String(b.sender || b.from || '').toLowerCase(),
-      toEmail: String(b.recipient || b.To || '').toLowerCase(),
+      fromEmail: toAddress(b.sender || b.from),
+      toEmail: toAddress(b.recipient || b.To),
       subject: String(b.subject || '').trim(),
       text: String(b['body-plain'] || b.text || '').trim(),
       messageId: String(b['Message-Id'] || b.message_id || '').trim(),
@@ -321,20 +328,26 @@ export function parseInboundPayload(provider, body) {
 
   if (p === 'resend') {
     return {
-      fromEmail: String(b?.data?.from || b?.from || '').replace(/^.*<|>.*$/g, '').toLowerCase(),
-      toEmail: String(b?.data?.to || b?.to || '').replace(/^.*<|>.*$/g, '').toLowerCase(),
+      fromEmail: toAddress(b?.data?.from || b?.from || b?.data?.from_email),
+      toEmail: toAddress(b?.data?.to || b?.to || b?.data?.to_email),
       subject: String(b?.data?.subject || b?.subject || '').trim(),
       text: String(b?.data?.text || b?.text || '').trim(),
-      messageId: String(b?.data?.id || b?.id || '').trim(),
-      inReplyTo: String(b?.data?.headers?.['In-Reply-To'] || b?.inReplyTo || '').trim(),
-      references: String(b?.data?.headers?.References || b?.references || '').trim(),
+      messageId: String(b?.data?.id || b?.id || b?.data?.message_id || '').trim(),
+      inReplyTo: String(
+        b?.data?.headers?.['In-Reply-To'] ||
+        b?.data?.headers?.['in-reply-to'] ||
+        b?.inReplyTo ||
+        b?.in_reply_to ||
+        ''
+      ).trim(),
+      references: String(b?.data?.headers?.References || b?.data?.headers?.references || b?.references || '').trim(),
     };
   }
 
   // Generic fallback for providers/webhook relays.
   return {
-    fromEmail: String(b.from || b.sender || '').replace(/^.*<|>.*$/g, '').toLowerCase(),
-    toEmail: String(b.to || b.recipient || '').replace(/^.*<|>.*$/g, '').toLowerCase(),
+    fromEmail: toAddress(b.from || b.sender),
+    toEmail: toAddress(b.to || b.recipient),
     subject: String(b.subject || '').trim(),
     text: String(b.text || b.body || '').trim(),
     messageId: String(b.messageId || b.message_id || '').trim(),

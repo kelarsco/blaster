@@ -14,7 +14,6 @@ export function DomainEmailSendingPage() {
   const [copiedKey, setCopiedKey] = useState('');
 
   const [domainForm, setDomainForm] = useState({ domain: '', provider: 'resend', providerApiKey: '' });
-  const hasAnyDomain = domains.length > 0;
   const verifiedDomains = useMemo(() => domains.filter((d) => d.status === 'verified'), [domains]);
   const hasVerifiedDomain = verifiedDomains.length > 0;
   const pendingDomains = useMemo(() => domains.filter((d) => d.status !== 'verified'), [domains]);
@@ -113,39 +112,64 @@ export function DomainEmailSendingPage() {
       {error ? <div className="rounded-lg border border-red-300 bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div> : null}
       {success ? <div className="rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 text-sm px-3 py-2">{success}</div> : null}
 
+      {hasVerifiedDomain && (
+        <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border p-4 md:p-6">
+          <h2 className="card-title-mobile">Verified domains</h2>
+          <div className="mt-3 space-y-2">
+            {verifiedDomains.map((d) => (
+              <div key={`${d.id}-verified`} className="rounded-lg border border-blaster-border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-blaster-fg">
+                    <span className="font-semibold">{d.domain}</span> - {String(d.provider || '').toUpperCase()} -{' '}
+                    <span className="text-emerald-600">verified</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => syncDomainWithProvider(d.id)}
+                      className="px-3 py-1.5 rounded-lg border border-blaster-border text-sm"
+                    >
+                      Re-sync
+                    </button>
+                    <button type="button" onClick={() => removeDomain(d.id)} className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-sm">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border p-4 md:p-6">
         <h2 className="card-title-mobile">Step 1: Add sending domain</h2>
-        {!hasAnyDomain ? (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
-            <input
-              value={domainForm.domain}
-              onChange={(e) => setDomainForm((f) => ({ ...f, domain: e.target.value }))}
-              placeholder="example.com"
-              className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
-            />
-            <select
-              value={domainForm.provider}
-              onChange={(e) => setDomainForm((f) => ({ ...f, provider: e.target.value }))}
-              className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
-            >
-              {(providers || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-            <input
-              value={domainForm.providerApiKey}
-              onChange={(e) => setDomainForm((f) => ({ ...f, providerApiKey: e.target.value }))}
-              placeholder="Provider API key (optional)"
-              className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
-            />
-            <button type="button" onClick={addDomain} className="btn-blaster-accent">Add Domain</button>
-          </div>
-        ) : (
-          <p className="text-sm text-blaster-muted mt-2">
-            Domain added. Continue to DNS verification below.
-          </p>
-        )}
+        <p className="text-sm text-blaster-muted mt-2">You can add more than one domain.</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
+          <input
+            value={domainForm.domain}
+            onChange={(e) => setDomainForm((f) => ({ ...f, domain: e.target.value }))}
+            placeholder="example.com"
+            className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
+          />
+          <select
+            value={domainForm.provider}
+            onChange={(e) => setDomainForm((f) => ({ ...f, provider: e.target.value }))}
+            className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
+          >
+            {(providers || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          <input
+            value={domainForm.providerApiKey}
+            onChange={(e) => setDomainForm((f) => ({ ...f, providerApiKey: e.target.value }))}
+            placeholder="Provider API key (optional)"
+            className="px-3 py-2 rounded-lg border border-blaster-border bg-white text-blaster-fg"
+          />
+          <button type="button" onClick={addDomain} className="btn-blaster-accent">Add Domain</button>
+        </div>
       </section>
 
-      {hasAnyDomain && (
+      {pendingDomains.length > 0 && (
         <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border p-4 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="card-title-mobile">Step 2: DNS verification</h2>
@@ -170,7 +194,7 @@ export function DomainEmailSendingPage() {
                 <li>Click Verify on this page.</li>
               </ol>
               <div className="mt-3 space-y-3">
-                {domains.map((d) => (
+                {pendingDomains.map((d) => (
                   <div key={`${d.id}-guide`} className="rounded-lg border border-blaster-border bg-white p-3">
                     <p className="text-sm font-medium text-blaster-fg mb-2">
                       {d.domain} ({String(d.provider || '').toUpperCase()})
@@ -228,7 +252,7 @@ export function DomainEmailSendingPage() {
             </div>
           )}
           <div className="space-y-4 mt-3">
-            {domains.map((d) => (
+            {pendingDomains.map((d) => (
               <div key={d.id} className="rounded-lg border border-blaster-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <div className="text-sm text-blaster-fg">
@@ -297,7 +321,7 @@ export function DomainEmailSendingPage() {
         </section>
       )}
 
-      {hasAnyDomain && !hasVerifiedDomain && (
+      {pendingDomains.length > 0 && !hasVerifiedDomain && (
         <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border p-4 md:p-6">
           <h2 className="card-title-mobile">Next step</h2>
           <p className="text-sm text-blaster-muted mt-2">

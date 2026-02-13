@@ -65,6 +65,59 @@ async function withSenderSerialization(senderId, maxPerMinute, fn) {
   return next;
 }
 
+async function upsertDomainThread(db, { userId, domainId, senderEmail, contactEmail, campaignId, subject }) {
+  const threadId = `thr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const result = await db.query(
+    `INSERT INTO domain_inbox_threads (id, user_id, domain_id, sender_email, contact_email, campaign_id, subject, last_message_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), NOW())
+     ON CONFLICT (user_id, domain_id, sender_email, contact_email)
+     DO UPDATE SET
+       campaign_id = COALESCE(domain_inbox_threads.campaign_id, EXCLUDED.campaign_id),
+       subject = COALESCE(EXCLUDED.subject, domain_inbox_threads.subject),
+       last_message_at = NOW(),
+       updated_at = NOW()
+     RETURNING id`,
+    [threadId, userId, domainId, String(senderEmail || '').toLowerCase(), String(contactEmail || '').toLowerCase(), campaignId || null, subject || null]
+  );
+  return result.rows?.[0]?.id || threadId;
+}
+
+async function storeDomainOutboundMessage(db, {
+  userId,
+  campaignId,
+  domainId,
+  senderEmail,
+  contactEmail,
+  subject,
+  body,
+  providerMessageId,
+}) {
+  const threadId = await upsertDomainThread(db, {
+    userId,
+    domainId,
+    senderEmail,
+    contactEmail,
+    campaignId,
+    subject,
+  });
+  await db.query(
+    `INSERT INTO domain_inbox_messages
+     (id, thread_id, user_id, campaign_id, direction, from_email, to_email, subject, body_text, provider_message_id, created_at)
+     VALUES ($1, $2, $3, $4, 'outbound', $5, $6, $7, $8, $9, NOW())`,
+    [
+      `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      threadId,
+      userId,
+      campaignId || null,
+      String(senderEmail || '').toLowerCase(),
+      String(contactEmail || '').toLowerCase(),
+      subject || '',
+      body || '',
+      providerMessageId || null,
+    ]
+  );
+}
+
 export async function processSendEmail(payload) {
   const { campaignId, storeUrl, email, senderId, subject, body } = payload;
   const db = getDb();
@@ -108,7 +161,7 @@ export async function processSendEmail(payload) {
       const domainSenderId = config?.domainSenderId || senderRow.id;
       const domainSender = (
         await db.query(
-          `SELECT s.from_name, s.from_email, d.provider, d.provider_api_key
+          `SELECT s.id, s.domain_id, s.from_name, s.from_email, d.provider, d.provider_api_key
            FROM domain_sender_identities s
            JOIN sending_domains d ON d.id = s.domain_id
            WHERE s.id = $1`,
@@ -119,7 +172,7 @@ export async function processSendEmail(payload) {
         await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', 'Domain sender identity not found');
         return;
       }
-      await sendEmailViaProvider({
+      const sendResult = await sendEmailViaProvider({
         provider: domainSender.provider,
         apiKey: domainSender.provider_api_key,
         fromName: domainSender.from_name,
@@ -130,6 +183,21 @@ export async function processSendEmail(payload) {
         replyTo: domainSender.from_email,
         metadata: { campaignId, senderId: senderRow.id },
       });
+      // Store in domain inbox so inbound replies can be threaded and visible.
+      try {
+        await storeDomainOutboundMessage(db, {
+          userId: senderRow.user_id,
+          campaignId,
+          domainId: domainSender.domain_id,
+          senderEmail: domainSender.from_email,
+          contactEmail: email,
+          subject: finalSubject,
+          body: finalBody,
+          providerMessageId: sendResult?.messageId || null,
+        });
+      } catch (threadErr) {
+        console.warn('[send] domain outbound message storage failed:', threadErr?.message || threadErr);
+      }
       const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
       if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
     };
