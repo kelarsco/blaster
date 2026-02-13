@@ -96,12 +96,13 @@ export async function revokeRefreshTokensForUser(userId) {
  */
 export function setRefreshTokenCookie(res, token, expiresAt) {
   const isProd = process.env.NODE_ENV === 'production';
-  const frontendUrl = (process.env.FRONTEND_URL || '').trim();
-  const isCrossOrigin = isProd && !!frontendUrl;
+  // In production deployments, frontend/backend are often on different origins.
+  // Default to SameSite=None to keep refresh cookie usable across origins.
+  const sameSite = isProd ? 'none' : 'lax';
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isProd,
-    sameSite: isCrossOrigin ? 'none' : 'lax',
+    sameSite,
     expires: expiresAt,
     path: '/',
   });
@@ -111,7 +112,13 @@ export function setRefreshTokenCookie(res, token, expiresAt) {
  * Clear refresh token cookie.
  */
 export function clearRefreshTokenCookie(res) {
-  res.clearCookie(REFRESH_COOKIE_NAME, { path: '/', httpOnly: true });
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    path: '/',
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+  });
 }
 
 export function getRefreshCookieName() {

@@ -46,8 +46,6 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 const isDev = process.env.NODE_ENV !== 'production';
 const frontendUrl = process.env.FRONTEND_URL || '';
-// In production with a separate frontend origin, use SameSite=None so the cookie is sent cross-origin
-const isCrossOrigin = process.env.NODE_ENV === 'production' && !!frontendUrl.trim();
 const cookieDomain = isDev && frontendUrl.includes('localhost') ? 'localhost' : undefined;
 
 const clientDist = path.join(__dirname, '../client/dist');
@@ -87,7 +85,8 @@ async function start() {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        sameSite: isCrossOrigin ? 'none' : 'lax',
+        // Use None in production to avoid silent auth loss on cross-origin frontend/backend.
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         ...(cookieDomain && { domain: cookieDomain }),
       },
     })
