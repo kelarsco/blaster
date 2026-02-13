@@ -6,7 +6,7 @@ import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authS
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 export function LoginPage() {
-  const { user, loading, setUser, setAccessTokenState, loginWithGoogle } = useAuth();
+  const { user, loading, setUser, setAccessToken, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -69,7 +69,7 @@ export function LoginPage() {
         throw new Error(data.error || 'Login failed');
       }
       if (data.user) setUser(data.user);
-      if (data.accessToken) setAccessTokenState(data.accessToken);
+      if (data.accessToken) setAccessToken(data.accessToken);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed');

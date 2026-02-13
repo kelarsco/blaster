@@ -5,11 +5,14 @@ import { API } from '../api.js';
 
 /** Handles OAuth callback: ?token=ACCESS_TOKEN from backend redirect. Sets token, fetches user, redirects to app. */
 export function AuthCallbackPage() {
+  const OAUTH_POPUP_RESULT_STORAGE_KEY = 'wiblaster_oauth_popup_result';
   const [searchParams] = useSearchParams();
   const { setAccessToken, setUser } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
-  const isPopup = typeof window !== 'undefined' && window.opener && window.opener !== window;
+  const hasOpener = typeof window !== 'undefined' && window.opener && window.opener !== window;
+  const popupByName = typeof window !== 'undefined' && window.name === 'google-login';
+  const isPopup = Boolean(hasOpener || popupByName);
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -18,12 +21,24 @@ export function AuthCallbackPage() {
       return;
     }
 
-    // If we're in a popup, notify the opener and close. The main window will finish login.
+    // If we're in a popup, notify opener first. If opener is blocked by COOP, use localStorage.
     if (isPopup) {
+      let notified = false;
       try {
         window.opener.postMessage({ type: 'oauth-success', token }, window.location.origin);
+        notified = true;
       } catch (_) {
-        // If postMessage fails, just fall back to normal flow below.
+        // Ignore and fallback to storage channel.
+      }
+      if (!notified) {
+        try {
+          localStorage.setItem(
+            OAUTH_POPUP_RESULT_STORAGE_KEY,
+            JSON.stringify({ type: 'oauth-success', token, ts: Date.now() })
+          );
+        } catch (_) {
+          // Ignore storage failures and continue with normal flow.
+        }
       }
       try {
         window.close();
@@ -48,7 +63,7 @@ export function AuthCallbackPage() {
         navigate('/app/dashboard', { replace: true });
       })
       .catch(() => setError('Sign-in failed. Please try again.'));
-  }, [searchParams, setAccessToken, setUser, navigate]);
+  }, [searchParams, setAccessToken, setUser, navigate, isPopup]);
 
   if (error) {
     return (
