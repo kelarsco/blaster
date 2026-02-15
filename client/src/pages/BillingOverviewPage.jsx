@@ -16,6 +16,7 @@ export function BillingOverviewPage() {
   const [overview, setOverview] = useState(null);
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -66,12 +67,13 @@ export function BillingOverviewPage() {
     }
   }, [searchParams, authFetch, setSearchParams]);
 
-  const fetchOverview = useCallback(() => {
+  const fetchOverview = useCallback(({ silent = false } = {}) => {
     if (!authFetch) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (silent) setRefreshing(true);
+    else setLoading(true);
     setError('');
     Promise.all([
       authFetch(`${API}/billing/overview`).then((r) => (r.ok ? r.json() : {})),
@@ -86,7 +88,10 @@ export function BillingOverviewPage() {
         setOverview(null);
         setCards([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [authFetch]);
 
   useEffect(() => {
@@ -95,28 +100,32 @@ export function BillingOverviewPage() {
 
   // Refetch when tab becomes visible (e.g. after returning from Paystack or changing plan elsewhere)
   useEffect(() => {
-    const onFocus = () => fetchOverview();
+    const onFocus = () => fetchOverview({ silent: true });
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [fetchOverview]);
 
-  const plan = overview?.plan ?? { name: 'Free', amount: 0, interval: 'monthly', features: { emails: '500', senders: '1', scans: '1000' } };
-  const usage = overview?.usage ?? { scansUsed: 0, scansLimit: 1000, sendersUsed: 0, sendersLimit: 1, emailsUsed: 0, emailsLimit: 500 };
-  const extraCredit = overview?.extraCredit ?? { owed: 0, paidCents: 0, nextThreshold: 10, blocked: false };
-  const isFree = plan.amount === 0;
-  const scansRemaining = Math.max(0, (usage.scansLimit >= 999999 ? 999999 : usage.scansLimit) - (usage.scansUsed ?? 0));
-  const sendersRemaining = Math.max(0, usage.sendersLimit >= 999 ? 999 : usage.sendersLimit - usage.sendersUsed);
-  const emailsRemaining = Math.max(0, (usage.emailsLimit >= 999999 ? 999999 : usage.emailsLimit) - usage.emailsUsed);
-  const scansPct = (usage.scansLimit > 0 && usage.scansLimit < 999999) ? (Math.min((usage.scansUsed ?? 0) / usage.scansLimit, 1) * 100) : 0;
-  const sendersPct = usage.sendersLimit > 0 && usage.sendersLimit < 999 ? (usage.sendersUsed / usage.sendersLimit) * 100 : 0;
-  const emailsPct = usage.emailsLimit > 0 && usage.emailsLimit < 999999 ? (usage.emailsUsed / usage.emailsLimit) * 100 : 0;
+  const hasData = Boolean(overview?.plan && overview?.usage);
+  const plan = overview?.plan || null;
+  const usage = overview?.usage || null;
+  const extraCredit = overview?.extraCredit || { owed: 0, paidCents: 0, nextThreshold: 10, blocked: false };
+  const showInitialLoading = loading && !hasData;
+  const isFree = (plan?.amount ?? 0) === 0;
+  const scansRemaining = usage ? Math.max(0, (usage.scansLimit >= 999999 ? 999999 : usage.scansLimit) - (usage.scansUsed ?? 0)) : 0;
+  const sendersRemaining = usage ? Math.max(0, usage.sendersLimit >= 999 ? 999 : usage.sendersLimit - usage.sendersUsed) : 0;
+  const emailsRemaining = usage ? Math.max(0, (usage.emailsLimit >= 999999 ? 999999 : usage.emailsLimit) - usage.emailsUsed) : 0;
+  const scansPct = usage && (usage.scansLimit > 0 && usage.scansLimit < 999999) ? (Math.min((usage.scansUsed ?? 0) / usage.scansLimit, 1) * 100) : 0;
+  const sendersPct = usage && usage.sendersLimit > 0 && usage.sendersLimit < 999 ? (usage.sendersUsed / usage.sendersLimit) * 100 : 0;
+  const emailsPct = usage && usage.emailsLimit > 0 && usage.emailsLimit < 999999 ? (usage.emailsUsed / usage.emailsLimit) * 100 : 0;
   const extraPct = extraCredit.nextThreshold > 0 ? Math.min(100, (extraCredit.owed / extraCredit.nextThreshold) * 100) : 0;
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
       <div className="mb-6 md:mb-8">
         <h1 className="page-title-mobile">Usage</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Manage your usage</p>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">
+          Manage your usage{refreshing ? ' (updating...)' : ''}
+        </p>
       </div>
 
       {error && (
@@ -130,21 +139,21 @@ export function BillingOverviewPage() {
           <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile">
             <div className="flex items-center justify-between mb-3 md:mb-4">
               <h2 className="card-title-mobile">
-                {loading ? '…' : `${plan.name} Plan`}
+                {showInitialLoading ? '...' : `${plan?.name || 'Plan'} Plan`}
               </h2>
               <Link to="/app/account/billing/monthly-plan" className="text-xs md:text-sm text-blaster-accent hover:underline">Change Plan</Link>
             </div>
             <p className="text-xl md:text-2xl font-bold text-blaster-fg mb-3 md:mb-4">
-              {loading ? '…' : formatPrice(plan.amount, plan.interval)}
+              {showInitialLoading ? '...' : formatPrice(plan?.amount || 0, plan?.interval || 'monthly')}
             </p>
-            {loading ? (
+            {showInitialLoading ? (
               <div className="space-y-4">
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
               </div>
-            ) : (
+            ) : hasData ? (
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between text-sm mb-1">
@@ -200,6 +209,8 @@ export function BillingOverviewPage() {
                   </div>
                 )}
               </div>
+            ) : (
+              <p className="text-sm text-blaster-muted">Unable to load usage data right now. Please refresh.</p>
             )}
           </section>
         </div>
@@ -207,10 +218,12 @@ export function BillingOverviewPage() {
         <div className="space-y-6">
           <section className="bg-blaster-bg-card rounded-2xl border border-blaster-border p-6">
             <h2 className="font-semibold text-blaster-fg mb-4">
-              {isFree ? 'No upcoming bill' : 'Upcoming bill'}
+              {showInitialLoading ? 'Billing' : (isFree ? 'No upcoming bill' : 'Upcoming bill')}
             </h2>
-            {loading ? (
+            {showInitialLoading ? (
               <p className="text-sm text-blaster-muted">Loading…</p>
+            ) : !hasData ? (
+              <p className="text-sm text-blaster-muted">Billing details are currently unavailable.</p>
             ) : isFree ? (
               <>
                 <p className="text-sm text-blaster-muted mb-4">You are on a Free plan, so you do not have any upcoming charges.</p>

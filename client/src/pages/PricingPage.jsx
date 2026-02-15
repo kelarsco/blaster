@@ -58,6 +58,10 @@ export function PricingPage() {
   }, []);
 
   const handleChoosePlan = (plan) => {
+    if (plan.customContact) {
+      window.location.href = 'mailto:support@wiblaster.com?subject=Custom%20Plan%20Inquiry';
+      return;
+    }
     const planId = plan.id === 'free' ? 'free' : isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
     storeSelectedPlan(planId);
     if (user) {
@@ -217,14 +221,26 @@ export function PricingPage() {
                   <h3 className="font-bold text-lg text-blaster-fg">{plan.name}</h3>
                   <p className="text-sm text-blaster-muted mt-1 mb-4 line-clamp-3">{plan.description}</p>
                   <div className="mt-auto">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
-                      <span className="text-blaster-muted text-sm">/{display.primaryLabel}</span>
-                    </div>
-                    {display.secondary != null && (
-                      <p className="text-xs text-blaster-muted mt-0.5">
-                        ~${formatPriceNum(display.secondary)}/mo billed annually
-                      </p>
+                    {plan.id === 'free' ? (
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-2xl font-bold text-blaster-fg">48-hour free trial</span>
+                      </div>
+                    ) : plan.customContact ? (
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-2xl font-bold text-blaster-fg">Contact for custom</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
+                          <span className="text-blaster-muted text-sm">/{display.primaryLabel}</span>
+                        </div>
+                        {display.secondary != null && (
+                          <p className="text-xs text-blaster-muted mt-0.5">
+                            ~${formatPriceNum(display.secondary)}/mo billed annually
+                          </p>
+                        )}
+                      </>
                     )}
                     {plan.originalPrice != null && !isAnnually && (
                       <p className="text-xs text-blaster-muted mt-0.5">
@@ -254,7 +270,7 @@ export function PricingPage() {
                           : 'bg-blaster-accent text-white hover:opacity-90'
                       }`}
                     >
-                      {plan.id === 'free' ? 'Get started free' : 'Choose plan'}
+                      {plan.id === 'free' ? 'Start 48-hour trial' : plan.customContact ? 'Contact support' : 'Choose plan'}
                     </button>
                   </div>
                 </div>
@@ -292,23 +308,23 @@ export function PricingPage() {
                   <thead>
                     <tr className="border-b border-blaster-border">
                       <th className="text-left px-6 py-3 text-blaster-muted font-medium">Feature</th>
-                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Free</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Free trial</th>
                       <th className="text-left px-6 py-3 text-blaster-fg font-medium">Essentials</th>
                       <th className="text-left px-6 py-3 text-blaster-fg font-medium">Standard</th>
-                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Premium</th>
+                      <th className="text-left px-6 py-3 text-blaster-fg font-medium">Custom</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-b border-blaster-border">
                       <td className="px-6 py-3 text-blaster-muted">Email sends per month</td>
-                      <td className="px-6 py-3 text-blaster-fg">500 total</td>
-                      <td className="px-6 py-3 text-blaster-fg">10,000</td>
-                      <td className="px-6 py-3 text-blaster-fg">30,000</td>
-                      <td className="px-6 py-3 text-blaster-fg">150,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">200 total (trial)</td>
+                      <td className="px-6 py-3 text-blaster-fg">5,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">50,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">Contact for custom</td>
                     </tr>
                     <tr className="border-b border-blaster-border">
                       <td className="px-6 py-3 text-blaster-muted">Store links extracted</td>
-                      <td className="px-6 py-3 text-blaster-fg">1,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">1,000 (48-hour trial)</td>
                       <td className="px-6 py-3 text-blaster-fg">15,000</td>
                       <td className="px-6 py-3 text-blaster-fg">40,000</td>
                       <td className="px-6 py-3 text-blaster-fg">Unlimited</td>

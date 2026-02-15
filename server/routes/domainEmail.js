@@ -29,6 +29,39 @@ function isValidDomain(domain) {
   return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(d);
 }
 
+function normalizeMessageId(value) {
+  return String(value || '').trim().replace(/^<+|>+$/g, '').toLowerCase();
+}
+
+function extractMessageIdCandidates(inReplyTo, references) {
+  const out = new Set();
+  const add = (raw) => {
+    const s = String(raw || '').trim();
+    if (!s) return;
+    const angleMatches = s.match(/<[^>]+>/g) || [];
+    if (angleMatches.length) {
+      for (const m of angleMatches) {
+        const norm = normalizeMessageId(m);
+        if (norm) out.add(norm);
+      }
+      return;
+    }
+    for (const token of s.split(/\s+/)) {
+      const norm = normalizeMessageId(token);
+      if (norm) out.add(norm);
+    }
+  };
+  add(inReplyTo);
+  add(references);
+  return Array.from(out);
+}
+
+function ensureReplySubject(subject) {
+  const s = String(subject || '').trim();
+  if (!s) return 'Re: Campaign response';
+  return /^re:/i.test(s) ? s : `Re: ${s}`;
+}
+
 function serializeDomainRow(row) {
   return {
     id: row.id,
@@ -598,15 +631,18 @@ domainEmailRoutes.post('/inbox/threads/:threadId/reply', requireAuth, async (req
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
     const body = String(req.body?.body || '').trim();
-    const subject = String(req.body?.subject || thread.subject || 'Re: Campaign response').trim();
+    const subject = ensureReplySubject(req.body?.subject || thread.subject || 'Re: Campaign response');
     if (!body) return res.status(400).json({ error: 'Reply body is required' });
 
-    const lastMessage = (
+    const recentMessages = (
       await db.query(
-        'SELECT provider_message_id FROM domain_inbox_messages WHERE thread_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1',
+        'SELECT provider_message_id FROM domain_inbox_messages WHERE thread_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 10',
         [thread.id, req.user.id]
       )
-    ).rows?.[0];
+    ).rows || [];
+    const providerIds = recentMessages.map((m) => String(m.provider_message_id || '').trim()).filter(Boolean);
+    const inReplyTo = providerIds[0] || undefined;
+    const references = providerIds.length ? Array.from(new Set(providerIds.reverse())).join(' ') : undefined;
 
     const sendResult = await sendEmailViaProvider({
       provider: thread.provider,
@@ -617,8 +653,8 @@ domainEmailRoutes.post('/inbox/threads/:threadId/reply', requireAuth, async (req
       subject,
       textBody: body,
       replyTo: thread.sender_email,
-      inReplyTo: lastMessage?.provider_message_id || undefined,
-      references: lastMessage?.provider_message_id || undefined,
+      inReplyTo,
+      references,
       metadata: thread.campaign_id ? { campaignId: thread.campaign_id } : undefined,
     });
 
@@ -636,7 +672,7 @@ domainEmailRoutes.post('/inbox/threads/:threadId/reply', requireAuth, async (req
         subject,
         body,
         sendResult?.messageId || null,
-        lastMessage?.provider_message_id || null,
+        inReplyTo || null,
       ]
     );
     await db.query('UPDATE domain_inbox_threads SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1 AND user_id = $2', [
@@ -678,26 +714,34 @@ domainEmailRoutes.post('/webhooks/:provider/:domainId', async (req, res) => {
     if (!payload.toEmail.endsWith(`@${domainRow.domain}`)) return res.status(400).json({ error: 'Recipient does not belong to domain' });
 
     let campaignId = null;
-    if (payload.inReplyTo) {
+    let threadId = null;
+    const replyCandidates = extractMessageIdCandidates(payload.inReplyTo, payload.references);
+    if (replyCandidates.length) {
       const linked = (
         await db.query(
-          `SELECT campaign_id FROM domain_inbox_messages
-           WHERE provider_message_id = $1
-           ORDER BY created_at DESC LIMIT 1`,
-          [payload.inReplyTo]
+          `SELECT campaign_id, thread_id
+           FROM domain_inbox_messages
+           WHERE user_id = $1
+             AND provider_message_id IS NOT NULL
+             AND lower(trim(both '<>' from provider_message_id)) = ANY($2::text[])
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [domainRow.user_id, replyCandidates]
         )
       ).rows?.[0];
       campaignId = linked?.campaign_id || null;
+      threadId = linked?.thread_id || null;
     }
-
-    const threadId = await upsertThread(db, {
-      userId: domainRow.user_id,
-      domainId: domainRow.id,
-      senderEmail: payload.toEmail,
-      contactEmail: payload.fromEmail,
-      campaignId,
-      subject: payload.subject || null,
-    });
+    if (!threadId) {
+      threadId = await upsertThread(db, {
+        userId: domainRow.user_id,
+        domainId: domainRow.id,
+        senderEmail: payload.toEmail,
+        contactEmail: payload.fromEmail,
+        campaignId,
+        subject: payload.subject || null,
+      });
+    }
 
     await db.query(
       `INSERT INTO domain_inbox_messages
@@ -712,8 +756,8 @@ domainEmailRoutes.post('/webhooks/:provider/:domainId', async (req, res) => {
         payload.toEmail,
         payload.subject || null,
         payload.text || '',
-        payload.messageId || null,
-        payload.inReplyTo || null,
+        String(payload.messageId || '').trim() || null,
+        String(payload.inReplyTo || '').trim() || null,
       ]
     );
     logActivity('domain_email_inbound_reply', { threadId, domainId: domainRow.id, campaignId }, domainRow.user_id);

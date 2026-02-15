@@ -6,12 +6,21 @@ const transporterCache = new Map();
 const senderQueue = new Map();
 const lastSendTime = new Map();
 
+function normalizedSmtpHost(config = {}) {
+  return String(config.host || 'smtp.gmail.com').trim().toLowerCase();
+}
+
+function normalizedSmtpPort(config = {}) {
+  const p = Number(config.port);
+  return Number.isFinite(p) && p > 0 ? p : 587;
+}
+
 function getTransporter(senderId, config, auth) {
   let t = transporterCache.get(senderId);
   if (t) return t;
-  const port = Number(config.port) || 587;
+  const port = normalizedSmtpPort(config);
   t = nodemailer.createTransport({
-    host: config.host || 'smtp.gmail.com',
+    host: normalizedSmtpHost(config),
     port,
     secure: port === 465,
     auth,
@@ -41,6 +50,28 @@ function clearTransporter(senderId) {
     }
   }
   transporterCache.delete(senderId);
+}
+
+async function tryGmailSslFallbackSend(config, auth, mailOptions) {
+  const fallbackTransporter = nodemailer.createTransport({
+    host: normalizedSmtpHost(config),
+    port: 465,
+    secure: true,
+    auth,
+    pool: false,
+    connectionTimeout: 25000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
+  });
+  try {
+    await fallbackTransporter.sendMail(mailOptions);
+  } finally {
+    try {
+      fallbackTransporter.close();
+    } catch (_) {
+      // Ignore close errors from one-off fallback transport.
+    }
+  }
 }
 
 const MIN_SEND_INTERVAL_MS = 10000; // 10 sec minimum between sends; users can set higher in campaign options
@@ -118,6 +149,15 @@ async function storeDomainOutboundMessage(db, {
   );
 }
 
+async function resolveDomainCampaignId(db, campaignId, userId) {
+  if (!campaignId) return null;
+  const result = await db.query(
+    'SELECT id FROM domain_campaigns WHERE id = $1 AND user_id = $2 LIMIT 1',
+    [campaignId, userId]
+  );
+  return result.rows?.[0]?.id || null;
+}
+
 export async function processSendEmail(payload) {
   const { campaignId, storeUrl, email, senderId, subject, body } = payload;
   const db = getDb();
@@ -185,9 +225,12 @@ export async function processSendEmail(payload) {
       });
       // Store in domain inbox so inbound replies can be threaded and visible.
       try {
+        // Domain inbox thread/message campaign_id must reference domain_campaigns.
+        // Background sends may come from the regular campaigns table, so guard FK.
+        const domainCampaignId = await resolveDomainCampaignId(db, campaignId, senderRow.user_id);
         await storeDomainOutboundMessage(db, {
           userId: senderRow.user_id,
-          campaignId,
+          campaignId: domainCampaignId,
           domainId: domainSender.domain_id,
           senderEmail: domainSender.from_email,
           contactEmail: email,
@@ -221,12 +264,28 @@ export async function processSendEmail(payload) {
   const transporter = getTransporter(senderId, config, auth);
 
   const doSend = async () => {
-    await transporter.sendMail({
+    const mailOptions = {
       from: senderRow.email,
       to: email,
       subject: finalSubject,
       text: finalBody,
-    });
+    };
+    try {
+      await transporter.sendMail(mailOptions);
+    } catch (sendErr) {
+      const errMsg = String(sendErr?.message || sendErr || '');
+      const host = normalizedSmtpHost(config);
+      const port = normalizedSmtpPort(config);
+      const isTimeout = /ETIMEDOUT|timeout/i.test(errMsg);
+      const isGmail587 = (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') && port === 587;
+      if (isTimeout && isGmail587) {
+        // Common on restricted networks: STARTTLS on 587 times out; retry with implicit TLS 465.
+        clearTransporter(senderId);
+        await tryGmailSslFallbackSend(config, auth, mailOptions);
+      } else {
+        throw sendErr;
+      }
+    }
     const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
     if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
   };

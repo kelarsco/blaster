@@ -2,6 +2,9 @@ import { getDb } from '../db.js';
 
 /** Default sender limit when user has no subscription (free). */
 const DEFAULT_SENDER_LIMIT = 1;
+const FREE_TRIAL_HOURS = 48;
+const FREE_TRIAL_EMAILS_LIMIT = 200;
+const FREE_TRIAL_SCANS_LIMIT = 1000;
 
 /** Cap for "unlimited" plans. */
 const UNLIMITED_SENDERS = 999;
@@ -34,6 +37,14 @@ async function getPeriodForUser(db, userId) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   return { start, end };
+}
+
+async function getFreeTrialState(db, userId) {
+  const row = await db.query('SELECT created_at FROM users WHERE id = $1 LIMIT 1', [userId]);
+  const createdAt = row.rows?.[0]?.created_at ? new Date(row.rows[0].created_at) : null;
+  if (!createdAt) return { active: false, endsAt: null };
+  const endsAt = new Date(createdAt.getTime() + FREE_TRIAL_HOURS * 60 * 60 * 1000);
+  return { active: endsAt.getTime() > Date.now(), endsAt };
 }
 
 /**
@@ -79,8 +90,8 @@ export async function getPlanLimitsForUser(userId) {
   defaults.periodEnd = period.end;
 
   const feats = row ? features : (await db.query(`SELECT features FROM plans WHERE id = 'free' LIMIT 1`).then((r) => r.rows?.[0]?.features || {}));
-  defaults.emailsLimit = parseFeatureNum(feats, 'emails', 500);
-  defaults.scansLimit = parseFeatureNum(feats, 'scans', 1000);
+  defaults.emailsLimit = parseFeatureNum(feats, 'emails', FREE_TRIAL_EMAILS_LIMIT);
+  defaults.scansLimit = parseFeatureNum(feats, 'scans', FREE_TRIAL_SCANS_LIMIT);
   defaults.usersLimit = row ? parseFeatureNum(features, 'users', 1) : 1;
   const camp = feats.campaigns;
   if (camp != null) {
@@ -90,6 +101,14 @@ export async function getPlanLimitsForUser(userId) {
 
   const sendersLimit = await getSenderLimitForUser(userId).then((r) => r.limit);
   defaults.sendersLimit = sendersLimit;
+
+  if (!row) {
+    const trial = await getFreeTrialState(db, userId);
+    defaults.isTrial = trial.active;
+    defaults.trialEndsAt = trial.endsAt;
+    defaults.emailsLimit = trial.active ? FREE_TRIAL_EMAILS_LIMIT : 0;
+    defaults.scansLimit = trial.active ? FREE_TRIAL_SCANS_LIMIT : 0;
+  }
 
   const start = period.start.toISOString();
   const end = period.end.toISOString();

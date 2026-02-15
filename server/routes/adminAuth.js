@@ -3,7 +3,7 @@ import speakeasy from 'speakeasy';
 import jwt from 'jsonwebtoken';
 import { requireAdmin, COOKIE_NAME, ADMIN_JWT_SECRET } from '../middleware/requireAdmin.js';
 
-const TOTP_SECRET = process.env.BL_ADMIN_TOTP_SECRET || ''; // base32 secret for Google Authenticator
+const TOTP_SECRET = String(process.env.BL_ADMIN_TOTP_SECRET || '').replace(/\s+/g, '').toUpperCase(); // base32 secret for Google Authenticator
 const frontendUrl = process.env.FRONTEND_URL || '';
 const isDev = process.env.NODE_ENV !== 'production';
 const isCrossOrigin = process.env.NODE_ENV === 'production' && !!frontendUrl.trim();
@@ -27,14 +27,15 @@ adminAuthRoutes.post('/auth', (req, res) => {
         secret: TOTP_SECRET,
         encoding: 'base32',
         token: code,
-        window: 1,
+        // Allow small clock drift so valid codes do not fail because of system time skew.
+        window: 2,
       });
     } catch (e) {
       console.error('[bl-admin auth] TOTP verify error:', e?.message || e);
       return res.status(500).json({ error: 'Verification failed. Check BL_ADMIN_TOTP_SECRET is valid base32.' });
     }
     if (!valid) {
-      return res.status(401).json({ error: 'Invalid code. Try again.' });
+      return res.status(401).json({ error: 'Invalid code. Try again and ensure your device time is set to automatic.' });
     }
     const token = jwt.sign(
       { role: 'admin', at: Date.now() },

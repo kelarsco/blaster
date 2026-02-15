@@ -21,6 +21,7 @@ async function getPlanIdByPaystackCode(paystackPlanCode) {
 }
 
 export const billingRoutes = Router();
+const FREE_TRIAL_HOURS = 48;
 
 /** List all plans (from DB; Paystack plan codes are created automatically when PAYSTACK_SECRET_KEY is set). */
 billingRoutes.get('/plans', async (_req, res) => {
@@ -84,7 +85,22 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     } else {
       const freeRow = await db.query(`SELECT id, name, amount, interval, features FROM plans WHERE id = 'free' LIMIT 1`);
       const free = freeRow.rows?.[0];
-      plan = free ? { name: free.name, amount: free.amount, interval: free.interval, features: free.features || {} } : { name: 'Free', amount: 0, interval: 'monthly', features: { emails: '500', users: '1 seat', senders: '1' } };
+      const userCreated = await db.query('SELECT created_at FROM users WHERE id = $1 LIMIT 1', [userId]);
+      const createdAt = userCreated.rows?.[0]?.created_at ? new Date(userCreated.rows[0].created_at) : new Date();
+      const trialEndsAt = new Date(createdAt.getTime() + FREE_TRIAL_HOURS * 60 * 60 * 1000);
+      const trialActive = trialEndsAt.getTime() > Date.now();
+      plan = free
+        ? {
+            name: trialActive ? 'Free trial' : free.name,
+            amount: free.amount,
+            interval: free.interval,
+            features: {
+              ...(free.features || {}),
+              emails: trialActive ? '200' : '0',
+              scans: trialActive ? '1000' : '0',
+            },
+          }
+        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '200' : '0', users: '1 seat', senders: '1', scans: trialActive ? '1000' : '0' } };
     }
 
     const periodStart = row?.current_period_start ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -123,11 +139,11 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     })();
     const emailsLimit = (() => {
       const e = plan?.features?.emails;
-      if (e == null) return 500;
+      if (e == null) return 200;
       const str = String(e).toLowerCase();
       if (str === 'unlimited' || str === '∞') return 999999;
       const n = parseInt(e, 10);
-      return Number.isNaN(n) || n < 0 ? 500 : n;
+      return Number.isNaN(n) || n < 0 ? 200 : n;
     })();
 
     const overageScans = Math.max(0, scansUsed - scansLimit);

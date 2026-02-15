@@ -32,6 +32,10 @@ export function PricingPlansPage() {
   }, [authFetch]);
 
   const handleSubscribe = async (plan) => {
+    if (plan.customContact) {
+      window.location.href = 'mailto:support@wiblaster.com?subject=Custom%20Plan%20Inquiry';
+      return;
+    }
     if (plan.id === 'free') {
       storeSelectedPlan(plan.id);
       return;
@@ -69,6 +73,7 @@ export function PricingPlansPage() {
   };
 
   const currentPlanId = subscription?.planId || null;
+  const hasPaidSubscription = Boolean(currentPlanId && currentPlanId !== 'free');
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
@@ -122,9 +127,15 @@ export function PricingPlansPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
         {PLANS.map((plan) => (
+          (() => {
+            const isFreeDisabledForSubscriber = plan.id === 'free' && hasPaidSubscription;
+            return (
           <div
             key={plan.id}
-            className={`bg-blaster-bg-card rounded-xl md:rounded-2xl border card-body-mobile relative ${plan.tag ? 'border-blaster-accent/50 ring-2 ring-blaster-accent/20' : 'border-blaster-border'}`}
+            className={`bg-blaster-bg-card rounded-xl md:rounded-2xl border card-body-mobile relative ${
+              plan.tag ? 'border-blaster-accent/50 ring-2 ring-blaster-accent/20' : 'border-blaster-border'
+            } ${isFreeDisabledForSubscriber ? 'opacity-55 pointer-events-none select-none' : ''}`}
+            aria-disabled={isFreeDisabledForSubscriber ? 'true' : 'false'}
           >
             {plan.tag && (
               <span className="absolute -top-3 left-4 px-3 py-0.5 rounded-full bg-blaster-accent/20 text-blaster-accent text-xs font-medium">
@@ -135,6 +146,16 @@ export function PricingPlansPage() {
             <p className="text-sm text-blaster-muted mt-2 mb-4">{plan.description}</p>
             <div className="mb-4">
               {(() => {
+                if (plan.id === 'free') {
+                  return (
+                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">48-hour free trial*</span>
+                  );
+                }
+                if (plan.customContact) {
+                  return (
+                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">Contact for custom</span>
+                  );
+                }
                 const display = getDisplayPrice(plan.price, isAnnually);
                 const showOriginal = plan.originalPrice != null && !isAnnually;
                 if (showOriginal) {
@@ -171,16 +192,22 @@ export function PricingPlansPage() {
                 <button
                   type="button"
                   onClick={() => handleSubscribe(plan)}
-                  disabled={plan.id !== 'free' && subscribingPlanId != null}
+                  disabled={isFreeDisabledForSubscriber || (plan.id !== 'free' && subscribingPlanId != null)}
                   className="w-full py-2.5 rounded-xl btn-blaster-accent text-sm mb-4 disabled:opacity-50"
                 >
-                  {plan.id === 'free'
-                    ? 'Get this'
+                  {isFreeDisabledForSubscriber
+                    ? 'Unavailable on active subscription'
+                    : plan.customContact
+                    ? 'Contact support'
+                    : plan.id === 'free'
+                    ? 'Start trial'
                     : (subscribingPlanId === planIdForCard ? 'Redirecting…' : 'Get this')}
                 </button>
               );
             })()}
           </div>
+            );
+          })()
         ))}
       </div>
 
@@ -191,23 +218,23 @@ export function PricingPlansPage() {
             <thead>
               <tr className="border-b border-blaster-border">
                 <th className="text-left px-6 py-3 text-blaster-muted font-medium">Feature</th>
-                <th className="text-left px-6 py-3 text-blaster-fg font-medium">Free</th>
+                <th className="text-left px-6 py-3 text-blaster-fg font-medium">Free trial</th>
                 <th className="text-left px-6 py-3 text-blaster-fg font-medium">Essentials</th>
                 <th className="text-left px-6 py-3 text-blaster-fg font-medium">Standard</th>
-                <th className="text-left px-6 py-3 text-blaster-fg font-medium">Premium</th>
+                <th className="text-left px-6 py-3 text-blaster-fg font-medium">Custom</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-blaster-border">
                 <td className="px-6 py-3 text-blaster-muted">Email sends per month</td>
-                <td className="px-6 py-3 text-blaster-fg">500 total</td>
-                <td className="px-6 py-3 text-blaster-fg">10,000</td>
-                <td className="px-6 py-3 text-blaster-fg">30,000</td>
-                <td className="px-6 py-3 text-blaster-fg">150,000</td>
+                <td className="px-6 py-3 text-blaster-fg">200 total (trial)</td>
+                <td className="px-6 py-3 text-blaster-fg">5,000</td>
+                <td className="px-6 py-3 text-blaster-fg">50,000</td>
+                <td className="px-6 py-3 text-blaster-fg">Contact for custom</td>
               </tr>
               <tr className="border-b border-blaster-border">
                 <td className="px-6 py-3 text-blaster-muted">Store links extracted</td>
-                <td className="px-6 py-3 text-blaster-fg">1,000</td>
+                <td className="px-6 py-3 text-blaster-fg">1,000 (48-hour trial)</td>
                 <td className="px-6 py-3 text-blaster-fg">15,000</td>
                 <td className="px-6 py-3 text-blaster-fg">40,000</td>
                 <td className="px-6 py-3 text-blaster-fg">Unlimited</td>

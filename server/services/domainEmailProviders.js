@@ -332,7 +332,15 @@ export function parseInboundPayload(provider, body) {
       toEmail: toAddress(b?.data?.to || b?.to || b?.data?.to_email),
       subject: String(b?.data?.subject || b?.subject || '').trim(),
       text: String(b?.data?.text || b?.text || '').trim(),
-      messageId: String(b?.data?.id || b?.id || b?.data?.message_id || '').trim(),
+      messageId: String(
+        b?.data?.headers?.['Message-Id'] ||
+        b?.data?.headers?.['message-id'] ||
+        b?.data?.headers?.['Message-ID'] ||
+        b?.data?.id ||
+        b?.id ||
+        b?.data?.message_id ||
+        ''
+      ).trim(),
       inReplyTo: String(
         b?.data?.headers?.['In-Reply-To'] ||
         b?.data?.headers?.['in-reply-to'] ||
