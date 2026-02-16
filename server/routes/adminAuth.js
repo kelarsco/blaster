@@ -50,7 +50,8 @@ adminAuthRoutes.post('/auth', (req, res) => {
       path: '/',
       ...(cookieDomain && { domain: cookieDomain }),
     });
-    return res.json({ ok: true });
+    // Return token as fallback for clients that cannot persist cross-site cookies.
+    return res.json({ ok: true, token });
   } catch (e) {
     console.error('[bl-admin auth]', e?.message || e);
     return res.status(500).json({ error: e?.message || 'Login failed. Try again.' });

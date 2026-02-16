@@ -64,7 +64,7 @@ function LayoutIcon({ name }) {
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { adminFetch } = useAdmin();
+  const { adminFetch, logoutAdmin } = useAdmin();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [counts, setCounts] = useState({ users: 0, subscriptions: 0, messages: 0 });
   const [lastSeen, setLastSeenState] = useState(getLastSeen);
@@ -114,6 +114,7 @@ export function AdminLayout() {
     try {
       await fetch(`${ADMIN_API}/logout`, { method: 'POST', credentials: 'include' });
     } catch (_) {}
+    logoutAdmin();
     navigate('/bl-admin/login', { replace: true });
     window.location.reload();
   };

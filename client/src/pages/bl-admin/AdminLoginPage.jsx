@@ -7,7 +7,7 @@ const ADMIN_API = `${API_BASE}/api/bl-admin`;
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
-  const { refetchAdmin } = useAdmin();
+  const { refetchAdmin, setAdminToken } = useAdmin();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,6 +29,7 @@ export function AdminLoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        if (data?.token) setAdminToken(data.token);
         await refetchAdmin();
         navigate('/bl-admin/overview', { replace: true });
         return;

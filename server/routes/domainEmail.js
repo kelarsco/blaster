@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { logActivity } from './activity.js';
-import { getSenderLimitForUser } from '../services/planLimits.js';
+import { getDomainLimitForUser, getSenderLimitForUser } from '../services/planLimits.js';
 import {
   createOrLocateProviderDomain,
   DOMAIN_EMAIL_PROVIDERS,
@@ -183,6 +183,20 @@ domainEmailRoutes.post('/domains', requireAuth, async (req, res) => {
     const providerApiKey = String(req.body?.providerApiKey || '').trim();
     if (!isValidDomain(domain)) return res.status(400).json({ error: 'Enter a valid domain like example.com' });
     if (!DOMAIN_EMAIL_PROVIDERS.some((p) => p.id === provider)) return res.status(400).json({ error: 'Choose a valid provider' });
+
+    const [countResult, domainLimitResult] = await Promise.all([
+      db.query('SELECT COUNT(*) AS c FROM sending_domains WHERE user_id = $1', [req.user.id]),
+      getDomainLimitForUser(req.user.id),
+    ]);
+    const domainsCount = parseInt(countResult.rows?.[0]?.c, 10) || 0;
+    if (domainsCount >= domainLimitResult.limit) {
+      return res.status(403).json({
+        error: `Domain limit reached for your plan (max ${domainLimitResult.limit}).`,
+        code: 'DOMAIN_LIMIT_REACHED',
+        limit: domainLimitResult.limit,
+        count: domainsCount,
+      });
+    }
 
     const id = uuidv4();
     let dnsRecords = buildProviderDnsRecords(provider, domain);
