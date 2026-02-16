@@ -99,6 +99,23 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
     }
   };
 
+  const deletePreset = async (preset) => {
+    if (!preset?.id || !authFetch) return;
+    const ok = window.confirm(`Delete preset "${preset.name}"?`);
+    if (!ok) return;
+    setError('');
+    try {
+      const res = await authFetch(`${API}/automation/presets/${preset.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to delete preset');
+      setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+    } catch (e) {
+      setError(e?.message || 'Failed to delete preset');
+    }
+  };
+
   const recipients = recipientsOverride != null && Array.isArray(recipientsOverride)
     ? recipientsOverride
     : (results || [])
@@ -229,7 +246,14 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Campaign Presets</h3>
             <div className="flex flex-wrap gap-2 mb-3">
               {presets.map((p) => (
-                <button key={p.id} type="button" onClick={() => loadPreset(p)} className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600">
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => loadPreset(p)}
+                  onDoubleClick={() => deletePreset(p)}
+                  title="Click to load. Double-click to delete."
+                  className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                >
                   {p.name}
                 </button>
               ))}
