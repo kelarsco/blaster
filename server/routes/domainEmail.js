@@ -63,6 +63,19 @@ function ensureReplySubject(subject) {
   return /^re:/i.test(s) ? s : `Re: ${s}`;
 }
 
+function normalizeProviderLimitMessage(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('your plan includes 1 domain') ||
+    (lower.includes('plan includes') && lower.includes('domain'))
+  ) {
+    return 'Provider domain quota reached on the connected Resend account. This is a provider limit (not this user\'s app plan). Use a different Resend API key for this workspace or upgrade the Resend account plan.';
+  }
+  return raw;
+}
+
 function serializeDomainRow(row) {
   return {
     id: row.id,
@@ -70,10 +83,10 @@ function serializeDomainRow(row) {
     provider: row.provider,
     providerDomainId: row.provider_domain_id,
     status: row.status || 'pending',
-    verificationError: row.verification_error || null,
+    verificationError: normalizeProviderLimitMessage(row.verification_error),
     inboundWebhookUrl: row.inbound_webhook_url || null,
     inboundWebhookStatus: row.inbound_webhook_status || 'pending',
-    inboundWebhookError: row.inbound_webhook_error || null,
+    inboundWebhookError: normalizeProviderLimitMessage(row.inbound_webhook_error),
     inboundWebhookSyncedAt: row.inbound_webhook_synced_at || null,
     lastVerifiedAt: row.last_verified_at || null,
     dnsRecords: (() => {

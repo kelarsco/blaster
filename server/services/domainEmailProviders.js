@@ -87,7 +87,16 @@ async function readJsonSafe(response) {
 }
 
 function resendErrorMessage(data, fallback) {
-  return data?.message || data?.error?.message || data?.error || fallback;
+  const raw = String(data?.message || data?.error?.message || data?.error || fallback || '').trim();
+  if (!raw) return fallback;
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('your plan includes 1 domain') ||
+    (lower.includes('plan includes') && lower.includes('domain'))
+  ) {
+    return 'Provider domain quota reached on the connected Resend account. This is a provider limit (not this user\'s app plan). Use a different Resend API key for this workspace or upgrade the Resend account plan.';
+  }
+  return raw;
 }
 
 function mapResendRecords(records, domain) {
