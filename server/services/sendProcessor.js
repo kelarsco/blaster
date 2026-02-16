@@ -12,7 +12,9 @@ function normalizedSmtpHost(config = {}) {
 
 function normalizedSmtpPort(config = {}) {
   const p = Number(config.port);
-  return Number.isFinite(p) && p > 0 ? p : 587;
+  if (Number.isFinite(p) && p > 0) return p;
+  const host = normalizedSmtpHost(config);
+  return (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') ? 465 : 587;
 }
 
 function getTransporter(senderId, config, auth) {

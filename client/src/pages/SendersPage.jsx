@@ -11,6 +11,19 @@ function DotsIcon({ className }) {
 }
 
 const MAX_SENDERS_PER_GROUP = 10;
+const GMAIL_SMTP_HOSTS = new Set(['smtp.gmail.com', 'smtp-relay.gmail.com']);
+
+function defaultSmtpSenderState() {
+  return {
+    email: '',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    user: '',
+    pass: '',
+    maxPerMinute: 10,
+  };
+}
 
 export function SendersPage() {
   const auth = useAuth();
@@ -25,15 +38,7 @@ export function SendersPage() {
   const [showAddGroup, setShowAddGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState(null);
-  const [newSender, setNewSender] = useState({
-    email: '',
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    user: '',
-    pass: '',
-    maxPerMinute: 10,
-  });
+  const [newSender, setNewSender] = useState(defaultSmtpSenderState);
   const [error, setError] = useState('');
   const [domainSenderForm, setDomainSenderForm] = useState({ domainId: '', fromName: '', fromEmail: '' });
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -79,8 +84,8 @@ export function SendersPage() {
           email: newSender.email,
           config: {
             host: newSender.host,
-            port: Number(newSender.port),
-            secure: newSender.secure,
+            port: GMAIL_SMTP_HOSTS.has(String(newSender.host || '').trim().toLowerCase()) ? 465 : Number(newSender.port),
+            secure: GMAIL_SMTP_HOSTS.has(String(newSender.host || '').trim().toLowerCase()) ? true : newSender.secure,
             auth: { user: newSender.user, pass: newSender.pass },
           },
           maxPerMinute: Number(newSender.maxPerMinute) || 10,
@@ -95,7 +100,7 @@ export function SendersPage() {
         return;
       }
       setSenders((prev) => [...prev, { id: data.id, email: data.email, maxPerMinute: data.maxPerMinute }]);
-      setNewSender({ email: '', host: 'smtp.gmail.com', port: 587, secure: false, user: '', pass: '', maxPerMinute: 10 });
+      setNewSender(defaultSmtpSenderState());
       setShowAdd(false);
       fetchData();
     } catch (e) {
@@ -503,7 +508,15 @@ export function SendersPage() {
                   type="text"
                   placeholder="SMTP host"
                   value={newSender.host}
-                  onChange={(e) => setNewSender((prev) => ({ ...prev, host: e.target.value }))}
+                  onChange={(e) => {
+                    const host = e.target.value;
+                    const isGmailHost = GMAIL_SMTP_HOSTS.has(String(host || '').trim().toLowerCase());
+                    setNewSender((prev) => ({
+                      ...prev,
+                      host,
+                      ...(isGmailHost ? { port: 465, secure: true } : {}),
+                    }));
+                  }}
                   className={inputClass}
                 />
                 <input

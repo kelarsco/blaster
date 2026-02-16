@@ -6,6 +6,23 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { getSenderLimitForUser } from '../services/planLimits.js';
 
 export const MAX_SENDERS_PER_GROUP = 10;
+const GMAIL_SMTP_HOSTS = new Set(['smtp.gmail.com', 'smtp-relay.gmail.com']);
+
+function normalizeSenderConfig(rawConfig = {}) {
+  const host = String(rawConfig?.host || '').trim().toLowerCase();
+  const isGmailHost = GMAIL_SMTP_HOSTS.has(host);
+  const parsedPort = Number(rawConfig?.port);
+  const port = isGmailHost
+    ? 465
+    : (Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 587);
+  const secure = isGmailHost ? true : (port === 465 ? true : !!rawConfig?.secure);
+  return {
+    ...rawConfig,
+    host,
+    port,
+    secure,
+  };
+}
 
 export const automationRoutes = Router();
 
@@ -67,9 +84,10 @@ automationRoutes.post('/senders', requireAuth, async (req, res) => {
       });
     }
     const id = uuidv4();
+    const normalizedConfig = normalizeSenderConfig(config || {});
     await db.query(
       'INSERT INTO senders (id, user_id, email, config, max_per_minute) VALUES ($1, $2, $3, $4, $5)',
-      [id, userId, email, JSON.stringify(config || {}), Math.max(1, Math.min(60, maxPerMinute))]
+      [id, userId, email, JSON.stringify(normalizedConfig), Math.max(1, Math.min(60, maxPerMinute))]
     );
     logActivity('sender_add', { id, email }, userId);
     res.json({ id, email, maxPerMinute: maxPerMinute });
