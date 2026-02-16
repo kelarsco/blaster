@@ -12,15 +12,17 @@ function normalizeSenderConfig(rawConfig = {}) {
   const host = String(rawConfig?.host || '').trim().toLowerCase();
   const isGmailHost = GMAIL_SMTP_HOSTS.has(host);
   const parsedPort = Number(rawConfig?.port);
-  const port = isGmailHost
-    ? 465
-    : (Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 587);
-  const secure = isGmailHost ? true : (port === 465 ? true : !!rawConfig?.secure);
+  const port = Number.isFinite(parsedPort) && parsedPort > 0
+    ? parsedPort
+    : (isGmailHost ? 465 : 587);
+  const secure = port === 465 ? true : !!rawConfig?.secure;
+  const requireTLS = port === 587 ? true : !!rawConfig?.requireTLS;
   return {
     ...rawConfig,
     host,
     port,
     secure,
+    requireTLS,
   };
 }
 

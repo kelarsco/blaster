@@ -21,10 +21,14 @@ function getTransporter(senderId, config, auth) {
   let t = transporterCache.get(senderId);
   if (t) return t;
   const port = normalizedSmtpPort(config);
+  const requireTLS = port === 587 || !!config?.requireTLS;
+  const tlsOptions = requireTLS ? { minVersion: 'TLSv1.2' } : undefined;
   t = nodemailer.createTransport({
     host: normalizedSmtpHost(config),
     port,
     secure: port === 465,
+    requireTLS,
+    tls: tlsOptions,
     auth,
     pool: true,
     maxConnections: 1,

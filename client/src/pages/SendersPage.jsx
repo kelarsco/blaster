@@ -25,6 +25,11 @@ function defaultSmtpSenderState() {
   };
 }
 
+function normalizePort(value, fallback = 465) {
+  const port = Number(value);
+  return Number.isFinite(port) && port > 0 ? port : fallback;
+}
+
 export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
@@ -80,16 +85,23 @@ export function SendersPage() {
       const res = await authFetch(`${API}/automation/senders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newSender.email,
-          config: {
-            host: newSender.host,
-            port: GMAIL_SMTP_HOSTS.has(String(newSender.host || '').trim().toLowerCase()) ? 465 : Number(newSender.port),
-            secure: GMAIL_SMTP_HOSTS.has(String(newSender.host || '').trim().toLowerCase()) ? true : newSender.secure,
-            auth: { user: newSender.user, pass: newSender.pass },
-          },
-          maxPerMinute: Number(newSender.maxPerMinute) || 10,
-        }),
+        body: JSON.stringify((() => {
+          const host = String(newSender.host || '').trim().toLowerCase();
+          const isGmailHost = GMAIL_SMTP_HOSTS.has(host);
+          const selectedPort = normalizePort(newSender.port, isGmailHost ? 465 : 587);
+          const useStartTls = selectedPort === 587;
+          return {
+            email: newSender.email,
+            config: {
+              host: newSender.host,
+              port: selectedPort,
+              secure: selectedPort === 465 ? true : newSender.secure,
+              requireTLS: useStartTls,
+              auth: { user: newSender.user, pass: newSender.pass },
+            },
+            maxPerMinute: Number(newSender.maxPerMinute) || 10,
+          };
+        })()),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -526,6 +538,25 @@ export function SendersPage() {
                   onChange={(e) => setNewSender((prev) => ({ ...prev, port: e.target.value }))}
                   className={inputClass}
                 />
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setNewSender((prev) => ({ ...prev, port: 465, secure: true }))}
+                  className="px-2.5 py-1 rounded-md border border-blaster-border text-blaster-fg hover:bg-blaster-bg-app"
+                >
+                  Use 465 (SSL/TLS)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewSender((prev) => ({ ...prev, port: 587, secure: false }))}
+                  className="px-2.5 py-1 rounded-md border border-blaster-border text-blaster-fg hover:bg-blaster-bg-app"
+                >
+                  Use 587 (STARTTLS)
+                </button>
+                <span className="self-center text-blaster-muted">
+                  Port 587 enables STARTTLS automatically.
+                </span>
               </div>
               <label className="flex items-center gap-2 text-sm text-blaster-fg">
                 <input
