@@ -300,6 +300,16 @@ export function DomainEmailSendingPage() {
                 <p className="text-xs text-blaster-muted mt-2 break-all">
                   Inbound webhook URL: <span className="text-blaster-fg">{`${API}/domain-email/webhooks/${d.provider}/${d.id}`}</span>
                 </p>
+                <p className="text-xs text-blaster-muted mt-1">
+                  Webhook setup: {d.inboundWebhookStatus === 'configured'
+                    ? 'Automatically configured'
+                    : d.inboundWebhookStatus === 'manual_required'
+                      ? 'Manual setup required for this provider'
+                      : 'Pending automatic setup'}
+                </p>
+                {d.inboundWebhookError ? (
+                  <p className="text-xs text-amber-700 mt-1">Webhook note: {d.inboundWebhookError}</p>
+                ) : null}
                 {d.verificationError ? <p className="text-xs text-amber-700 mt-2">Verification note: {d.verificationError}</p> : null}
               </div>
             ))}

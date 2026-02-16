@@ -101,6 +101,123 @@ function mapResendRecords(records, domain) {
   }));
 }
 
+function normalizeWebhookUrl(value) {
+  return String(value || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function extractWebhookList(data) {
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.webhooks)) return data.webhooks;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+function getWebhookUrlFromItem(item) {
+  return item?.url || item?.endpoint || item?.target_url || item?.targetUrl || '';
+}
+
+function getWebhookIdFromItem(item) {
+  return item?.id || item?.webhook_id || item?.webhookId || null;
+}
+
+export async function ensureProviderInboundWebhook({ provider, providerDomainId, apiKey, webhookUrl, webhookSecret }) {
+  const p = normalizeProvider(provider);
+  const key = getProviderApiKey(p, apiKey);
+  const targetUrl = String(webhookUrl || '').trim();
+  if (!targetUrl) return { ok: false, configured: false, reason: 'Missing inbound webhook URL' };
+
+  if (p !== 'resend') {
+    return {
+      ok: false,
+      configured: false,
+      manualRequired: true,
+      reason: 'Automatic inbound webhook setup is currently supported for Resend only.',
+    };
+  }
+  if (!key) return { ok: false, configured: false, reason: 'No provider API key configured yet' };
+  if (!providerDomainId) return { ok: false, configured: false, reason: 'Provider domain ID not found yet. Verify domain first.' };
+
+  const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const listUrl = `https://api.resend.com/domains/${encodeURIComponent(providerDomainId)}/webhooks`;
+  const normalizedTarget = normalizeWebhookUrl(targetUrl);
+  try {
+    const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${key}` } });
+    const listData = await readJsonSafe(listRes);
+    if (listRes.ok) {
+      const existing = extractWebhookList(listData).find((item) => normalizeWebhookUrl(getWebhookUrlFromItem(item)) === normalizedTarget);
+      if (existing) {
+        return {
+          ok: true,
+          configured: true,
+          webhookId: getWebhookIdFromItem(existing),
+          reason: null,
+        };
+      }
+    }
+
+    const bodyVariants = [
+      {
+        url: targetUrl,
+        enabled: true,
+        events: ['email.received'],
+        ...(webhookSecret ? { headers: { 'x-domain-webhook-secret': webhookSecret } } : {}),
+      },
+      {
+        url: targetUrl,
+        enabled: true,
+        event: 'email.received',
+        ...(webhookSecret ? { headers: { 'x-domain-webhook-secret': webhookSecret } } : {}),
+      },
+      {
+        url: targetUrl,
+        enabled: true,
+        type: 'email.received',
+        ...(webhookSecret ? { headers: { 'x-domain-webhook-secret': webhookSecret } } : {}),
+      },
+    ];
+
+    let createData = null;
+    let created = null;
+    for (const body of bodyVariants) {
+      const createRes = await fetch(listUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      createData = await readJsonSafe(createRes);
+      if (createRes.ok) {
+        const item = Array.isArray(createData?.data) ? createData.data[0] : (createData?.data || createData);
+        created = item || {};
+        break;
+      }
+      if (createRes.status === 409) {
+        return { ok: true, configured: true, webhookId: null, reason: null };
+      }
+    }
+
+    if (!created) {
+      return {
+        ok: false,
+        configured: false,
+        reason: resendErrorMessage(createData, 'Failed to configure inbound webhook automatically'),
+      };
+    }
+
+    return {
+      ok: true,
+      configured: true,
+      webhookId: getWebhookIdFromItem(created),
+      reason: null,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      configured: false,
+      reason: e?.message || 'Automatic webhook setup failed',
+    };
+  }
+}
+
 export async function createOrLocateProviderDomain({ provider, domain, apiKey }) {
   const p = normalizeProvider(provider);
   const d = normalizeDomainInput(domain);

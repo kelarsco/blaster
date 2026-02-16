@@ -8,6 +8,7 @@ import {
   createOrLocateProviderDomain,
   DOMAIN_EMAIL_PROVIDERS,
   buildProviderDnsRecords,
+  ensureProviderInboundWebhook,
   normalizeDomainInput,
   parseInboundPayload,
   sendEmailViaProvider,
@@ -70,6 +71,10 @@ function serializeDomainRow(row) {
     providerDomainId: row.provider_domain_id,
     status: row.status || 'pending',
     verificationError: row.verification_error || null,
+    inboundWebhookUrl: row.inbound_webhook_url || null,
+    inboundWebhookStatus: row.inbound_webhook_status || 'pending',
+    inboundWebhookError: row.inbound_webhook_error || null,
+    inboundWebhookSyncedAt: row.inbound_webhook_synced_at || null,
     lastVerifiedAt: row.last_verified_at || null,
     dnsRecords: (() => {
       try {
@@ -81,6 +86,53 @@ function serializeDomainRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function resolveBackendPublicUrl(req) {
+  const raw =
+    process.env.BACKEND_URL ||
+    process.env.RAILWAY_STATIC_URL ||
+    process.env.RAILWAY_PUBLIC_DOMAIN ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `${req.protocol}://${req.get('host')}`;
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return `${req.protocol}://${req.get('host')}`;
+  return /^https?:\/\//i.test(trimmed) ? trimmed.replace(/\/$/, '') : `https://${trimmed.replace(/\/$/, '')}`;
+}
+
+function buildInboundWebhookUrl(req, provider, domainId) {
+  return `${resolveBackendPublicUrl(req)}/api/domain-email/webhooks/${encodeURIComponent(provider)}/${encodeURIComponent(domainId)}`;
+}
+
+async function syncInboundWebhookForDomain(db, req, domainRow) {
+  const webhookUrl = buildInboundWebhookUrl(req, domainRow.provider, domainRow.id);
+  const webhookSecret = String(process.env.DOMAIN_EMAIL_WEBHOOK_SECRET || '').trim();
+  const sync = await ensureProviderInboundWebhook({
+    provider: domainRow.provider,
+    providerDomainId: domainRow.provider_domain_id,
+    apiKey: domainRow.provider_api_key,
+    webhookUrl,
+    webhookSecret,
+  });
+  await db.query(
+    `UPDATE sending_domains
+     SET inbound_webhook_url = $1,
+         inbound_webhook_provider_id = $2,
+         inbound_webhook_status = $3,
+         inbound_webhook_error = $4,
+         inbound_webhook_synced_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $5 AND user_id = $6`,
+    [
+      webhookUrl,
+      sync?.webhookId || null,
+      sync?.configured ? 'configured' : (sync?.manualRequired ? 'manual_required' : 'pending'),
+      sync?.reason || null,
+      domainRow.id,
+      domainRow.user_id,
+    ]
+  );
+  return sync;
 }
 
 async function upsertThread(db, { userId, domainId, senderEmail, contactEmail, campaignId, subject }) {
@@ -109,7 +161,9 @@ domainEmailRoutes.get('/domains', requireAuth, async (req, res) => {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database required for domain email sending' });
     const result = await db.query(
-      `SELECT id, domain, provider, provider_domain_id, status, verification_error, last_verified_at, dns_records_json, created_at, updated_at
+      `SELECT id, user_id, domain, provider, provider_domain_id, status, verification_error,
+              inbound_webhook_url, inbound_webhook_provider_id, inbound_webhook_status, inbound_webhook_error, inbound_webhook_synced_at,
+              last_verified_at, dns_records_json, created_at, updated_at
        FROM sending_domains WHERE user_id = $1 ORDER BY created_at DESC`,
       [req.user.id]
     );
@@ -151,10 +205,21 @@ domainEmailRoutes.post('/domains', requireAuth, async (req, res) => {
 
     await db.query(
       `INSERT INTO sending_domains
-       (id, user_id, domain, provider, provider_domain_id, status, dns_records_json, provider_api_key, verification_error, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
+       (id, user_id, domain, provider, provider_domain_id, status, dns_records_json, provider_api_key, verification_error, inbound_webhook_status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW(), NOW())`,
       [id, req.user.id, domain, provider, providerDomainId, status, JSON.stringify(dnsRecords), providerApiKey || null, verificationError]
     );
+
+    if (providerDomainId) {
+      const rowForWebhook = {
+        id,
+        user_id: req.user.id,
+        provider,
+        provider_domain_id: providerDomainId,
+        provider_api_key: providerApiKey || null,
+      };
+      await syncInboundWebhookForDomain(db, req, rowForWebhook);
+    }
     logActivity('domain_email_domain_added', { domain, provider }, req.user.id);
     return res.status(201).json({
       domain: {
@@ -182,7 +247,7 @@ domainEmailRoutes.post('/domains/:domainId/verify', requireAuth, async (req, res
     if (!db) return res.status(503).json({ error: 'Database required for domain email sending' });
     const row = (
       await db.query(
-        `SELECT id, domain, provider, provider_domain_id, provider_api_key
+        `SELECT id, user_id, domain, provider, provider_domain_id, provider_api_key
          FROM sending_domains WHERE id = $1 AND user_id = $2`,
         [req.params.domainId, req.user.id]
       )
@@ -211,8 +276,27 @@ domainEmailRoutes.post('/domains/:domainId/verify', requireAuth, async (req, res
       ]
     );
 
+    let webhookSync = null;
+    if (verified.providerDomainId || row.provider_domain_id) {
+      webhookSync = await syncInboundWebhookForDomain(db, req, {
+        ...row,
+        provider_domain_id: verified.providerDomainId || row.provider_domain_id,
+      });
+    }
+
     logActivity('domain_email_domain_verify', { domain: row.domain, verified: !!verified.verified }, req.user.id);
-    return res.json({ ok: true, status: verified.verified ? 'verified' : 'pending', reason: verified.reason || null });
+    return res.json({
+      ok: true,
+      status: verified.verified ? 'verified' : 'pending',
+      reason: verified.reason || null,
+      webhook: webhookSync
+        ? {
+            configured: !!webhookSync.configured,
+            manualRequired: !!webhookSync.manualRequired,
+            reason: webhookSync.reason || null,
+          }
+        : null,
+    });
   } catch (e) {
     console.error('[domain-email verify]', e?.message || e);
     return res.status(500).json({ error: 'Failed to verify domain' });
@@ -225,7 +309,7 @@ domainEmailRoutes.post('/domains/:domainId/sync-provider', requireAuth, async (r
     if (!db) return res.status(503).json({ error: 'Database required for domain email sending' });
     const row = (
       await db.query(
-        `SELECT id, domain, provider, provider_domain_id, provider_api_key
+        `SELECT id, user_id, domain, provider, provider_domain_id, provider_api_key
          FROM sending_domains WHERE id = $1 AND user_id = $2`,
         [req.params.domainId, req.user.id]
       )
@@ -259,6 +343,11 @@ domainEmailRoutes.post('/domains/:domainId/sync-provider', requireAuth, async (r
         req.user.id,
       ]
     );
+
+    await syncInboundWebhookForDomain(db, req, {
+      ...row,
+      provider_domain_id: setup.providerDomainId || row.provider_domain_id,
+    });
 
     logActivity('domain_email_domain_sync', { domain: row.domain, provider: row.provider }, req.user.id);
     return res.json({ ok: true, providerDomainId: setup.providerDomainId || null });

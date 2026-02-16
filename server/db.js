@@ -294,6 +294,11 @@ async function runSchema(p) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS picture_url TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
+      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_url TEXT;
+      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_provider_id TEXT;
+      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_error TEXT;
+      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_synced_at TIMESTAMPTZ;
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -344,6 +349,11 @@ async function runSchema(p) {
         provider_api_key TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         verification_error TEXT,
+        inbound_webhook_url TEXT,
+        inbound_webhook_provider_id TEXT,
+        inbound_webhook_status TEXT NOT NULL DEFAULT 'pending',
+        inbound_webhook_error TEXT,
+        inbound_webhook_synced_at TIMESTAMPTZ,
         dns_records_json TEXT,
         last_verified_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW(),
