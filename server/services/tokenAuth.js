@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
+import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './cookiePolicy.js';
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-access-secret';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-refresh-secret';
@@ -95,16 +96,16 @@ export async function revokeRefreshTokensForUser(userId) {
  * Set refresh token in response cookie (HttpOnly, Secure in prod, SameSite).
  */
 export function setRefreshTokenCookie(res, token, expiresAt) {
-  const isProd = process.env.NODE_ENV === 'production';
-  // In production deployments, frontend/backend are often on different origins.
-  // Default to SameSite=None to keep refresh cookie usable across origins.
-  const sameSite = isProd ? 'none' : 'lax';
+  const secure = shouldUseSecureCookies();
+  const sameSite = getCookieSameSite();
+  const domain = getCookieDomain();
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProd,
+    secure,
     sameSite,
     expires: expiresAt,
     path: '/',
+    ...(domain && { domain }),
   });
 }
 
@@ -112,12 +113,15 @@ export function setRefreshTokenCookie(res, token, expiresAt) {
  * Clear refresh token cookie.
  */
 export function clearRefreshTokenCookie(res) {
-  const isProd = process.env.NODE_ENV === 'production';
+  const secure = shouldUseSecureCookies();
+  const sameSite = getCookieSameSite();
+  const domain = getCookieDomain();
   res.clearCookie(REFRESH_COOKIE_NAME, {
     path: '/',
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
+    secure,
+    sameSite,
+    ...(domain && { domain }),
   });
 }
 

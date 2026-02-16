@@ -30,6 +30,7 @@ import { adminRoutes } from './routes/admin.js';
 import { emailListRoutes } from './routes/emailLists.js';
 import { domainEmailRoutes } from './routes/domainEmail.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
+import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './services/cookiePolicy.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,10 +45,6 @@ app.use(cookieParser());
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => handlePaystackWebhook(req, res));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
-const isDev = process.env.NODE_ENV !== 'production';
-const frontendUrl = process.env.FRONTEND_URL || '';
-const cookieDomain = isDev && frontendUrl.includes('localhost') ? 'localhost' : undefined;
-
 const clientDist = path.join(__dirname, '../client/dist');
 const clientIndexPath = path.join(clientDist, 'index.html');
 const clientBuilt = fs.existsSync(clientIndexPath);
@@ -74,6 +71,10 @@ async function start() {
     }
   }
 
+  const secureCookies = shouldUseSecureCookies();
+  const sameSite = getCookieSameSite();
+  const cookieDomain = getCookieDomain();
+
   app.use(
     session({
       store: sessionStore,
@@ -82,11 +83,10 @@ async function start() {
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: secureCookies,
         httpOnly: true,
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        // Use None in production to avoid silent auth loss on cross-origin frontend/backend.
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        sameSite,
         ...(cookieDomain && { domain: cookieDomain }),
       },
     })

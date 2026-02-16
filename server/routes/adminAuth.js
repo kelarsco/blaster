@@ -2,12 +2,12 @@ import { Router } from 'express';
 import speakeasy from 'speakeasy';
 import jwt from 'jsonwebtoken';
 import { requireAdmin, COOKIE_NAME, ADMIN_JWT_SECRET } from '../middleware/requireAdmin.js';
+import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from '../services/cookiePolicy.js';
 
 const TOTP_SECRET = String(process.env.BL_ADMIN_TOTP_SECRET || '').replace(/\s+/g, '').toUpperCase(); // base32 secret for Google Authenticator
-const frontendUrl = process.env.FRONTEND_URL || '';
-const isDev = process.env.NODE_ENV !== 'production';
-const isCrossOrigin = process.env.NODE_ENV === 'production' && !!frontendUrl.trim();
-const cookieDomain = isDev && frontendUrl.includes('localhost') ? undefined : undefined;
+const secureCookies = shouldUseSecureCookies();
+const sameSite = getCookieSameSite();
+const cookieDomain = getCookieDomain();
 
 export const adminAuthRoutes = Router();
 
@@ -44,8 +44,8 @@ adminAuthRoutes.post('/auth', (req, res) => {
     );
     res.cookie(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: isCrossOrigin ? 'none' : 'lax',
+      secure: secureCookies,
+      sameSite,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
       ...(cookieDomain && { domain: cookieDomain }),
@@ -61,8 +61,8 @@ adminAuthRoutes.post('/auth', (req, res) => {
 adminAuthRoutes.post('/logout', (req, res) => {
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: isCrossOrigin ? 'none' : 'lax',
+    secure: secureCookies,
+    sameSite,
     path: '/',
     ...(cookieDomain && { domain: cookieDomain }),
   });
