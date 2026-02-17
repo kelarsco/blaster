@@ -82,6 +82,22 @@ async function tryGmailSslFallbackSend(config, auth, mailOptions) {
 
 const MIN_SEND_INTERVAL_MS = 10000; // 10 sec minimum between sends; users can set higher in campaign options
 
+function isTransientSmtpError(error) {
+  const msg = String(error?.message || error || '').toLowerCase();
+  return (
+    msg.includes('etimedout') ||
+    msg.includes('timeout') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('socket hang up') ||
+    msg.includes('greeting never received')
+  );
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function withSenderSerialization(senderId, maxPerMinute, fn) {
   const prev = senderQueue.get(senderId) || Promise.resolve();
   const run = async () => {
@@ -276,22 +292,36 @@ export async function processSendEmail(payload) {
       subject: finalSubject,
       text: finalBody,
     };
-    try {
-      await transporter.sendMail(mailOptions);
-    } catch (sendErr) {
-      const errMsg = String(sendErr?.message || sendErr || '');
-      const host = normalizedSmtpHost(config);
-      const port = normalizedSmtpPort(config);
-      const isTimeout = /ETIMEDOUT|timeout/i.test(errMsg);
-      const isGmail587 = (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') && port === 587;
-      if (isTimeout && isGmail587) {
-        // Common on restricted networks: STARTTLS on 587 times out; retry with implicit TLS 465.
+
+    const maxAttempts = 3;
+    let attempt = 0;
+    while (attempt < maxAttempts) {
+      attempt += 1;
+      try {
+        await transporter.sendMail(mailOptions);
+        break;
+      } catch (sendErr) {
+        const errMsg = String(sendErr?.message || sendErr || '');
+        const host = normalizedSmtpHost(config);
+        const port = normalizedSmtpPort(config);
+        const isTimeout = /ETIMEDOUT|timeout/i.test(errMsg);
+        const isGmail587 = (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') && port === 587;
+        if (isTimeout && isGmail587) {
+          // Common on restricted networks: STARTTLS on 587 times out; retry with implicit TLS 465.
+          clearTransporter(senderId);
+          await tryGmailSslFallbackSend(config, auth, mailOptions);
+          break;
+        }
+
+        const canRetry = attempt < maxAttempts && isTransientSmtpError(sendErr);
+        if (!canRetry) throw sendErr;
         clearTransporter(senderId);
-        await tryGmailSslFallbackSend(config, auth, mailOptions);
-      } else {
-        throw sendErr;
+        const backoffMs = 1500 * attempt;
+        console.warn(`[send] transient SMTP error (attempt ${attempt}/${maxAttempts}) for sender ${senderId}: ${errMsg}`);
+        await sleep(backoffMs);
       }
     }
+
     const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
     if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
   };
