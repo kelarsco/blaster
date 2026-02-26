@@ -28,7 +28,7 @@ export const PLANS = [
     tag: null,
     description:
       'Reliable outreach for early-stage growth. Designed for solo operators and agencies beginning consistent outreach.',
-    price: 50,
+    price: 8,
     originalPrice: 75,
     period: 'month',
     current: false,

@@ -253,13 +253,17 @@ async function runSchema(p) {
 
       INSERT INTO plans (id, name, amount, interval, features) VALUES
         ('free', 'Free trial', 0, 'monthly', '{"emails":"200","users":"1 seat","support":"Email (limited)"}'::jsonb),
-        ('essentials_monthly', 'Essentials', 5000, 'monthly', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
-        ('essentials_annual', 'Essentials', 50000, 'annually', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('essentials_monthly', 'Essentials', 800, 'monthly', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
+        ('essentials_annual', 'Essentials', 8000, 'annually', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
         ('standard_monthly', 'Standard', 16000, 'monthly', '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
         ('standard_annual', 'Standard', 160000, 'annually', '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb),
         ('premium_monthly', 'Premium', 29500, 'monthly', '{"emails":"50000","users":"Unlimited","support":"Phone + priority"}'::jsonb),
         ('premium_annual', 'Premium', 295000, 'annually', '{"emails":"50000","users":"Unlimited","support":"Phone + priority"}'::jsonb)
       ON CONFLICT (id) DO NOTHING;
+
+      -- Update existing essentials plans to new pricing and capacity
+      UPDATE plans SET amount = 800, features = '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb WHERE id = 'essentials_monthly';
+      UPDATE plans SET amount = 8000, features = '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb WHERE id = 'essentials_annual';
 
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"1"') WHERE id = 'free';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"5"') WHERE id LIKE 'essentials%';
@@ -274,13 +278,13 @@ async function runSchema(p) {
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"1000"') WHERE id = 'free';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"15000"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"20000"') WHERE id LIKE 'essentials%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"40000"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'free';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free');
-      UPDATE plans SET amount = 5000, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
-      UPDATE plans SET amount = 50000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET amount = 800, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET amount = 8000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
       UPDATE plans SET amount = 16000, paystack_plan_code = NULL WHERE id = 'standard_monthly';
       UPDATE plans SET amount = 160000, paystack_plan_code = NULL WHERE id = 'standard_annual';
       UPDATE plans SET amount = 29500, paystack_plan_code = NULL WHERE id = 'premium_monthly';

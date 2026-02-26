@@ -123,6 +123,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
   const [now, setNow] = useState(() => Date.now());
+  const [showComingSoonPopup, setShowComingSoonPopup] = useState(false);
 
   const fetchSubscription = React.useCallback(() => {
     if (!authFetch) {
@@ -174,6 +175,12 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   const showRenewalCountdown = hasPaidPlan && daysUntilRenewal !== null && daysUntilRenewal <= RENEWAL_WARNING_DAYS && daysUntilRenewal >= 0;
   const renewalDueDate = periodEnd ? formatUTCDateOnly(periodEnd) : null;
 
+  const handleComingSoonClick = (e) => {
+    e.preventDefault();
+    setShowComingSoonPopup(true);
+    onMobileClose?.();
+  };
+
   return (
     <>
       {/* Backdrop when sidebar is open on mobile */}
@@ -213,32 +220,50 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
           </>
         ) : (
           <>
-            {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={
-                  to === '/app/dashboard' ||
-                  to === '/app/scanner' ||
-                  to === '/app/campaigns' ||
-                  to === '/app/senders' ||
-                  to === '/app/domain-email-sending' ||
-                  to === '/app/domain-inbox' ||
-                  to === '/app/settings'
-                }
-                onClick={onMobileClose}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-blaster-sidebar-hover text-blaster-fg'
-                      : 'text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg'
-                  }`
-                }
-              >
-                <Icon />
-                {label}
-              </NavLink>
-            ))}
+            {navItems.map(({ to, label, icon: Icon }) => {
+              const isComingSoon = to === '/app/senders' || to === '/app/domain-email-sending' || to === '/app/domain-inbox' || to === '/app/campaigns';
+              
+              if (isComingSoon) {
+                return (
+                  <button
+                    key={to}
+                    type="button"
+                    onClick={handleComingSoonClick}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg transition-colors w-full"
+                  >
+                    <Icon />
+                    {label}
+                  </button>
+                );
+              }
+              
+              return (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={
+                    to === '/app/dashboard' ||
+                    to === '/app/scanner' ||
+                    to === '/app/campaigns' ||
+                    to === '/app/senders' ||
+                    to === '/app/domain-email-sending' ||
+                    to === '/app/domain-inbox' ||
+                    to === '/app/settings'
+                  }
+                  onClick={onMobileClose}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-blaster-sidebar-hover text-blaster-fg'
+                        : 'text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg'
+                    }`
+                  }
+                >
+                  <Icon />
+                  {label}
+                </NavLink>
+              );
+            })}
             {onOpenActivity && (
               <button
                 type="button"
@@ -323,6 +348,29 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
           </div>
         )}
       </div>
+      
+      {/* Coming Soon Popup */}
+      {showComingSoonPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div 
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowComingSoonPopup(false)}
+          />
+          <div className="relative bg-white rounded-xl border border-blaster-border p-6 shadow-lg max-w-sm mx-4">
+            <h3 className="text-lg font-semibold text-blaster-fg mb-2">Coming Soon</h3>
+            <p className="text-sm text-blaster-muted mb-4">
+              This feature is currently under development and will be available soon.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowComingSoonPopup(false)}
+              className="w-full py-2 rounded-lg bg-blaster-accent text-white font-medium text-sm hover:bg-blaster-accent/90 transition"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </aside>
     </>
   );
