@@ -89,28 +89,44 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     }
     const urlsToScan = allUrls.filter((u) => !excludeSet.has(u));
     const totalStores = previousRows.length ? new Set(previousRows.map((r) => r.store_url || r.storeUrl)).size + urlsToScan.length : urlsToScan.length;
+    
+    let limitedUrls = urlsToScan;
+    let limitReached = false;
+    let storesToScan = urlsToScan.length;
+    
     if (db && userId) {
       const limits = await getPlanLimitsForUser(userId);
       const scansUsed = limits.scansUsed ?? 0;
       const scansLimit = limits.scansLimit ?? 1000;
+      
       if (scansLimit < 999999 && scansUsed + totalStores > scansLimit) {
-        if (limits.isFreePlan) {
-          return res.status(403).json({
-            error: "You've reached your free plan store scan limit. Upgrade to scan more stores.",
-            upgradeRequired: true,
-            limitType: 'scans',
-          });
-        }
-        const overageEmails = Math.max(0, (limits.emailsUsed ?? 0) - (limits.emailsLimit ?? 500));
-        const wouldBeOverageScans = scansUsed + totalStores - scansLimit;
-        const wouldBeOwed = Math.floor(wouldBeOverageScans / 500) + Math.floor(overageEmails / 300);
-        const nextThreshold = limits.extraCreditNextThreshold ?? 10;
-        if (wouldBeOwed >= nextThreshold) {
-          return res.status(403).json({
-            error: `Extra credit limit reached ($${nextThreshold}). You've used more than your plan allows. Pay your extra credit balance to continue.`,
-            extraCreditBlocked: true,
-            nextThreshold,
-          });
+        const remainingScans = Math.max(0, scansLimit - scansUsed);
+        const effectivePreviousCount = previousRows.length ? new Set(previousRows.map((r) => r.store_url || r.storeUrl)).size : 0;
+        const allowedNewScans = Math.max(0, remainingScans - effectivePreviousCount);
+        
+        if (allowedNewScans > 0) {
+          limitedUrls = urlsToScan.slice(0, allowedNewScans);
+          storesToScan = effectivePreviousCount + limitedUrls.length;
+          limitReached = true;
+        } else {
+          if (limits.isFreePlan) {
+            return res.status(403).json({
+              error: "You've reached your free plan store scan limit. Upgrade to scan more stores.",
+              upgradeRequired: true,
+              limitType: 'scans',
+            });
+          }
+          const overageEmails = Math.max(0, (limits.emailsUsed ?? 0) - (limits.emailsLimit ?? 500));
+          const wouldBeOverageScans = scansUsed + totalStores - scansLimit;
+          const wouldBeOwed = Math.floor(wouldBeOverageScans / 500) + Math.floor(overageEmails / 300);
+          const nextThreshold = limits.extraCreditNextThreshold ?? 10;
+          if (wouldBeOwed >= nextThreshold) {
+            return res.status(403).json({
+              error: `Extra credit limit reached ($${nextThreshold}). You've used more than your plan allows. Pay your extra credit balance to continue.`,
+              extraCreditBlocked: true,
+              nextThreshold,
+            });
+          }
         }
       }
     }
@@ -119,7 +135,7 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       try {
         await db.query(
           `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count) VALUES ($1, $2, 'pending', $3, 0, 0)`,
-          [scanId, userId, totalStores]
+          [scanId, userId, storesToScan]
         );
       } catch (dbErr) {
         console.warn('[scan/start] DB insert failed, continuing in memory:', dbErr?.message || dbErr);
@@ -127,7 +143,7 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     }
     memoryStore.scans.set(scanId, {
       status: 'pending',
-      total_urls: totalStores,
+      total_urls: storesToScan,
       processed: 0,
       found_count: 0,
       user_id: userId,
@@ -137,18 +153,25 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     await addScanJob({
       scanId,
       userId: userId || undefined,
-      rawInput: urlsToScan.join('\n'),
+      rawInput: limitedUrls.join('\n'),
       emailFilters: emailFilters || {},
       forceRefresh: body.forceRefresh ?? body.force_refresh ?? true,
       useCache: body.useCache ?? body.use_cache ?? false,
       stealthMode: !!(body.stealthMode ?? body.stealth_mode),
-      maxConcurrentCrawlers: body.maxConcurrentCrawlers ?? body.max_concurrent_crawlers,
-      maxUrlsPerScan: body.maxUrlsPerScan ?? body.max_urls_per_scan,
-      previousScanId: previousScanId || undefined,
-      previousRows: previousRows.length ? previousRows : undefined,
+      maxConcurrentCrawlers: body.maxConcurrentCrawlers,
+      maxUrlsPerScan: body.maxUrlsPerScan,
     });
-    logActivity('scan_start', { scanId, totalUrls: totalStores, newUrls: urlsToScan.length }, userId);
-    res.json({ scanId, totalUrls: totalStores, skipped: allUrls.length - urlsToScan.length });
+
+    // Return response with limit information
+    const response = { scanId };
+    if (limitReached) {
+      response.limitReached = true;
+      response.scannedUrls = limitedUrls.length;
+      response.totalUrls = allUrls.length;
+      response.message = `Scanned ${limitedUrls.length} of ${allUrls.length} URLs. You've reached your plan limit.`;
+    }
+    
+    return res.json(response);
   } catch (e) {
     const msg = e?.message || String(e);
     console.error('[scan/start]', msg);

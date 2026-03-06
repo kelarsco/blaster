@@ -52,6 +52,7 @@ export function UrlInput({
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
   const [upgradeRequired, setUpgradeRequired] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
   const [csvName, setCsvName] = useState('');
 
   const urlCount = parseUrls(rawUrls).length;
@@ -79,6 +80,7 @@ export function UrlInput({
   const startScan = async () => {
     setError('');
     setUpgradeRequired(false);
+    setLimitReached(false);
     setIsScanning(true);
     try {
       let paths, maxConcurrentCrawlers, maxUrlsPerScan;
@@ -124,6 +126,13 @@ export function UrlInput({
         }
         setIsScanning(false);
         return;
+      }
+
+      // Handle limit reached response
+      if (data?.limitReached) {
+        setLimitReached(true);
+        setError(data.message || `Scanned ${data.scannedUrls} of ${data.totalUrls} URLs. You've reached your plan limit.`);
+        setUpgradeRequired(true);
       }
 
       onScanStart(data.scanId);
@@ -193,7 +202,11 @@ export function UrlInput({
       </div>
       {csvName ? <p className="mt-2 text-xs text-[#8a91a5]">Loaded: {csvName}</p> : null}
       {error && (
-        <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
+        <div className={`mt-3 p-3 rounded-lg border text-sm ${
+          limitReached 
+            ? 'bg-blue-500/10 border-blue-500/30 text-blue-800 dark:text-blue-200'
+            : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-200'
+        }`}>
           <p>{error}</p>
           {upgradeRequired && (
             <Link to="/app/account/pricing" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
