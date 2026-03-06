@@ -47,7 +47,7 @@ export const PLANS = [
     tag: 'Best value',
     description:
       'Scale outreach with control, personalization, and automation. Built for serious outreach workflows that need stability and performance.',
-    price: 160,
+    price: 20,
     originalPrice: 250,
     period: 'month',
     current: false,

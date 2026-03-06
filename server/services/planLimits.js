@@ -5,7 +5,7 @@ const DEFAULT_SENDER_LIMIT = 1;
 const DEFAULT_DOMAIN_LIMIT = 1;
 const FREE_TRIAL_HOURS = 48;
 const FREE_TRIAL_EMAILS_LIMIT = 200;
-const FREE_TRIAL_SCANS_LIMIT = 1000;
+const FREE_TRIAL_SCANS_LIMIT = 200;
 
 /** Cap for "unlimited" plans. */
 const UNLIMITED_SENDERS = 999;

@@ -324,9 +324,9 @@ export function PricingPage() {
                     </tr>
                     <tr className="border-b border-blaster-border">
                       <td className="px-6 py-3 text-blaster-muted">Store links extracted</td>
-                      <td className="px-6 py-3 text-blaster-fg">1,000 (48-hour trial)</td>
+                      <td className="px-6 py-3 text-blaster-fg">200 (48-hour trial)</td>
                       <td className="px-6 py-3 text-blaster-fg">20,000</td>
-                      <td className="px-6 py-3 text-blaster-fg">40,000</td>
+                      <td className="px-6 py-3 text-blaster-fg">100,000</td>
                       <td className="px-6 py-3 text-blaster-fg">Unlimited</td>
                     </tr>
                     <tr className="border-b border-blaster-border">

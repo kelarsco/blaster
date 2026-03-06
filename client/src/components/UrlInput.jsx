@@ -196,7 +196,7 @@ export function UrlInput({
         <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-sm">
           <p>{error}</p>
           {upgradeRequired && (
-            <Link to="/app/account/billing/monthly-plan" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
+            <Link to="/app/account/pricing" className="mt-2 inline-block font-medium text-blaster-accent hover:underline">
               Upgrade plan →
             </Link>
           )}

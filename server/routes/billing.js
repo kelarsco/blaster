@@ -97,10 +97,10 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
             features: {
               ...(free.features || {}),
               emails: trialActive ? '200' : '0',
-              scans: trialActive ? '1000' : '0',
+              scans: trialActive ? '200' : '0',
             },
           }
-        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '200' : '0', users: '1 seat', senders: '1', scans: trialActive ? '1000' : '0' } };
+        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '200' : '0', users: '1 seat', senders: '1', scans: trialActive ? '200' : '0' } };
     }
 
     const periodStart = row?.current_period_start ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -123,11 +123,11 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
 
     const scansLimit = (() => {
       const s = plan?.features?.scans;
-      if (s == null) return 1000;
+      if (s == null) return 200;
       const str = String(s).toLowerCase();
       if (str === 'unlimited' || str === '∞') return 999999;
       const n = parseInt(s, 10);
-      return Number.isNaN(n) || n < 0 ? 1000 : n;
+      return Number.isNaN(n) || n < 0 ? 200 : n;
     })();
     const sendersLimit = (() => {
       const s = plan?.features?.senders;
