@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/send-email.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "env": {
+    "INTERNAL_API_KEY": "@internal-api-key"
+  }
+}
