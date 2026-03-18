@@ -1,4 +1,6 @@
-import { sendEmailViaVercel, logEmailToDb } from './vercelEmailService.js';
+import nodemailer from 'nodemailer';
+import { getDb } from '../db.js';
+import { sendEmailViaProvider } from './domainEmailProviders.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -281,42 +283,47 @@ export async function processSendEmail(payload) {
     return;
   }
 
+  const transporter = getTransporter(senderId, config, auth);
+
   const doSend = async () => {
     const mailOptions = {
       from: senderRow.email,
       to: email,
       subject: finalSubject,
-      html: finalBody, // Use HTML instead of text for better formatting
+      text: finalBody,
     };
 
-    try {
-      // Send via Vercel API (fire-and-forget)
-      const result = await sendEmailViaVercel({ 
-        smtpConfig: {
-          host: config.host,
-          port: config.port,
-          secure: config.secure,
-          user: auth.user,
-          pass: auth.pass,
-        },
-        email: mailOptions
-      });
+    const maxAttempts = 3;
+    let attempt = 0;
+    while (attempt < maxAttempts) {
+      attempt += 1;
+      try {
+        await transporter.sendMail(mailOptions);
+        break;
+      } catch (sendErr) {
+        const errMsg = String(sendErr?.message || sendErr || '');
+        const host = normalizedSmtpHost(config);
+        const port = normalizedSmtpPort(config);
+        const isTimeout = /ETIMEDOUT|timeout/i.test(errMsg);
+        const isGmail587 = (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') && port === 587;
+        if (isTimeout && isGmail587) {
+          // Common on restricted networks: STARTTLS on 587 times out; retry with implicit TLS 465.
+          clearTransporter(senderId);
+          await tryGmailSslFallbackSend(config, auth, mailOptions);
+          break;
+        }
 
-      if (result.success) {
-        const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
-        if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
-      } else {
-        const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', result.error);
-        if (inserted) await updateCampaignCounts(db, campaignId, 'failed');
+        const canRetry = attempt < maxAttempts && isTransientSmtpError(sendErr);
+        if (!canRetry) throw sendErr;
+        clearTransporter(senderId);
+        const backoffMs = 1500 * attempt;
+        console.warn(`[send] transient SMTP error (attempt ${attempt}/${maxAttempts}) for sender ${senderId}: ${errMsg}`);
+        await sleep(backoffMs);
       }
-      return;
-
-    } catch (error) {
-      console.error('Email sending failed:', error);
-      const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'failed', error.message);
-      if (inserted) await updateCampaignCounts(db, campaignId, 'failed');
-      return;
     }
+
+    const inserted = await safeInsertCampaignSend(db, campaignId, storeUrl, email, senderRow.email, 'sent');
+    if (inserted) await updateCampaignCounts(db, campaignId, 'sent');
   };
 
   try {
