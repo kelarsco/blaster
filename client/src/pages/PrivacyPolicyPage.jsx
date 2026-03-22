@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Logo } from '../components/Logo.jsx';
 
 export function PrivacyPolicyPage() {
   return (
@@ -7,8 +8,7 @@ export function PrivacyPolicyPage() {
       <header className="sticky top-0 z-40 bg-blaster-bg border-b border-blaster-border">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 font-bold text-lg uppercase tracking-tight text-blaster-fg">
-            <span className="text-blaster-accent">⚡</span>
-            wiblaster
+            <Logo />
           </Link>
           <Link to="/" className="text-sm text-blaster-muted hover:text-blaster-fg transition">
             Back to home
