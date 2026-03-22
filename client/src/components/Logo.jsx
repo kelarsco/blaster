@@ -1,18 +1,11 @@
 import React from 'react';
 
-export function Logo({ className = '', size = 'medium' }) {
-  const sizeClasses = {
-    small: 'w-5 h-5',
-    medium: 'w-6 h-6', 
-    large: 'w-8 h-8',
-    xlarge: 'w-10 h-10'
-  };
-
+export function Logo({ className = '' }) {
   return (
     <img 
       src="/logo.png" 
       alt="wiblaster" 
-      className={`${sizeClasses[size] || sizeClasses.medium} ${className}`}
+      className={`w-[40%] h-[40%] ${className}`}
     />
   );
 }
