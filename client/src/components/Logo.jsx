@@ -10,7 +10,7 @@ export function Logo({ className = '', size = 'medium' }) {
 
   return (
     <img 
-      src="/favicon.png" 
+      src="/logo.png" 
       alt="wiblaster" 
       className={`${sizeClasses[size] || sizeClasses.medium} ${className}`}
     />

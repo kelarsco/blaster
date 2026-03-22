@@ -91,8 +91,7 @@ export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
           to="/app/dashboard"
           className="flex md:hidden items-center gap-2 text-blaster-fg font-semibold text-lg shrink-0"
         >
-          <Logo size="medium" />
-          wiblaster
+          <Logo size="large" />
         </Link>
         {/* Help + Profile */}
         <div className="flex items-center gap-2 shrink-0">

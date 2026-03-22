@@ -205,8 +205,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
       >
       <div className="p-4 border-b border-blaster-border">
         <NavLink to="/app/dashboard" onClick={onMobileClose} className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
-          <Logo size="medium" />
-          wiblaster
+          <Logo size="large" />
         </NavLink>
       </div>
       <nav className="flex-1 p-3 space-y-0.5">
