@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
+import { Logo } from '../components/Logo.jsx';
 
 const EyeIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -99,10 +100,9 @@ export function AuthLogoLink() {
   return (
     <Link
       to="/"
-      className="inline-flex items-center gap-2 text-blaster-fg font-semibold text-base mb-8"
+      className="flex items-center gap-2 text-blaster-fg font-semibold text-base mb-8"
     >
-      <span className="text-blaster-accent" aria-hidden>⚡</span>
-      wiblaster
+      <Logo />
     </Link>
   );
 }

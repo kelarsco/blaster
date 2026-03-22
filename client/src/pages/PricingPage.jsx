@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Check, X, ChevronDown } from 'react-feather';
+import { Logo } from '../components/Logo.jsx';
 import {
   PLANS,
   MONTHS_BILLED_ANNUALLY,
@@ -76,8 +77,7 @@ export function PricingPage() {
       <header className="sticky top-0 z-40 bg-blaster-bg">
         <div className="max-w-6xl mx-auto px-4 py-1.5 sm:py-2.5 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-sm sm:text-lg uppercase tracking-tight text-blaster-fg shrink-0 min-w-0">
-            <span className="text-blaster-accent">⚡</span>
-            <span className="truncate">wiblaster</span>
+            <Logo />
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Link
@@ -467,7 +467,7 @@ export function PricingPage() {
 
       <footer className="py-8 px-4 border-t border-blaster-border text-center text-sm text-blaster-muted mt-12">
         <Link to="/" className="text-blaster-accent hover:underline">← Back to home</Link>
-        <p className="mt-2">© {new Date().getFullYear()} wiblaster.</p>
+        <p className="mt-2">© {new Date().getFullYear()} <Logo className="inline w-auto h-auto" />. All rights reserved.</p>
       </footer>
     </div>
   );

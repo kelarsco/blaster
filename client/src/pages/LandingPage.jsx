@@ -117,7 +117,7 @@ export function LandingPage() {
       <header className="sticky top-0 z-40 bg-blaster-bg pt-[5px] pb-[5px]">
         <div className="max-w-6xl mx-auto px-4 pt-3 pb-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-sm sm:text-lg uppercase tracking-tight text-blaster-fg shrink-0 min-w-0">
-            <Logo size="large" />
+            <Logo />
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Link
@@ -453,12 +453,12 @@ export function LandingPage() {
               <Link to="/terms" className="block text-blaster-muted hover:text-blaster-fg mt-1">Terms of Service</Link>
             </div>
             <div>
-              <h4 className="font-semibold text-blaster-fg mb-3">wiblaster</h4>
-              <p className="text-blaster-muted">Extract emails &amp; automated outreach.</p>
+              <h4 className="font-semibold text-blaster-fg mb-3">About</h4>
+              <p className="text-blaster-muted">Extract emails & automated outreach.</p>
             </div>
           </div>
           <p className="mt-8 pt-6 border-t border-blaster-border text-center text-sm text-blaster-muted">
-            © {new Date().getFullYear()} wiblaster. All rights reserved.
+            © {new Date().getFullYear()} <Logo className="inline w-auto h-auto" />. All rights reserved.
           </p>
         </div>
       </footer>

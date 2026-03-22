@@ -133,7 +133,7 @@ export function TermsOfServicePage() {
       </main>
 
       <footer className="py-6 px-4 border-t border-blaster-border text-center text-sm text-blaster-muted mt-12">
-        <p>© {new Date().getFullYear()} wiblaster. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} <Logo className="inline w-auto h-auto" />. All rights reserved.</p>
       </footer>
     </div>
   );
