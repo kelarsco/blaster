@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react';
 const apiPort = process.env.VITE_API_PORT || 4000;
 export default defineConfig({
   plugins: [react()],
+  build: {
+    outDir: 'public',
+  },
   server: {
     port: 3000,
     proxy: {
@@ -19,7 +22,7 @@ export default defineConfig({
             const isBackendDown = /ECONNREFUSED|ECONNRESET/.test(msg) || /ECONNREFUSED|ECONNRESET/.test(cause);
             if (isBackendDown) {
               console.warn(
-                '[vite proxy] Backend not reachable at http://localhost:' + apiPort + '. Start the API server:\n  cd server && npm run dev\n  Or from project root: npm run dev'
+                '[vite proxy] Backend not reachable at http://localhost:' + apiPort + '. Start to API server:\n  cd server && npm run dev\n  Or from project root: npm run dev'
               );
             } else {
               console.error('[vite proxy]', msg);
