@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { loadProfileFromStorage, loadProfileImageFromStorage } from '../utils/profileStorage';
+import { Logo } from './Logo.jsx';
 
 function ProfileIcon() {
   return (
@@ -90,7 +91,7 @@ export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
           to="/app/dashboard"
           className="flex md:hidden items-center gap-2 text-blaster-fg font-semibold text-lg shrink-0"
         >
-          <span className="text-blaster-accent">⚡</span>
+          <Logo size="medium" />
           wiblaster
         </Link>
         {/* Help + Profile */}

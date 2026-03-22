@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { formatUTCDateOnly } from '../utils/dateUtils';
+import { Logo } from '../components/Logo.jsx';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: DashboardIcon },
@@ -204,7 +205,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
       >
       <div className="p-4 border-b border-blaster-border">
         <NavLink to="/app/dashboard" onClick={onMobileClose} className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
-          <span className="text-blaster-accent">⚡</span>
+          <Logo size="medium" />
           wiblaster
         </NavLink>
       </div>

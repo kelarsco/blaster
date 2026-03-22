@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Logo } from '../components/Logo.jsx';
 import { Search, Mail, BarChart2, Shield, Zap, TrendingUp } from 'react-feather';
 import { HeroSplitText } from '../components/HeroSplitText';
 
@@ -115,7 +117,7 @@ export function LandingPage() {
       <header className="sticky top-0 z-40 bg-blaster-bg pt-[5px] pb-[5px]">
         <div className="max-w-6xl mx-auto px-4 pt-3 pb-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-sm sm:text-lg uppercase tracking-tight text-blaster-fg shrink-0 min-w-0">
-            <span className="text-blaster-accent">⚡</span>
+            <Logo size="medium" />
             <span className="truncate">wiblaster</span>
           </Link>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
