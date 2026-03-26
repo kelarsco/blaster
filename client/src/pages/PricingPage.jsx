@@ -70,10 +70,14 @@ export function PricingPage() {
       planId = isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
     }
     storeSelectedPlan(planId);
+    
     if (user) {
+      // User is logged in, redirect to billing to pay
       navigate('/app/account/pricing', { replace: true });
       return;
     }
+    
+    // User is not logged in, redirect to signup
     navigate('/signup?from=pricing', { replace: true });
   };
 

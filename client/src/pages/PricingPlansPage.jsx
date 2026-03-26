@@ -36,8 +36,16 @@ export function PricingPlansPage() {
       window.location.href = 'mailto:support@wiblaster.com?subject=Custom%20Plan%20Inquiry';
       return;
     }
+    
+    // Check if user already has an active subscription
+    if (subscription && subscription.status === 'active' && subscription.planId !== 'free') {
+      showNotice('You already have an active subscription. Go to Account Settings to manage your plan.');
+      navigate('/app/account/settings/usage', { replace: true });
+      return;
+    }
+    
     if (plan.id === 'trial_weekly') {
-      // For weekly trial, use the weekly plan ID
+      // For weekly trial, use the weekly plan ID directly
       const planId = 'trial_weekly';
       setSubscribingPlanId(planId);
       try {
