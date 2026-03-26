@@ -36,7 +36,7 @@ function Skeleton({ className = '' }) {
   return <div className={`animate-pulse rounded bg-blaster-border/60 ${className}`} />;
 }
 
-export function DashboardPage() {
+export default function DashboardPage() {
   const { authFetch, subscription, user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
@@ -51,70 +51,6 @@ export function DashboardPage() {
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
-  });
-
-  // HARDCODED BYPASS - Manual admin upgrades (temporary fix)
-  const MANUALLY_UPGRADED_USERS = [
-    'dkelaroma@gmail.com', // Add other manually upgraded users here
-  ];
-
-  // Ultimate bypass - check if user is in manually upgraded list
-  const shouldShowUpgradeBanner = () => {
-    // HARDCODED CHECK: If user email is in manually upgraded list, NO upgrade banner
-    if (user && MANUALLY_UPGRADED_USERS.includes(user.email)) {
-      console.log('BYPASS: User is in manually upgraded list:', user.email);
-      return false;
-    }
-    
-    // FIRST PRIORITY: Check user object directly (most reliable for admin upgrades)
-    if (user) {
-      // If user has admin or premium role, NO upgrade banner
-      if (user.role === 'admin' || user.role === 'premium') return false;
-      
-      // If user has planId that's not free, NO upgrade banner
-      if (user.planId && user.planId !== 'free') return false;
-      
-      // If user has any plan property that indicates paid status
-      if (user.plan && user.plan !== 'free') return false;
-    }
-    
-    // SECOND PRIORITY: Check subscription object (for Paystack users)
-    if (subscription) {
-      // If admin manually upgraded flag is set, NO upgrade banner
-      if (subscription.adminUpgraded) return false;
-      
-      // If subscription has any planId that's not free, NO upgrade banner
-      if (subscription.planId && subscription.planId !== 'free') return false;
-      
-      // If explicitly free plan, show upgrade banner
-      if (subscription.planId === 'free') return true;
-    }
-    
-    // FALLBACK: If no data, show upgrade banner
-    return true;
-  };
-
-  // Debug logging (remove in production)
-  console.log('DashboardPage Debug - HARDCODED BYPASS:', {
-    userEmail: user?.email,
-    isInManualList: user && MANUALLY_UPGRADED_USERS.includes(user.email),
-    manuallyUpgradedUsers: MANUALLY_UPGRADED_USERS,
-    user: user ? { 
-      id: user.id, 
-      role: user.role, 
-      planId: user.planId,
-      plan: user.plan,
-      email: user.email 
-    } : null,
-    subscription: subscription ? { 
-      status: subscription.status, 
-      planId: subscription.planId, 
-      adminUpgraded: subscription.adminUpgraded 
-    } : null,
-    shouldShowUpgradeBanner: shouldShowUpgradeBanner(),
-    userRole: user?.role,
-    userPlanId: user?.planId,
-    userPlan: user?.plan
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
@@ -466,9 +402,6 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
-      {/* Show upgrade banner only for free users */}
-      {shouldShowUpgradeBanner() && <UpgradeBanner />}
-      
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-xs md:text-sm text-blaster-muted">
           <span className="font-medium text-blaster-fg">Show:</span>

@@ -252,6 +252,7 @@ async function runSchema(p) {
       );
 
       INSERT INTO plans (id, name, amount, interval, features) VALUES
+        ('free', 'Free Plan', 0, 'monthly', '{"emails":"200","users":"1 seat","scans":"200","support":"Email support"}'::jsonb),
         ('trial_weekly', 'Starter Trial', 100, 'weekly', '{"emails":"2000","users":"1 seat","scans":"500 daily","support":"Email support"}'::jsonb),
         ('essentials_monthly', 'Essentials', 3900, 'monthly', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
         ('essentials_annual', 'Essentials', 39000, 'annually', '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb),
@@ -267,10 +268,7 @@ async function runSchema(p) {
       UPDATE plans SET amount = 7900, features = '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb WHERE id = 'standard_monthly';
       UPDATE plans SET amount = 79000, features = '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb WHERE id = 'standard_annual';
 
-      -- Remove the free trial plan
-      DELETE FROM plans WHERE id = 'free';
-
-      -- Update plan features for remaining plans
+      -- Update existing plans to new pricing plans
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"5"') WHERE id LIKE 'essentials%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"10"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'premium%';
