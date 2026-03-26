@@ -53,23 +53,37 @@ export function ScannerPage() {
   const { authFetch, subscription, user } = useAuth();
   const navigate = useNavigate();
 
-  // Simplified check - if user has any subscription that's not free, don't show upgrade prompt
-  const shouldShowUpgradePrompt = !subscription || 
-    subscription.planId === 'free' || 
-    subscription.planId === null ||
-    subscription.planId === undefined;
+  // Check for any paid access - either through subscription OR admin upgrade
+  const hasPaidAccess = (
+    // Has active paid subscription
+    (subscription && subscription.planId && subscription.planId !== 'free') ||
+    // OR was manually upgraded by admin (check user role/plan)
+    (user && (
+      user.role === 'admin' || 
+      user.role === 'premium' ||
+      user.planId && user.planId !== 'free' ||
+      user.subscriptionPlan && user.subscriptionPlan !== 'free'
+    ))
+  );
+
+  // Only show upgrade prompt if user has no paid access
+  const shouldShowUpgradePrompt = !hasPaidAccess;
 
   // Debug logging (remove in production)
   console.log('ScannerPage Debug:', {
-    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
+    user: user ? { 
+      id: user.id, 
+      role: user.role, 
+      planId: user.planId, 
+      subscriptionPlan: user.subscriptionPlan 
+    } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
-    shouldShowUpgradePrompt,
-    planIdType: typeof subscription?.planId,
-    planIdValue: subscription?.planId
+    hasPaidAccess,
+    shouldShowUpgradePrompt
   });
 
   // Show upgrade prompt only for free users

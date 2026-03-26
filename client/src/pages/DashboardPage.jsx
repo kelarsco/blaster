@@ -53,23 +53,37 @@ export function DashboardPage() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  // Simplified check - if user has any subscription that's not free, don't show upgrade banner
-  const shouldShowUpgradeBanner = !subscription || 
-    subscription.planId === 'free' || 
-    subscription.planId === null ||
-    subscription.planId === undefined;
+  // Check for any paid access - either through subscription OR admin upgrade
+  const hasPaidAccess = (
+    // Has active paid subscription
+    (subscription && subscription.planId && subscription.planId !== 'free') ||
+    // OR was manually upgraded by admin (check user role/plan)
+    (user && (
+      user.role === 'admin' || 
+      user.role === 'premium' ||
+      user.planId && user.planId !== 'free' ||
+      user.subscriptionPlan && user.subscriptionPlan !== 'free'
+    ))
+  );
+
+  // Only show upgrade banner if user has no paid access
+  const shouldShowUpgradeBanner = !hasPaidAccess;
 
   // Debug logging (remove in production)
   console.log('DashboardPage Debug:', {
-    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
+    user: user ? { 
+      id: user.id, 
+      role: user.role, 
+      planId: user.planId, 
+      subscriptionPlan: user.subscriptionPlan 
+    } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
-    shouldShowUpgradeBanner,
-    planIdType: typeof subscription?.planId,
-    planIdValue: subscription?.planId
+    hasPaidAccess,
+    shouldShowUpgradeBanner
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;

@@ -14,19 +14,20 @@ export function SubscriptionGuard({ children }) {
     );
   }
 
-  // Allow access if user has an active subscription (not free trial)
-  const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
-  
-  // Allow access if user was manually upgraded by admin or has any paid plan
-  const isAdminUpgraded = user && (
-    user.role === 'admin' || 
-    user.role === 'premium' ||
+  // Check for any paid access - either through subscription OR admin upgrade
+  const hasPaidAccess = (
+    // Has active paid subscription
     (subscription && subscription.planId && subscription.planId !== 'free') ||
-    (subscription && subscription.status === 'active' && subscription.adminUpgraded) ||
-    (user && user.planId && user.planId !== 'free')
+    // OR was manually upgraded by admin (check user role/plan)
+    (user && (
+      user.role === 'admin' || 
+      user.role === 'premium' ||
+      user.planId && user.planId !== 'free' ||
+      user.subscriptionPlan && user.subscriptionPlan !== 'free'
+    ))
   );
 
-  if (!hasActiveSubscription && !isAdminUpgraded) {
+  if (!hasPaidAccess) {
     return <Navigate to="/pricing" replace />;
   }
 
