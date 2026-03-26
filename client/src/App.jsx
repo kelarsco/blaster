@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToolStateProvider } from './context/ToolStateContext';
+import { SubscriptionGuard } from './components/SubscriptionGuard';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
@@ -106,9 +107,11 @@ function AppRoutes() {
           path="/app"
           element={
             <ProtectedRoute>
-              <ToolStateProvider>
-                <AppLayout />
-              </ToolStateProvider>
+              <SubscriptionGuard>
+                <ToolStateProvider>
+                  <AppLayout />
+                </ToolStateProvider>
+              </SubscriptionGuard>
             </ProtectedRoute>
           }
         >

@@ -4,20 +4,22 @@
  */
 export const PLANS = [
   {
-    id: 'free',
-    name: 'Free trial',
-    tag: null,
+    id: 'trial_weekly',
+    name: 'Starter Trial',
+    tag: 'Popular',
     description:
-      '48-hour free trial to test wiblaster and validate results before upgrading.',
-    price: 0,
+      '7-day trial with full access. Perfect for testing wiblaster with up to 500 store scans daily. Automatically $1/week after trial ends.',
+    price: 1,
     originalPrice: null,
-    period: 'month',
-    current: true,
+    period: 'week',
+    current: false,
+    isTrial: true,
     features: {
-      emails: '200',
+      emails: '2,000',
       users: '1 seat',
       audiences: '1 audience',
-      support: 'Email (limited)',
+      scans: '500 daily',
+      support: 'Email support',
       onboarding: false,
       ai: false,
     },
@@ -28,7 +30,7 @@ export const PLANS = [
     tag: null,
     description:
       'Reliable outreach for early-stage growth. Designed for solo operators and agencies beginning consistent outreach.',
-    price: 8,
+    price: 39,
     originalPrice: 75,
     period: 'month',
     current: false,
@@ -47,7 +49,7 @@ export const PLANS = [
     tag: 'Best value',
     description:
       'Scale outreach with control, personalization, and automation. Built for serious outreach workflows that need stability and performance.',
-    price: 20,
+    price: 79,
     originalPrice: 250,
     period: 'month',
     current: false,
@@ -89,7 +91,18 @@ export function formatPriceNum(n) {
   return Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
 }
 
-export function getDisplayPrice(monthlyPrice, isAnnually) {
+export function getDisplayPrice(monthlyPrice, isAnnually, period) {
+  // Handle weekly pricing
+  if (period === 'week') {
+    return {
+      primary: monthlyPrice,
+      primaryLabel: 'week',
+      secondary: null,
+      secondaryLabel: null,
+    };
+  }
+  
+  // Handle annual pricing
   if (isAnnually && monthlyPrice > 0) {
     const totalAnnual = monthlyPrice * MONTHS_BILLED_ANNUALLY;
     const effectivePerMonth = totalAnnual / 12;
@@ -100,6 +113,8 @@ export function getDisplayPrice(monthlyPrice, isAnnually) {
       secondaryLabel: 'mo',
     };
   }
+  
+  // Handle monthly pricing
   return {
     primary: monthlyPrice,
     primaryLabel: 'month',

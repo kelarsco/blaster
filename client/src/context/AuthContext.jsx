@@ -13,6 +13,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessTokenState] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const refreshPromiseRef = useRef(null);
 
@@ -88,6 +89,20 @@ export function AuthProvider({ children }) {
             setUser(result.user);
             setAccessTokenState(result.accessToken);
             persistAccessToken(result.accessToken);
+            
+            // Fetch subscription data
+            fetch(`${API}/billing/subscription`, {
+              headers: { 'Authorization': `Bearer ${result.accessToken}` }
+            })
+              .then(r => r.json())
+              .then(data => {
+                if (data.subscription) {
+                  setSubscription(data.subscription);
+                }
+              })
+              .catch(() => {
+                // Ignore subscription fetch errors
+              });
           }
         }
       } catch (_) {
@@ -274,9 +289,11 @@ export function AuthProvider({ children }) {
         user,
         loading,
         accessToken,
+        subscription,
         setUser,
         setAccessToken,
         setAccessTokenState,
+        setSubscription,
         authFetch,
         loginWithGoogle,
         logout,

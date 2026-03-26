@@ -63,7 +63,12 @@ export function PricingPage() {
       window.location.href = 'mailto:support@wiblaster.com?subject=Custom%20Plan%20Inquiry';
       return;
     }
-    const planId = plan.id === 'free' ? 'free' : isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
+    let planId;
+    if (plan.id === 'trial_weekly') {
+      planId = 'trial_weekly';
+    } else {
+      planId = isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
+    }
     storeSelectedPlan(planId);
     if (user) {
       navigate('/app/account/pricing', { replace: true });
@@ -204,7 +209,7 @@ export function PricingPage() {
 
         <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {PLANS.map((plan) => {
-            const display = getDisplayPrice(plan.price, isAnnually);
+            const display = getDisplayPrice(plan.price, isAnnually, plan.period);
             return (
               <div
                 key={plan.id}

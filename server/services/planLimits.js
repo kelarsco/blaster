@@ -3,9 +3,8 @@ import { getDb } from '../db.js';
 /** Default sender limit when user has no subscription (free). */
 const DEFAULT_SENDER_LIMIT = 1;
 const DEFAULT_DOMAIN_LIMIT = 1;
-const FREE_TRIAL_HOURS = 48;
-const FREE_TRIAL_EMAILS_LIMIT = 200;
-const FREE_TRIAL_SCANS_LIMIT = 200;
+const TRIAL_WEEKLY_SCANS_LIMIT = 500;
+const TRIAL_WEEKLY_EMAILS_LIMIT = 2000;
 
 /** Cap for "unlimited" plans. */
 const UNLIMITED_SENDERS = 999;

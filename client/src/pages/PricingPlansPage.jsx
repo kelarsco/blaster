@@ -36,10 +36,36 @@ export function PricingPlansPage() {
       window.location.href = 'mailto:support@wiblaster.com?subject=Custom%20Plan%20Inquiry';
       return;
     }
-    if (plan.id === 'free') {
-      storeSelectedPlan(plan.id);
+    if (plan.id === 'trial_weekly') {
+      // For weekly trial, use the weekly plan ID
+      const planId = 'trial_weekly';
+      setSubscribingPlanId(planId);
+      try {
+        const res = await authFetch(`${API}/billing/initialize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.authorizationUrl) {
+          if (data.reference) {
+            try {
+              sessionStorage.setItem('paystack-pending-reference', data.reference);
+            } catch (_) {}
+          }
+          window.location.href = data.authorizationUrl;
+          return;
+        }
+        throw new Error(data.error || 'Payment initialization failed');
+      } catch (err) {
+        showNotice(err.message || 'Failed to start subscription. Please try again.');
+      } finally {
+        setSubscribingPlanId(null);
+      }
       return;
     }
+    
+    // For monthly/annual plans
     const planId = isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
     setSubscribingPlanId(planId);
     try {
@@ -58,15 +84,9 @@ export function PricingPlansPage() {
         window.location.href = data.authorizationUrl;
         return;
       }
-      if (!res.ok) {
-        const msg = data.error || 'Could not start subscription.';
-        showNotice(
-          msg.includes('Invalid Amount') ? 'Payment setup is updating. Please try again in a moment or contact support.' : msg,
-          'Could not start subscription'
-        );
-      }
-    } catch (e) {
-      showNotice(e?.message || 'Something went wrong. Please try again.', 'Could not start subscription');
+      throw new Error(data.error || 'Payment initialization failed');
+    } catch (err) {
+      showNotice(err.message || 'Failed to start subscription. Please try again.');
     } finally {
       setSubscribingPlanId(null);
     }
@@ -146,9 +166,9 @@ export function PricingPlansPage() {
             <p className="text-sm text-blaster-muted mt-2 mb-4">{plan.description}</p>
             <div className="mb-4">
               {(() => {
-                if (plan.id === 'free') {
+                if (plan.id === 'trial_weekly') {
                   return (
-                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">48-hour free trial*</span>
+                    <span className="text-xl md:text-2xl font-bold text-blaster-fg">$1/week trial*</span>
                   );
                 }
                 if (plan.customContact) {
@@ -156,7 +176,7 @@ export function PricingPlansPage() {
                     <span className="text-xl md:text-2xl font-bold text-blaster-fg">Contact for custom</span>
                   );
                 }
-                const display = getDisplayPrice(plan.price, isAnnually);
+                const display = getDisplayPrice(plan.price, isAnnually, plan.period);
                 const showOriginal = plan.originalPrice != null && !isAnnually;
                 if (showOriginal) {
                   return (
