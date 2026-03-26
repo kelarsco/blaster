@@ -54,13 +54,22 @@ export function DashboardPage() {
   });
 
   // Simplified check - if user has any subscription that's not free, don't show upgrade banner
-  const shouldShowUpgradeBanner = !subscription || subscription.planId === 'free';
+  const shouldShowUpgradeBanner = !subscription || 
+    subscription.planId === 'free' || 
+    subscription.planId === null ||
+    subscription.planId === undefined;
 
   // Debug logging (remove in production)
   console.log('DashboardPage Debug:', {
     user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
-    subscription: subscription ? { status: subscription.status, planId: subscription.planId, adminUpgraded: subscription.adminUpgraded } : null,
-    shouldShowUpgradeBanner
+    subscription: subscription ? { 
+      status: subscription.status, 
+      planId: subscription.planId, 
+      adminUpgraded: subscription.adminUpgraded 
+    } : null,
+    shouldShowUpgradeBanner,
+    planIdType: typeof subscription?.planId,
+    planIdValue: subscription?.planId
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;

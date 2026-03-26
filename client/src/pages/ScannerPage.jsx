@@ -54,13 +54,22 @@ export function ScannerPage() {
   const navigate = useNavigate();
 
   // Simplified check - if user has any subscription that's not free, don't show upgrade prompt
-  const shouldShowUpgradePrompt = !subscription || subscription.planId === 'free';
+  const shouldShowUpgradePrompt = !subscription || 
+    subscription.planId === 'free' || 
+    subscription.planId === null ||
+    subscription.planId === undefined;
 
   // Debug logging (remove in production)
   console.log('ScannerPage Debug:', {
     user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
-    subscription: subscription ? { status: subscription.status, planId: subscription.planId, adminUpgraded: subscription.adminUpgraded } : null,
-    shouldShowUpgradePrompt
+    subscription: subscription ? { 
+      status: subscription.status, 
+      planId: subscription.planId, 
+      adminUpgraded: subscription.adminUpgraded 
+    } : null,
+    shouldShowUpgradePrompt,
+    planIdType: typeof subscription?.planId,
+    planIdValue: subscription?.planId
   });
 
   // Show upgrade prompt only for free users
