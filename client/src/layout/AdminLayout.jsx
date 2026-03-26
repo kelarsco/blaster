@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import { API_BASE } from '../api';
+import { Logo } from '../components/Logo.jsx';
 
 const ADMIN_API = `${API_BASE}/api/bl-admin`;
 const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
@@ -134,10 +135,10 @@ export function AdminLayout() {
         }`}
       >
         <div className="p-4 border-b border-blaster-border">
-          <span className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
-            <span className="text-blaster-accent">⚡</span>
-            bl-admin
-          </span>
+          <div className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
+            <Logo />
+            <span>Admin</span>
+          </div>
         </div>
         <nav className="flex-1 p-3 space-y-0.5">
           {navItems.map(({ to, label, end, countKey }) => (
