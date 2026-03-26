@@ -21,6 +21,7 @@ export function SubscriptionGuard({ children }) {
   const isAdminUpgraded = user && (
     user.role === 'admin' || 
     user.role === 'premium' ||
+    (subscription && subscription.planId === 'premium') ||
     (subscription && subscription.status === 'active' && subscription.adminUpgraded)
   );
 

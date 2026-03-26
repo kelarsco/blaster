@@ -5,7 +5,7 @@ export function Logo({ className = '' }) {
     <img 
       src="/logo.png" 
       alt="wiblaster" 
-      className={`w-[100px] h-auto ${className}`}
+      className={`w-[130px] h-auto ${className}`}
     />
   );
 }

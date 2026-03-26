@@ -50,12 +50,17 @@ export function ScannerPage() {
     setResults,
     setAutomationOpen,
   } = useToolState();
-  const { authFetch, subscription } = useAuth();
+  const { authFetch, subscription, user } = useAuth();
   const navigate = useNavigate();
 
   // Check if user has active subscription
   const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
-  const isAdminUpgraded = subscription && (subscription.planId === 'premium' || subscription.adminUpgraded);
+  const isAdminUpgraded = user && (
+    user.role === 'admin' || 
+    user.role === 'premium' ||
+    (subscription && subscription.planId === 'premium') ||
+    (subscription && subscription.status === 'active' && subscription.adminUpgraded)
+  );
 
   // Show upgrade prompt only when user tries to scan without subscription
   if (!hasActiveSubscription && !isAdminUpgraded) {

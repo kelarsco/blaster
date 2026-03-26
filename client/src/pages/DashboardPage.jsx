@@ -37,7 +37,7 @@ function Skeleton({ className = '' }) {
 }
 
 export function DashboardPage() {
-  const { authFetch, subscription } = useAuth();
+  const { authFetch, subscription, user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
   const [emailsExtracted, setEmailsExtracted] = useState(0);
@@ -55,7 +55,12 @@ export function DashboardPage() {
 
   // Check if user has active subscription
   const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
-  const isAdminUpgraded = subscription && (subscription.planId === 'premium' || subscription.adminUpgraded);
+  const isAdminUpgraded = user && (
+    user.role === 'admin' || 
+    user.role === 'premium' ||
+    (subscription && subscription.planId === 'premium') ||
+    (subscription && subscription.status === 'active' && subscription.adminUpgraded)
+  );
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
   const endDate = pendingRange.end ? new Date(pendingRange.end) : null;
