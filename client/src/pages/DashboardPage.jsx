@@ -53,41 +53,68 @@ export function DashboardPage() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  // Check if user should have full access (either paid subscription OR admin upgrade)
+  // HARDCODED BYPASS - Manual admin upgrades (temporary fix)
+  const MANUALLY_UPGRADED_USERS = [
+    'dkelaroma@gmail.com', // Add other manually upgraded users here
+  ];
+
+  // Ultimate bypass - check if user is in manually upgraded list
   const shouldShowUpgradeBanner = () => {
-    // If no subscription data at all, show upgrade banner
-    if (!subscription) return true;
+    // HARDCODED CHECK: If user email is in manually upgraded list, NO upgrade banner
+    if (user && MANUALLY_UPGRADED_USERS.includes(user.email)) {
+      console.log('BYPASS: User is in manually upgraded list:', user.email);
+      return false;
+    }
     
-    // If explicitly free plan, show upgrade banner
-    if (subscription.planId === 'free') return true;
+    // FIRST PRIORITY: Check user object directly (most reliable for admin upgrades)
+    if (user) {
+      // If user has admin or premium role, NO upgrade banner
+      if (user.role === 'admin' || user.role === 'premium') return false;
+      
+      // If user has planId that's not free, NO upgrade banner
+      if (user.planId && user.planId !== 'free') return false;
+      
+      // If user has any plan property that indicates paid status
+      if (user.plan && user.plan !== 'free') return false;
+    }
     
-    // If admin manually upgraded, don't show upgrade banner
-    if (subscription.adminUpgraded) return false;
+    // SECOND PRIORITY: Check subscription object (for Paystack users)
+    if (subscription) {
+      // If admin manually upgraded flag is set, NO upgrade banner
+      if (subscription.adminUpgraded) return false;
+      
+      // If subscription has any planId that's not free, NO upgrade banner
+      if (subscription.planId && subscription.planId !== 'free') return false;
+      
+      // If explicitly free plan, show upgrade banner
+      if (subscription.planId === 'free') return true;
+    }
     
-    // If user has admin role, don't show upgrade banner
-    if (user && (user.role === 'admin' || user.role === 'premium')) return false;
-    
-    // If user object has planId that's not free, don't show upgrade banner
-    if (user && user.planId && user.planId !== 'free') return false;
-    
-    // If subscription has any planId that's not free, don't show upgrade banner
-    if (subscription.planId && subscription.planId !== 'free') return false;
-    
-    // Default: show upgrade banner
+    // FALLBACK: If no data, show upgrade banner
     return true;
   };
 
   // Debug logging (remove in production)
-  console.log('DashboardPage Debug:', {
-    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
+  console.log('DashboardPage Debug - HARDCODED BYPASS:', {
+    userEmail: user?.email,
+    isInManualList: user && MANUALLY_UPGRADED_USERS.includes(user.email),
+    manuallyUpgradedUsers: MANUALLY_UPGRADED_USERS,
+    user: user ? { 
+      id: user.id, 
+      role: user.role, 
+      planId: user.planId,
+      plan: user.plan,
+      email: user.email 
+    } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
     shouldShowUpgradeBanner: shouldShowUpgradeBanner(),
-    planIdType: typeof subscription?.planId,
-    planIdValue: subscription?.planId
+    userRole: user?.role,
+    userPlanId: user?.planId,
+    userPlan: user?.plan
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;

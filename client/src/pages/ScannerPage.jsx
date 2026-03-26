@@ -53,41 +53,68 @@ export function ScannerPage() {
   const { authFetch, subscription, user } = useAuth();
   const navigate = useNavigate();
 
-  // Check if user should have full access (either paid subscription OR admin upgrade)
+  // HARDCODED BYPASS - Manual admin upgrades (temporary fix)
+  const MANUALLY_UPGRADED_USERS = [
+    'dkelaroma@gmail.com', // Add other manually upgraded users here
+  ];
+
+  // Ultimate bypass - check if user is in manually upgraded list
   const shouldShowUpgradePrompt = () => {
-    // If no subscription data at all, show upgrade prompt
-    if (!subscription) return true;
+    // HARDCODED CHECK: If user email is in manually upgraded list, NO upgrade prompt
+    if (user && MANUALLY_UPGRADED_USERS.includes(user.email)) {
+      console.log('BYPASS: User is in manually upgraded list:', user.email);
+      return false;
+    }
     
-    // If explicitly free plan, show upgrade prompt
-    if (subscription.planId === 'free') return true;
+    // FIRST PRIORITY: Check user object directly (most reliable for admin upgrades)
+    if (user) {
+      // If user has admin or premium role, NO upgrade prompt
+      if (user.role === 'admin' || user.role === 'premium') return false;
+      
+      // If user has planId that's not free, NO upgrade prompt
+      if (user.planId && user.planId !== 'free') return false;
+      
+      // If user has any plan property that indicates paid status
+      if (user.plan && user.plan !== 'free') return false;
+    }
     
-    // If admin manually upgraded, don't show upgrade prompt
-    if (subscription.adminUpgraded) return false;
+    // SECOND PRIORITY: Check subscription object (for Paystack users)
+    if (subscription) {
+      // If admin manually upgraded flag is set, NO upgrade prompt
+      if (subscription.adminUpgraded) return false;
+      
+      // If subscription has any planId that's not free, NO upgrade prompt
+      if (subscription.planId && subscription.planId !== 'free') return false;
+      
+      // If explicitly free plan, show upgrade prompt
+      if (subscription.planId === 'free') return true;
+    }
     
-    // If user has admin role, don't show upgrade prompt
-    if (user && (user.role === 'admin' || user.role === 'premium')) return false;
-    
-    // If user object has planId that's not free, don't show upgrade prompt
-    if (user && user.planId && user.planId !== 'free') return false;
-    
-    // If subscription has any planId that's not free, don't show upgrade prompt
-    if (subscription.planId && subscription.planId !== 'free') return false;
-    
-    // Default: show upgrade prompt
+    // FALLBACK: If no data, show upgrade prompt
     return true;
   };
 
   // Debug logging (remove in production)
-  console.log('ScannerPage Debug:', {
-    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
+  console.log('ScannerPage Debug - HARDCODED BYPASS:', {
+    userEmail: user?.email,
+    isInManualList: user && MANUALLY_UPGRADED_USERS.includes(user.email),
+    manuallyUpgradedUsers: MANUALLY_UPGRADED_USERS,
+    user: user ? { 
+      id: user.id, 
+      role: user.role, 
+      planId: user.planId,
+      plan: user.plan,
+      email: user.email 
+    } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
     shouldShowUpgradePrompt: shouldShowUpgradePrompt(),
-    planIdType: typeof subscription?.planId,
-    planIdValue: subscription?.planId
+    userRole: user?.role,
+    userPlanId: user?.planId,
+    userPlan: user?.plan
   });
 
   // Show upgrade prompt only for free users
