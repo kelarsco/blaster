@@ -55,12 +55,24 @@ export function ScannerPage() {
 
   // Check if user has active subscription
   const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
+  
+  // Enhanced admin upgrade detection
   const isAdminUpgraded = user && (
     user.role === 'admin' || 
     user.role === 'premium' ||
     (subscription && subscription.planId === 'premium') ||
-    (subscription && subscription.status === 'active' && subscription.adminUpgraded)
+    (subscription && subscription.status === 'active' && subscription.adminUpgraded) ||
+    (subscription && subscription.planId && subscription.planId.includes('premium')) ||
+    (user && user.planId && user.planId === 'premium')
   );
+
+  // Debug logging (remove in production)
+  console.log('ScannerPage Debug:', {
+    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
+    subscription: subscription ? { status: subscription.status, planId: subscription.planId, adminUpgraded: subscription.adminUpgraded } : null,
+    hasActiveSubscription,
+    isAdminUpgraded
+  });
 
   // Show upgrade prompt only when user tries to scan without subscription
   if (!hasActiveSubscription && !isAdminUpgraded) {

@@ -123,8 +123,17 @@ button[class*="blaster-accent"]:hover:not(.btn-blaster-accent) {
 [class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
   color: #ffffff !important;
 }
-/* Override link-style accent on buttons that use accent as background (e.g. Continue Campaign) */
+/* Override link-style accent on buttons that use accent as background */
 button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
+  color: #ffffff !important;
+}
+/* Additional strong rule for button text visibility */
+button.bg-blaster-accent,
+button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
+  color: #ffffff !important;
+}
+.bg-blaster-accent.text-white,
+.bg-blaster-accent.text-white:hover {
   color: #ffffff !important;
 }
 .input:focus, textarea:focus {
