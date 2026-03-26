@@ -5,7 +5,7 @@ const apiPort = process.env.VITE_API_PORT || 4000;
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: 'public',
+    outDir: 'dist',
   },
   server: {
     port: 3000,
