@@ -56,14 +56,13 @@ export function DashboardPage() {
   // Check if user has active subscription
   const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
   
-  // Enhanced admin upgrade detection
+  // Enhanced admin upgrade detection - check for any paid plan
   const isAdminUpgraded = user && (
     user.role === 'admin' || 
     user.role === 'premium' ||
-    (subscription && subscription.planId === 'premium') ||
+    (subscription && subscription.planId && subscription.planId !== 'free') ||
     (subscription && subscription.status === 'active' && subscription.adminUpgraded) ||
-    (subscription && subscription.planId && subscription.planId.includes('premium')) ||
-    (user && user.planId && user.planId === 'premium')
+    (user && user.planId && user.planId !== 'free')
   );
 
   // Debug logging (remove in production)
