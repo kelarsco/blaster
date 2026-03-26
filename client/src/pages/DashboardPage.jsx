@@ -53,24 +53,14 @@ export function DashboardPage() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  // Check if user has active subscription
-  const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
-  
-  // Enhanced admin upgrade detection - check for any paid plan
-  const isAdminUpgraded = user && (
-    user.role === 'admin' || 
-    user.role === 'premium' ||
-    (subscription && subscription.planId && subscription.planId !== 'free') ||
-    (subscription && subscription.status === 'active' && subscription.adminUpgraded) ||
-    (user && user.planId && user.planId !== 'free')
-  );
+  // Simplified check - if user has any subscription that's not free, don't show upgrade banner
+  const shouldShowUpgradeBanner = !subscription || subscription.planId === 'free';
 
   // Debug logging (remove in production)
   console.log('DashboardPage Debug:', {
     user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
     subscription: subscription ? { status: subscription.status, planId: subscription.planId, adminUpgraded: subscription.adminUpgraded } : null,
-    hasActiveSubscription,
-    isAdminUpgraded
+    shouldShowUpgradeBanner
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
@@ -422,8 +412,8 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
-      {/* Show upgrade banner for non-subscribed users */}
-      {!hasActiveSubscription && !isAdminUpgraded && <UpgradeBanner />}
+      {/* Show upgrade banner only for free users */}
+      {shouldShowUpgradeBanner && <UpgradeBanner />}
       
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-xs md:text-sm text-blaster-muted">

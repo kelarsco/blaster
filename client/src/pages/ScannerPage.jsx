@@ -53,28 +53,18 @@ export function ScannerPage() {
   const { authFetch, subscription, user } = useAuth();
   const navigate = useNavigate();
 
-  // Check if user has active subscription
-  const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
-  
-  // Enhanced admin upgrade detection - check for any paid plan
-  const isAdminUpgraded = user && (
-    user.role === 'admin' || 
-    user.role === 'premium' ||
-    (subscription && subscription.planId && subscription.planId !== 'free') ||
-    (subscription && subscription.status === 'active' && subscription.adminUpgraded) ||
-    (user && user.planId && user.planId !== 'free')
-  );
+  // Simplified check - if user has any subscription that's not free, don't show upgrade prompt
+  const shouldShowUpgradePrompt = !subscription || subscription.planId === 'free';
 
   // Debug logging (remove in production)
   console.log('ScannerPage Debug:', {
     user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
     subscription: subscription ? { status: subscription.status, planId: subscription.planId, adminUpgraded: subscription.adminUpgraded } : null,
-    hasActiveSubscription,
-    isAdminUpgraded
+    shouldShowUpgradePrompt
   });
 
-  // Show upgrade prompt only when user tries to scan without subscription
-  if (!hasActiveSubscription && !isAdminUpgraded) {
+  // Show upgrade prompt only for free users
+  if (shouldShowUpgradePrompt) {
     return (
       <div className="p-4 sm:p-6 md:p-8 bg-[#f5f6fb] min-h-full">
         <div className="mb-4 md:mb-6">
