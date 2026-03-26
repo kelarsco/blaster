@@ -84,17 +84,21 @@ export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
   const avatarUrl = profileImage || googlePicture;
 
   return (
-    <header className="sticky top-0 z-20 flex flex-col bg-white border-b border-blaster-border shrink-0">
-      <div className="flex items-center justify-between md:justify-end gap-4 px-6 py-4 h-[62px]">
+    <header className="sticky top-0 z-20 bg-white border-b border-blaster-border shrink-0">
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 h-[60px] sm:h-[62px]">
         {/* Logo: mobile only; desktop has it in sidebar */}
         <Link
           to="/app/dashboard"
-          className="flex md:hidden items-center gap-2 text-blaster-fg font-semibold text-lg shrink-0"
+          className="flex md:hidden items-center gap-2 text-blaster-fg font-semibold text-base sm:text-lg shrink-0"
         >
           <Logo />
         </Link>
+        
+        {/* Spacer */}
+        <div className="flex-1"></div>
+        
         {/* Help + Profile */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {loading ? (
             <>
               <Skeleton className="h-10 w-[62px] rounded-lg" />

@@ -57,6 +57,7 @@ export function ScannerPage() {
   const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
   const isAdminUpgraded = subscription && (subscription.planId === 'premium' || subscription.adminUpgraded);
 
+  // Show upgrade prompt only when user tries to scan without subscription
   if (!hasActiveSubscription && !isAdminUpgraded) {
     return (
       <div className="p-4 sm:p-6 md:p-8 bg-[#f5f6fb] min-h-full">

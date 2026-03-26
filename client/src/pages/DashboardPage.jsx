@@ -6,12 +6,38 @@ import { useAuth } from '../context/AuthContext';
 
 const SKELETON_DURATION_MS = 1500;
 
+function UpgradeBanner() {
+  return (
+    <div className="bg-blaster-accent/10 border border-blaster-accent/20 rounded-lg p-4 mb-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blaster-accent/20 rounded-full flex items-center justify-center">
+            <svg className="w-5 h-5 text-blaster-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-blaster-fg">Upgrade to Use Scanner</h3>
+            <p className="text-sm text-blaster-muted">Choose a plan to start extracting emails and sending campaigns</p>
+          </div>
+        </div>
+        <Link 
+          to="/app/account/pricing" 
+          className="bg-blaster-accent hover:bg-blaster-accent/90 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Choose Plan
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function Skeleton({ className = '' }) {
   return <div className={`animate-pulse rounded bg-blaster-border/60 ${className}`} />;
 }
 
 export function DashboardPage() {
-  const { authFetch } = useAuth();
+  const { authFetch, subscription } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
   const [emailsExtracted, setEmailsExtracted] = useState(0);
@@ -26,6 +52,10 @@ export function DashboardPage() {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
+
+  // Check if user has active subscription
+  const hasActiveSubscription = subscription && subscription.status === 'active' && subscription.planId !== 'free';
+  const isAdminUpgraded = subscription && (subscription.planId === 'premium' || subscription.adminUpgraded);
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
   const endDate = pendingRange.end ? new Date(pendingRange.end) : null;
@@ -376,6 +406,9 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
+      {/* Show upgrade banner for non-subscribed users */}
+      {!hasActiveSubscription && !isAdminUpgraded && <UpgradeBanner />}
+      
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-xs md:text-sm text-blaster-muted">
           <span className="font-medium text-blaster-fg">Show:</span>

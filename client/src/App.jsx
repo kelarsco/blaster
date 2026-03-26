@@ -107,12 +107,10 @@ function AppRoutes() {
           path="/app"
           element={
             <ProtectedRoute>
-              <SubscriptionGuard>
-                <ToolStateProvider>
-                  <AppLayout />
-                </ToolStateProvider>
-              </SubscriptionGuard>
-            </ProtectedRoute>
+            <ToolStateProvider>
+              <AppLayout />
+            </ToolStateProvider>
+          </ProtectedRoute>
           }
         >
           <Route index element={<Navigate to="/app/dashboard" replace />} />
