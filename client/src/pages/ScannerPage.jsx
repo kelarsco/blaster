@@ -53,41 +53,45 @@ export function ScannerPage() {
   const { authFetch, subscription, user } = useAuth();
   const navigate = useNavigate();
 
-  // Check for any paid access - either through subscription OR admin upgrade
-  const hasPaidAccess = (
-    // Has active paid subscription
-    (subscription && subscription.planId && subscription.planId !== 'free') ||
-    // OR was manually upgraded by admin (check user role/plan)
-    (user && (
-      user.role === 'admin' || 
-      user.role === 'premium' ||
-      user.planId && user.planId !== 'free' ||
-      user.subscriptionPlan && user.subscriptionPlan !== 'free'
-    ))
-  );
-
-  // Only show upgrade prompt if user has no paid access
-  const shouldShowUpgradePrompt = !hasPaidAccess;
+  // Check if user should have full access (either paid subscription OR admin upgrade)
+  const shouldShowUpgradePrompt = () => {
+    // If no subscription data at all, show upgrade prompt
+    if (!subscription) return true;
+    
+    // If explicitly free plan, show upgrade prompt
+    if (subscription.planId === 'free') return true;
+    
+    // If admin manually upgraded, don't show upgrade prompt
+    if (subscription.adminUpgraded) return false;
+    
+    // If user has admin role, don't show upgrade prompt
+    if (user && (user.role === 'admin' || user.role === 'premium')) return false;
+    
+    // If user object has planId that's not free, don't show upgrade prompt
+    if (user && user.planId && user.planId !== 'free') return false;
+    
+    // If subscription has any planId that's not free, don't show upgrade prompt
+    if (subscription.planId && subscription.planId !== 'free') return false;
+    
+    // Default: show upgrade prompt
+    return true;
+  };
 
   // Debug logging (remove in production)
   console.log('ScannerPage Debug:', {
-    user: user ? { 
-      id: user.id, 
-      role: user.role, 
-      planId: user.planId, 
-      subscriptionPlan: user.subscriptionPlan 
-    } : null,
+    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
-    hasPaidAccess,
-    shouldShowUpgradePrompt
+    shouldShowUpgradePrompt: shouldShowUpgradePrompt(),
+    planIdType: typeof subscription?.planId,
+    planIdValue: subscription?.planId
   });
 
   // Show upgrade prompt only for free users
-  if (shouldShowUpgradePrompt) {
+  if (shouldShowUpgradePrompt()) {
     return (
       <div className="p-4 sm:p-6 md:p-8 bg-[#f5f6fb] min-h-full">
         <div className="mb-4 md:mb-6">

@@ -53,37 +53,41 @@ export function DashboardPage() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
-  // Check for any paid access - either through subscription OR admin upgrade
-  const hasPaidAccess = (
-    // Has active paid subscription
-    (subscription && subscription.planId && subscription.planId !== 'free') ||
-    // OR was manually upgraded by admin (check user role/plan)
-    (user && (
-      user.role === 'admin' || 
-      user.role === 'premium' ||
-      user.planId && user.planId !== 'free' ||
-      user.subscriptionPlan && user.subscriptionPlan !== 'free'
-    ))
-  );
-
-  // Only show upgrade banner if user has no paid access
-  const shouldShowUpgradeBanner = !hasPaidAccess;
+  // Check if user should have full access (either paid subscription OR admin upgrade)
+  const shouldShowUpgradeBanner = () => {
+    // If no subscription data at all, show upgrade banner
+    if (!subscription) return true;
+    
+    // If explicitly free plan, show upgrade banner
+    if (subscription.planId === 'free') return true;
+    
+    // If admin manually upgraded, don't show upgrade banner
+    if (subscription.adminUpgraded) return false;
+    
+    // If user has admin role, don't show upgrade banner
+    if (user && (user.role === 'admin' || user.role === 'premium')) return false;
+    
+    // If user object has planId that's not free, don't show upgrade banner
+    if (user && user.planId && user.planId !== 'free') return false;
+    
+    // If subscription has any planId that's not free, don't show upgrade banner
+    if (subscription.planId && subscription.planId !== 'free') return false;
+    
+    // Default: show upgrade banner
+    return true;
+  };
 
   // Debug logging (remove in production)
   console.log('DashboardPage Debug:', {
-    user: user ? { 
-      id: user.id, 
-      role: user.role, 
-      planId: user.planId, 
-      subscriptionPlan: user.subscriptionPlan 
-    } : null,
+    user: user ? { id: user.id, role: user.role, planId: user.planId } : null,
     subscription: subscription ? { 
       status: subscription.status, 
       planId: subscription.planId, 
       adminUpgraded: subscription.adminUpgraded 
     } : null,
-    hasPaidAccess,
-    shouldShowUpgradeBanner
+    shouldShowUpgradeBanner: shouldShowUpgradeBanner(),
+    planIdType: typeof subscription?.planId,
+    planIdValue: subscription?.planId
   });
 
   const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
@@ -436,7 +440,7 @@ export function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 md:p-8">
       {/* Show upgrade banner only for free users */}
-      {shouldShowUpgradeBanner && <UpgradeBanner />}
+      {shouldShowUpgradeBanner() && <UpgradeBanner />}
       
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-xs md:text-sm text-blaster-muted">
