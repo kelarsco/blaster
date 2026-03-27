@@ -87,7 +87,7 @@ export function AdminLayout() {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 60000);
+    const interval = setInterval(fetchCounts, 120000); // 2 minutes instead of 1 minute
     return () => clearInterval(interval);
   }, [fetchCounts]);
 

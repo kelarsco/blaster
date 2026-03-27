@@ -94,7 +94,7 @@ export function ToolStateProvider({ children }) {
         fetchResults().then((res) => res?.results != null && setResults(res.results));
       });
     };
-    intervalId = setInterval(poll, 2000);
+    intervalId = setInterval(poll, 5000); // 5 seconds instead of 2 seconds
     return () => { if (intervalId) clearInterval(intervalId); };
   }, [scanId, authFetch]);
 

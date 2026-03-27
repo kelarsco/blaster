@@ -156,7 +156,7 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
   }, [fetchSubscription]);
 
   useEffect(() => {
-    const interval = setInterval(fetchSubscription, 90 * 1000);
+    const interval = setInterval(fetchSubscription, 180 * 1000); // 3 minutes instead of 90 seconds
     return () => clearInterval(interval);
   }, [fetchSubscription]);
 

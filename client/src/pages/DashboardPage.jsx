@@ -67,7 +67,7 @@ export default function DashboardPage() {
   }, [fetchDashboardData]);
 
   useEffect(() => {
-    const interval = setInterval(fetchDashboardData, 4000);
+    const interval = setInterval(fetchDashboardData, 30000); // 30 seconds instead of 4 seconds
     return () => clearInterval(interval);
   }, [fetchDashboardData]);
 

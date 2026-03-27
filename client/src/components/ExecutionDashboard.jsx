@@ -35,7 +35,7 @@ export function ExecutionDashboard({ campaignId, onClose }) {
 
   useEffect(() => {
     fetchStats();
-    const id = setInterval(fetchStats, 2000);
+    const id = setInterval(fetchStats, 10000); // 10 seconds instead of 2 seconds
     return () => clearInterval(id);
   }, [fetchStats]);
 
