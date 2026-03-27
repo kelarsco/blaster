@@ -57,8 +57,10 @@ export async function initDb() {
       }
     }
   }
-  console.error('DB schema failed after ' + maxAttempts + ' attempts. Server will not exit – set DB_INIT_EXIT=1 to exit on failure.');
+  console.error('DB schema failed after ' + maxAttempts + ' attempts. Server will exit - fix DATABASE_URL and redeploy.');
   if (process.env.DB_INIT_EXIT === '1') process.exit(1);
+  // Force exit on DB failure to prevent 503 errors
+  process.exit(1);
   pool = null;
   return null;
 }

@@ -98,12 +98,26 @@ async function start() {
   app.get('/api/health', async (req, res) => {
     try {
       const db = getDb();
-      if (!db) return res.json({ ok: true, db: 'memory' });
+      if (!db) {
+        return res.status(503).json({ 
+          ok: false, 
+          error: 'Database not initialized',
+          db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
+        });
+      }
       await db.query('SELECT 1');
-      res.json({ ok: true, db: 'connected' });
+      res.json({ 
+        ok: true, 
+        db: 'connected',
+        db_url: process.env.DATABASE_URL?.split('@')[1] || 'HIDDEN'
+      });
     } catch (e) {
       console.error('[health]', e?.message || e);
-      res.status(503).json({ ok: false, error: e?.message || String(e) });
+      res.status(503).json({ 
+        ok: false, 
+        error: e?.message || String(e),
+        db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
+      });
     }
   });
   app.use('/api/auth', authRoutes);
