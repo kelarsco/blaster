@@ -1,36 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Check, X, Mail } from 'react-feather';
+import { useAuth } from '../context/AuthContext.jsx';
 import { API } from '../api.js';
-import { useAuth } from '../context/AuthContext';
+import { Send, Check, X, Mail } from 'react-feather';
 
 const SKELETON_DURATION_MS = 1500;
-
-function UpgradeBanner() {
-  return (
-    <div className="bg-blaster-accent/10 border border-blaster-accent/20 rounded-lg p-4 mb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blaster-accent/20 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-blaster-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="font-semibold text-blaster-fg">Upgrade to Use Scanner</h3>
-            <p className="text-sm text-blaster-muted">Choose a plan to start extracting emails and sending campaigns</p>
-          </div>
-        </div>
-        <Link 
-          to="/app/account/pricing" 
-          className="bg-blaster-accent hover:bg-blaster-accent/90 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-        >
-          Choose Plan
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 function Skeleton({ className = '' }) {
   return <div className={`animate-pulse rounded bg-blaster-border/60 ${className}`} />;
@@ -43,95 +17,7 @@ export default function DashboardPage() {
   const [emailsExtracted, setEmailsExtracted] = useState(0);
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [rangePreset, setRangePreset] = useState('this_year');
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [pendingRange, setPendingRange] = useState({ start: '', end: '' });
-   const [activeStep, setActiveStep] = useState(1);
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), 1);
-  });
-
-  const startDate = pendingRange.start ? new Date(pendingRange.start) : null;
-  const endDate = pendingRange.end ? new Date(pendingRange.end) : null;
-
-  const sameDay = (a, b) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  const toLocalDateString = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const getCalendarDays = () => {
-    const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
-    const firstWeekday = (start.getDay() + 6) % 7; // Monday as first day
-    const daysInCurrent = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
-
-    const days = [];
-
-    // Days from previous month to fill first week
-    for (let i = 0; i < firstWeekday; i += 1) {
-      const d = new Date(start);
-      d.setDate(d.getDate() - (firstWeekday - i));
-      days.push({ date: d, inCurrentMonth: false });
-    }
-
-    // Days in current month
-    for (let i = 1; i <= daysInCurrent; i += 1) {
-      const d = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), i);
-      days.push({ date: d, inCurrentMonth: true });
-    }
-
-    // Days from next month to complete grid
-    const remaining = (7 - (days.length % 7)) % 7;
-    for (let i = 1; i <= remaining; i += 1) {
-      const d = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, i);
-      days.push({ date: d, inCurrentMonth: false });
-    }
-
-    return days;
-  };
-
-  const calendarDays = getCalendarDays();
-
-  const handleDayClick = (day) => {
-    const iso = toLocalDateString(day);
-
-    if (!startDate || (startDate && endDate)) {
-      setPendingRange({ start: iso, end: '' });
-      return;
-    }
-
-    const clicked = day.getTime();
-    const startTime = startDate.getTime();
-
-    if (clicked < startTime) {
-      setPendingRange({ start: iso, end: pendingRange.start });
-    } else if (clicked === startTime) {
-      setPendingRange({ start: iso, end: '' });
-    } else {
-      setPendingRange({ start: pendingRange.start, end: iso });
-    }
-  };
-
-  const changeMonth = (offset) => {
-    setCalendarMonth((prev) => {
-      const next = new Date(prev);
-      next.setMonth(prev.getMonth() + offset);
-      return new Date(next.getFullYear(), next.getMonth(), 1);
-    });
-  };
-
-  const calendarTitle = new Intl.DateTimeFormat(undefined, {
-    month: 'long',
-    year: 'numeric',
-  }).format(calendarMonth);
+  const [activeStep, setActiveStep] = useState(1);
 
   const formatActivityTime = (iso) => {
     if (!iso) return '';
@@ -144,104 +30,14 @@ export default function DashboardPage() {
           minute: '2-digit',
           hour12: true,
         })
-        .replace(' ', '');
-      return `${day}/${time}`;
+        .toLowerCase();
+      return `${day} ${time}`;
     } catch {
       return '';
     }
   };
 
-  const formatRangeLabel = () => {
-    if (rangePreset === 'custom' && dateRange.start && dateRange.end) {
-      const opts = { year: 'numeric', month: 'short', day: 'numeric' };
-      return `${new Date(dateRange.start).toLocaleDateString(undefined, opts)} \u2013 ${new Date(
-        dateRange.end,
-      ).toLocaleDateString(undefined, opts)}`;
-    }
-    switch (rangePreset) {
-      case 'this_year':
-        return 'This year';
-      case 'today':
-        return 'Today';
-      case 'last_7_days':
-        return 'Last 7 days';
-      case 'last_30_days':
-        return 'Last 30 days';
-      case 'all_time':
-        return 'All time';
-      default:
-        return 'Custom range';
-    }
-  };
-
-  const applyPresetRange = React.useCallback((preset) => {
-    const today = new Date();
-    let start = '';
-    let end = '';
-
-    if (preset === 'today') {
-      start = end = today.toISOString().slice(0, 10);
-    } else if (preset === 'last_7_days') {
-      const endDate = today;
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - 6);
-      start = startDate.toISOString().slice(0, 10);
-      end = endDate.toISOString().slice(0, 10);
-    } else if (preset === 'last_30_days') {
-      const endDate = today;
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - 29);
-      start = startDate.toISOString().slice(0, 10);
-      end = endDate.toISOString().slice(0, 10);
-    } else if (preset === 'this_year') {
-      const startDate = new Date(today.getFullYear(), 0, 1);
-      const endDate = today;
-      start = startDate.toISOString().slice(0, 10);
-      end = endDate.toISOString().slice(0, 10);
-    } else {
-      start = '';
-      end = '';
-    }
-
-    setDateRange({ start, end });
-  }, []);
-
-  const getEffectiveRange = React.useCallback(() => {
-    if (rangePreset === 'all_time') return null;
-    if (rangePreset === 'custom') {
-      if (dateRange.start && dateRange.end) return { start: dateRange.start, end: dateRange.end };
-      return null;
-    }
-    const today = new Date();
-    let start = '';
-    let end = '';
-    if (rangePreset === 'today') {
-      start = end = today.toISOString().slice(0, 10);
-    } else if (rangePreset === 'last_7_days') {
-      const startDate = new Date();
-      startDate.setDate(today.getDate() - 6);
-      start = startDate.toISOString().slice(0, 10);
-      end = today.toISOString().slice(0, 10);
-    } else if (rangePreset === 'last_30_days') {
-      const startDate = new Date();
-      startDate.setDate(today.getDate() - 29);
-      start = startDate.toISOString().slice(0, 10);
-      end = today.toISOString().slice(0, 10);
-    } else if (rangePreset === 'this_year') {
-      start = new Date(today.getFullYear(), 0, 1).toISOString().slice(0, 10);
-      end = today.toISOString().slice(0, 10);
-    }
-    return start && end ? { start, end } : null;
-  }, [rangePreset, dateRange.start, dateRange.end]);
-
-  const isDateInRange = (isoString, range) => {
-    if (!range || !isoString) return true;
-    const d = new Date(isoString);
-    const day = toLocalDateString(d);
-    return day >= range.start && day <= range.end;
-  };
-
-  const fetchDashboardData = React.useCallback(() => {
+  const fetchDashboardData = useCallback(() => {
     if (!authFetch) return;
     Promise.all([
       authFetch(`${API}/campaigns`)
@@ -255,10 +51,10 @@ export default function DashboardPage() {
             failed: list.reduce((s, c) => s + (c.failed || 0), 0),
           });
         }),
-      authFetch(`${API}/activity/logs?limit=20`)
-        .then((r) => (r.ok ? r.json() : { logs: [] }))
-        .then((d) => setActivity(d.logs || [])),
-      authFetch(`${API}/scan/analytics`)
+      authFetch(`${API}/activity`)
+        .then((r) => (r.ok ? r.json() : { activity: [] }))
+        .then((d) => setActivity(d.activity || [])),
+      authFetch(`${API}/scans/extracted-count`)
         .then((r) => (r.ok ? r.json() : { extracted: 0 }))
         .then((d) => setEmailsExtracted(Number(d.extracted || 0))),
     ]);
@@ -275,26 +71,14 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchDashboardData]);
 
-  useEffect(() => {
-    applyPresetRange(rangePreset);
-  }, []);
-
-  const effectiveRange = getEffectiveRange();
-  const filteredCampaigns = effectiveRange
-    ? campaigns.filter((c) => isDateInRange(c.createdAt, effectiveRange))
-    : campaigns;
-  const filteredActivity = effectiveRange
-    ? activity.filter((log) => isDateInRange(log.createdAt, effectiveRange))
-    : activity;
-
-  const statsFromFiltered = {
-    total: filteredCampaigns.length,
-    sent: filteredCampaigns.reduce((s, c) => s + (c.sent || 0), 0),
-    failed: filteredCampaigns.reduce((s, c) => s + (c.failed || 0), 0),
+  const statsFromCampaigns = {
+    total: campaigns.length,
+    sent: campaigns.reduce((s, c) => s + (c.sent || 0), 0),
+    failed: campaigns.reduce((s, c) => s + (c.failed || 0), 0),
   };
 
-  const recentCampaigns = filteredCampaigns.slice(0, 5);
-  const scansFromActivity = filteredActivity
+  const recentCampaigns = campaigns.slice(0, 5);
+  const scansFromActivity = activity
     .filter((l) => l.type === 'scan_complete' || l.type === 'scan_start')
     .slice(0, 5);
   const isNewUser = recentCampaigns.length === 0 && scansFromActivity.length === 0;
@@ -305,25 +89,15 @@ export default function DashboardPage() {
       title: 'Add your first site',
       time: '2 minutes',
       summary: 'Tell us what to scout so we can start finding leads.',
-      body: 'Connect a store or any website you want Store Scouter to analyze. We will crawl pages, extract contacts, and prepare everything for your first campaign.',
-      primaryLabel: 'Add a site to scan',
+      body: 'Enter any Shopify, WooCommerce, or BigCommerce store URL. We\'ll extract contact emails from the site and help you start your first campaign.',
+      primaryLabel: 'Start Scanning',
       primaryTo: '/app/scanner',
-      secondaryLabel: 'Skip for now',
+      secondaryLabel: 'Learn more',
     },
     {
       id: 2,
-      title: 'Run your first scan',
-      time: '3 minutes',
-      summary: 'Kick off a scan to collect real contacts.',
-      body: 'Choose a site and start a scan. We will automatically discover email addresses and activity you can turn into outreach.',
-      primaryLabel: 'Start a new scan',
-      primaryTo: '/app/scanner',
-      secondaryLabel: 'View scanner activity',
-    },
-    {
-      id: 3,
-      title: 'Draft your first campaign',
-      time: '5 minutes',
+      title: 'Create your first campaign',
+      time: '4 minutes',
       summary: 'Turn contacts into a simple, focused campaign.',
       body: 'Use presets or start from scratch to create a campaign. Add your subject line and message once, then reuse it across scans.',
       primaryLabel: 'Create campaign',
@@ -331,7 +105,7 @@ export default function DashboardPage() {
       secondaryLabel: 'Browse campaigns',
     },
     {
-      id: 4,
+      id: 3,
       title: 'Connect your sending inbox',
       time: '4 minutes',
       summary: 'Connect an email sender so we can send on your behalf.',
@@ -340,20 +114,35 @@ export default function DashboardPage() {
       primaryTo: '/app/senders',
       secondaryLabel: 'Configure later',
     },
+    {
+      id: 4,
+      title: 'Send your first campaign',
+      time: '2 minutes',
+      summary: 'Launch your outreach and watch the results roll in.',
+      body: 'Send your campaign to your extracted contacts. Track opens, clicks, and responses in real-time.',
+      primaryLabel: 'Send campaign',
+      primaryTo: '/app/campaigns',
+      secondaryLabel: 'View results',
+    },
   ];
 
+  const [currentStep, setCurrentStep] = useState(0);
   const totalSteps = onboardingSteps.length;
-  const stepsCompleted = 0;
-  const activeOnboardingStep =
-    onboardingSteps.find((s) => s.id === activeStep) ?? onboardingSteps[0];
+  const stepsCompleted = onboardingSteps.filter((step) => {
+    if (step.id === 1) return scansFromActivity.length > 0;
+    if (step.id === 2) return recentCampaigns.length > 0;
+    if (step.id === 3) return false; // TODO: check if senders exist
+    if (step.id === 4) return statsFromCampaigns.sent > 0;
+    return false;
+  }).length;
 
   if (loading) {
     return (
       <div className="p-4 sm:p-6 md:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 md:mb-6">
           <div>
-            <Skeleton className="h-8 w-48 mb-2" />
-            <Skeleton className="h-4 w-64" />
+            <Skeleton className="h-6 w-24 mb-2" />
+            <Skeleton className="h-4 w-32" />
           </div>
           <Skeleton className="h-10 w-28 shrink-0" />
         </div>
@@ -362,7 +151,8 @@ export default function DashboardPage() {
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="bg-blaster-bg-card rounded-xl border border-blaster-border p-5 shadow-sm">
               <Skeleton className="h-8 w-12 mb-2" />
-              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-10 w-16 mb-1" />
+              <Skeleton className="h-4 w-20" />
             </div>
           ))}
         </div>
@@ -402,142 +192,6 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 md:gap-3 mb-3 md:mb-4">
-        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 text-xs md:text-sm text-blaster-muted">
-          <span className="font-medium text-blaster-fg">Show:</span>
-          <select
-            value={rangePreset}
-            onChange={(e) => {
-              const preset = e.target.value;
-              setRangePreset(preset);
-              applyPresetRange(preset);
-            }}
-            className="mx-[2px] bg-blaster-bg border border-blaster-border rounded-xl pl-[17px] pr-8 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
-          >
-            <option value="this_year">This year</option>
-            <option value="today">Today</option>
-            <option value="last_7_days">Last 7 days</option>
-            <option value="last_30_days">Last 30 days</option>
-            <option value="all_time">All time</option>
-            <option value="custom">Custom range</option>
-          </select>
-        </div>
-
-        <div className="relative hidden md:block">
-          <button
-            type="button"
-            onClick={() => {
-              const base = dateRange.start ? new Date(dateRange.start) : new Date();
-              setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-              setPendingRange(dateRange);
-              setIsDatePickerOpen((open) => !open);
-            }}
-            className="inline-flex items-center justify-between gap-2 rounded-xl border border-blaster-border bg-blaster-bg px-3 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition"
-          >
-            <span className="text-blaster-muted">Custom range</span>
-            <span className="font-medium">{formatRangeLabel()}</span>
-          </button>
-
-          {isDatePickerOpen && (
-            <div className="absolute right-0 mt-2 z-40">
-              <div className="bg-gradient-to-b from-white via-blaster-bg-app to-blaster-bg rounded-3xl border border-blaster-border shadow-glass p-4 sm:p-5 w-80 sm:w-96">
-                <div className="flex items-center justify-between mb-3 text-sm text-blaster-fg">
-                  <button
-                    type="button"
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-blaster-bg-app text-blaster-muted"
-                    onClick={() => changeMonth(-1)}
-                  >
-                    ‹
-                  </button>
-                  <p className="font-semibold">{calendarTitle}</p>
-                  <button
-                    type="button"
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-blaster-bg-app text-blaster-muted"
-                    onClick={() => changeMonth(1)}
-                  >
-                    ›
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-7 gap-1.5 mb-2 text-xs text-blaster-muted">
-                  {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => (
-                    <div key={d} className="flex items-center justify-center h-6">
-                      {d}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-7 gap-1.5 text-sm">
-                  {calendarDays.map(({ date, inCurrentMonth }) => {
-                    const isStart = startDate && sameDay(date, startDate);
-                    const isEnd = endDate && sameDay(date, endDate);
-                    const inRange =
-                      startDate &&
-                      endDate &&
-                      date >= startDate &&
-                      date <= endDate;
-                    const isSelected = isStart || isEnd;
-
-                    let cellClasses =
-                      'w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl cursor-pointer transition text-xs sm:text-sm ';
-
-                    if (!inCurrentMonth) {
-                      cellClasses += 'text-blaster-muted/40 ';
-                    } else {
-                      cellClasses += 'text-blaster-fg ';
-                    }
-
-                    if (inRange && !isSelected) {
-                      cellClasses += 'bg-blaster-accent/10 ';
-                    }
-
-                    if (isSelected) {
-                      cellClasses += 'bg-[#1a1a21] text-white shadow-sm ';
-                    } else {
-                      cellClasses += 'hover:bg-blaster-bg-app ';
-                    }
-
-                    return (
-                      <button
-                        key={date.toISOString()}
-                        type="button"
-                        onClick={() => handleDayClick(date)}
-                        className={cellClasses}
-                      >
-                        {date.getDate()}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-4 flex items-center justify-end gap-3 text-sm">
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 rounded-xl text-blaster-muted hover:bg-blaster-bg transition"
-                    onClick={() => setIsDatePickerOpen(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-blaster-accent text-sm"
-                    onClick={() => {
-                      if (pendingRange.start && pendingRange.end) {
-                        setDateRange(pendingRange);
-                        setRangePreset('custom');
-                      }
-                      setIsDatePickerOpen(false);
-                    }}
-                  >
-                    Apply
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       <div className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border shadow-sm mb-6 md:mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 md:gap-4 px-4 py-3 md:px-6 md:py-4 border-b border-blaster-border">
           <div>
@@ -554,9 +208,9 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
           {[
-            { label: 'Total Campaigns', value: statsFromFiltered.total, Icon: Send },
-            { label: 'Emails Sent', value: statsFromFiltered.sent, Icon: Check },
-            { label: 'Failed Emails', value: statsFromFiltered.failed, Icon: X },
+            { label: 'Total Campaigns', value: statsFromCampaigns.total, Icon: Send },
+            { label: 'Emails Sent', value: statsFromCampaigns.sent, Icon: Check },
+            { label: 'Failed Emails', value: statsFromCampaigns.failed, Icon: X },
             { label: 'Emails Extracted', value: emailsExtracted, Icon: Mail, sub: 'From scans' },
           ].map((s) => (
             <div key={s.label} className="px-4 py-3 md:px-6 md:py-4">
@@ -590,87 +244,69 @@ export default function DashboardPage() {
                 steps complete
               </div>
             </div>
-            <div className="h-1.5 rounded-full bg-blaster-border overflow-hidden">
+            <div className="w-full bg-blaster-border rounded-full h-2">
               <div
-                className="h-1.5 rounded-full bg-blaster-accent transition-all"
+                className="bg-blaster-accent h-2 rounded-full transition-all duration-500"
                 style={{ width: `${(stepsCompleted / totalSteps) * 100}%` }}
               />
             </div>
           </div>
-
-          <div className="flex flex-col lg:flex-row gap-4 md:gap-6 px-4 py-4 md:px-6 md:py-6">
-            <div className="flex-1 space-y-1.5 md:space-y-2">
-              {onboardingSteps.map((step) => {
-                const isActive = step.id === activeOnboardingStep.id;
-                return (
-                  <button
-                    key={step.id}
-                    type="button"
-                    onClick={() => setActiveStep(step.id)}
-                    className={`w-full flex items-center justify-between rounded-lg md:rounded-xl px-3 py-2.5 md:px-4 md:py-3 text-left text-xs md:text-sm transition ${
-                      isActive
-                        ? 'bg-blaster-bg-app border border-blaster-border'
-                        : 'bg-transparent border border-transparent hover:bg-blaster-bg-app/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 md:gap-3 min-w-0">
-                      <div
-                        className={`w-5 h-5 md:w-6 md:h-6 rounded-full border flex items-center justify-center text-[10px] md:text-xs shrink-0 ${
-                          isActive ? 'bg-blaster-accent text-white border-blaster-accent' : 'border-blaster-border text-blaster-muted'
-                        }`}
-                      >
-                        {step.id}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium text-blaster-fg truncate">{step.title}</div>
-                        <div className="text-[10px] md:text-xs text-blaster-muted truncate">{step.summary}</div>
+          <div className="p-4 md:p-6">
+            <div className="grid md:grid-cols-2 gap-4 md:gap-6">
+              {onboardingSteps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className={`
+                    relative p-4 md:p-5 rounded-xl border transition-all
+                    ${
+                      index === currentStep
+                        ? 'border-blaster-accent bg-blaster-accent/5'
+                        : index < currentStep
+                        ? 'border-green-500/30 bg-green-500/5'
+                        : 'border-blaster-border bg-blaster-bg'
+                    }
+                  `}
+                >
+                  <div className="flex items-start gap-3 md:gap-4">
+                    <div
+                      className={`
+                        w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0
+                        ${
+                          index < currentStep
+                            ? 'bg-green-500 text-white'
+                            : index === currentStep
+                            ? 'bg-blaster-accent text-white'
+                            : 'bg-blaster-border text-blaster-muted'
+                        }
+                      `}
+                    >
+                      {index < currentStep ? '✓' : index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-blaster-fg text-sm md:text-base mb-1">{step.title}</h3>
+                      <p className="text-xs md:text-sm text-blaster-muted mb-2 md:mb-3">{step.summary}</p>
+                      <p className="text-xs text-blaster-muted mb-3 md:mb-4">{step.body}</p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Link
+                          to={step.primaryTo}
+                          className="btn-blaster-accent text-xs md:text-sm"
+                        >
+                          {step.primaryLabel}
+                        </Link>
+                        {step.secondaryLabel && (
+                          <button
+                            type="button"
+                            onClick={() => setCurrentStep(index + 1)}
+                            className="text-xs md:text-sm text-blaster-muted hover:text-blaster-fg transition"
+                          >
+                            {step.secondaryLabel}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <span className="ml-2 md:ml-4 shrink-0 inline-flex items-center rounded-full bg-blaster-bg-app px-1.5 py-0.5 text-[10px] md:text-[11px] text-blaster-muted">
-                      {step.time}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex-1 lg:max-w-md">
-              <div className="bg-blaster-bg-app rounded-xl md:rounded-2xl border border-blaster-border/60 p-4 md:p-5 h-full flex flex-col justify-between shadow-glass">
-                <div>
-                  <h3 className="text-sm md:text-base font-semibold text-blaster-fg">
-                    {activeOnboardingStep.title}
-                  </h3>
-                  <p className="mt-1.5 md:mt-2 text-xs md:text-sm text-blaster-muted">
-                    {activeOnboardingStep.body}
-                  </p>
-                </div>
-
-                <div className="mt-3 md:mt-4 flex items-center justify-between gap-2 md:gap-3">
-                  <div className="hidden sm:grid grid-cols-3 gap-1.5 md:gap-2 opacity-80">
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                    <div className="h-10 rounded-xl bg-white border border-blaster-border shadow-sm" />
-                  </div>
-
-                  <div className="ml-auto flex flex-col sm:flex-row gap-1.5 md:gap-2 sm:items-center">
-                    <button
-                      type="button"
-                      className="text-[11px] md:text-xs text-blaster-muted hover:underline text-left"
-                    >
-                      {activeOnboardingStep.secondaryLabel}
-                    </button>
-                    <Link
-                      to={activeOnboardingStep.primaryTo}
-                      className="btn-blaster-accent text-xs md:text-sm whitespace-nowrap"
-                    >
-                      {activeOnboardingStep.primaryLabel}
-                    </Link>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -698,7 +334,7 @@ export default function DashboardPage() {
                       {c.sent}/{c.totalQueued} sent
                     </Link>
                     <span className="text-[10px] md:text-xs text-blaster-muted capitalize shrink-0 ml-2">
-                      {c.status === 'running' && c.sent >= (c.totalQueued || 0) ? 'completed' : c.status}
+                      {c.status}
                     </span>
                   </li>
                 ))}
@@ -707,30 +343,46 @@ export default function DashboardPage() {
           </div>
           <div className="bg-blaster-bg-card rounded-xl border border-blaster-border p-4 md:p-6 shadow-sm">
             <div className="flex items-center justify-between mb-3 md:mb-4">
-              <h2 className="text-sm md:text-base font-semibold text-blaster-fg">Recent Scans</h2>
-              <Link to="/app/scanner" className="text-xs md:text-sm font-medium text-blaster-accent hover:underline">
+              <h2 className="text-sm md:text-base font-semibold text-blaster-fg">Recent Activity</h2>
+              <Link to="/app/activity" className="text-xs md:text-sm font-medium text-blaster-accent hover:underline">
                 View all →
               </Link>
             </div>
             {scansFromActivity.length === 0 ? (
               <div className="text-center py-6 md:py-8 text-blaster-muted text-sm md:text-base">
-                <div className="text-3xl md:text-4xl mb-2 opacity-50">🔍</div>
-                <p>No scans yet</p>
+                <p>No recent activity</p>
                 <Link to="/app/scanner" className="inline-block mt-2 md:mt-3 btn-blaster-accent text-xs md:text-sm">
                   Start Scanning
                 </Link>
               </div>
             ) : (
               <ul className="space-y-1 md:space-y-2">
-                {scansFromActivity.map((log, i) => (
-                  <li key={log.id || i} className="py-1.5 md:py-2 border-b border-blaster-border last:border-0 text-xs md:text-sm text-blaster-muted">
-                    {log.type === 'scan_complete' ? 'Scan completed' : 'Scan started'} —{' '}
-                    {log.payload?.scanId ? String(log.payload.scanId).slice(0, 8) : '—'}
-                    {log.createdAt && (
-                      <span className="ml-2 text-xs text-blaster-muted/80">
-                        {formatActivityTime(log.createdAt)}
+                {scansFromActivity.map((log) => (
+                  <li key={log.id} className="flex items-center justify-between py-1.5 md:py-2 border-b border-blaster-border last:border-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`
+                          w-2 h-2 rounded-full shrink-0
+                          ${
+                            log.type === 'scan_complete'
+                              ? 'bg-green-500'
+                              : log.type === 'scan_start'
+                              ? 'bg-blue-500'
+                              : 'bg-blaster-border'
+                          }
+                        `}
+                      />
+                      <span className="text-xs md:text-sm text-blaster-muted truncate">
+                        {log.type === 'scan_complete'
+                          ? `Scan completed: ${log.result?.foundCount || 0} emails found`
+                          : log.type === 'scan_start'
+                          ? 'Scan started'
+                          : log.message || 'Unknown activity'}
                       </span>
-                    )}
+                    </div>
+                    <span className="text-[10px] md:text-xs text-blaster-muted shrink-0 ml-2">
+                      {formatActivityTime(log.createdAt)}
+                    </span>
                   </li>
                 ))}
               </ul>
