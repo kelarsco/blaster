@@ -156,15 +156,16 @@ export const supabaseAPI = {
 
   async logActivity(activityData) {
     try {
-      // Add timestamp to prevent exact duplicates
-      const activityWithTimestamp = {
+      // Add unique ID and timestamp to prevent exact duplicates
+      const activityWithUniqueData = {
         ...activityData,
+        id: `${activityData.user_id}_${activityData.type}_${Date.now()}`,
         created_at: new Date().toISOString()
       };
       
       const { data, error } = await supabase
         .from('activity_logs')
-        .insert(activityWithTimestamp)
+        .insert(activityWithUniqueData)
         .select();
       
       // Handle duplicate entries gracefully
