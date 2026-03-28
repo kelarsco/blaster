@@ -1,18 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './utils/supabase.js';
 import { sendVerificationEmail } from './utils/resend.js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase environment variables:', {
-    VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL ? 'SET' : 'MISSING',
-    VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY: import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ? 'SET' : 'MISSING'
-  });
-  throw new Error('Supabase environment variables are missing. Please check your .env file.');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Supabase Direct API - No Railway Backend Needed
 
@@ -183,13 +170,24 @@ export const supabaseAPI = {
 
   // Subscriptions
   async getSubscription(userId) {
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .single();
-    return { data, error };
+    try {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle(); // Use maybeSingle instead of single to handle no results
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        console.error('Subscription fetch error:', error);
+        return { data: null, error };
+      }
+      
+      return { data, error: null };
+    } catch (error) {
+      console.error('Subscription fetch error:', error);
+      return { data: null, error };
+    }
   },
 
   async createSubscription(subscriptionData) {

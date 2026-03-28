@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/SupabaseAuthContext';
 import { supabaseAPI } from '../supabase-api';

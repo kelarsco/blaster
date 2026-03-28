@@ -11,5 +11,18 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Supabase environment variables are missing. Please check your .env file.');
 }
 
-// Create singleton instance
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Singleton Supabase client instance
+let supabaseInstance = null;
+
+export const supabase = (() => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
+  }
+  return supabaseInstance;
+})();
