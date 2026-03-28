@@ -171,19 +171,44 @@ export const supabaseAPI = {
   // Subscriptions
   async getSubscription(userId) {
     try {
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .maybeSingle(); // Use maybeSingle instead of single to handle no results
+      // Add retry logic for lock conflicts
+      let retries = 3;
+      let lastError = null;
       
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-        console.error('Subscription fetch error:', error);
-        return { data: null, error };
+      for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+          const { data, error } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .maybeSingle();
+          
+          if (error && error.code === 'PGRST116') {
+            console.log('No subscription found for user:', userId);
+            return { data: null, error: null };
+          }
+          
+          if (error) {
+            throw error;
+          }
+          
+          return { data, error: null };
+        } catch (error) {
+          lastError = error;
+          
+          // Check if it's a lock conflict
+          if (error.message && error.message.includes('Lock')) {
+            console.warn(`Lock conflict on attempt ${attempt + 1}/${retries}, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            continue;
+          }
+          
+          throw error;
+        }
       }
       
-      return { data, error: null };
+      throw lastError || new Error('Failed to fetch subscription after retries');
     } catch (error) {
       console.error('Subscription fetch error:', error);
       return { data: null, error };

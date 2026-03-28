@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase } from '../utils/supabase.js';
+import { supabase, getSupabaseClient } from '../utils/supabase.js';
 import { supabaseAPI } from '../supabase-api.js';
 import { sendVerificationEmail } from '../utils/resend.js';
 
@@ -17,33 +17,55 @@ export function SupabaseAuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [adminChecked, setAdminChecked] = useState(false);
 
   // Initialize auth state
-  useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          setUser(session.user);
-          
-          // Fetch subscription data (non-blocking)
-          try {
-            const { data: subscriptionData } = await supabaseAPI.getSubscription(session.user.id);
-            setSubscription(subscriptionData);
-          } catch (subError) {
-            console.warn('Failed to fetch subscription:', subError);
-            // Don't fail the entire auth flow for subscription errors
-          }
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-      } finally {
+  const initializeAuth = useCallback(async () => {
+    try {
+      console.log('🔧 Initializing Supabase auth...');
+      const client = await getSupabaseClient();
+      
+      const { data: { session }, error } = await client.auth.getSession();
+      
+      if (error) {
+        console.warn('Failed to get session:', error);
         setLoading(false);
+        setAdminChecked(true);
+        return;
       }
-    };
+      
+      if (session?.user) {
+        setUser(session.user);
+        console.log('🔍 Auth state changed: SIGNED_IN', session.user.id);
+        
+        // Fetch subscription (non-blocking)
+        try {
+          const { data, error: subError } = await supabaseAPI.getSubscription(session.user.id);
+          if (!subError && data) {
+            setSubscription(data);
+          } else if (subError) {
+            console.warn('Failed to fetch subscription:', subError);
+          }
+        } catch (subError) {
+          console.warn('Failed to fetch subscription:', subError);
+          // Don't fail the entire auth flow for subscription errors
+        }
+      } else {
+        setUser(null);
+        setSubscription(null);
+        console.log('🔍 Auth state changed: INITIAL_SESSION');
+      }
+      
+      setLoading(false);
+      setAdminChecked(true);
+    } catch (error) {
+      console.error('Auth initialization error:', error);
+      setLoading(false);
+      setAdminChecked(true);
+    }
+  }, []);
 
+  useEffect(() => {
     initializeAuth();
 
     // Listen for auth changes
@@ -72,7 +94,7 @@ export function SupabaseAuthProvider({ children }) {
     );
 
     return () => authSubscription.unsubscribe();
-  }, []);
+  }, [initializeAuth]);
 
   // Sign up
   const signUp = useCallback(async (email, password, name) => {
