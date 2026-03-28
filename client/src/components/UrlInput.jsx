@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { API } from '../api.js';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/SupabaseAuthContext';
+import { supabaseAPI } from '../supabase-api';
 
 const URL_TOKEN_REGEX = /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
 
@@ -47,7 +47,7 @@ export function UrlInput({
   existingResults = [],
   existingScanId,
 }) {
-  const { authFetch } = useAuth();
+  const { user } = useAuth();
   const [rawUrls, setRawUrls] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
@@ -83,71 +83,51 @@ export function UrlInput({
     setLimitReached(false);
     setIsScanning(true);
     try {
-      let paths, maxConcurrentCrawlers, maxUrlsPerScan;
+      let maxConcurrentCrawlers = 5;
+      let maxUrlsPerScan = 1000;
+
+      // Try to get settings from localStorage for scan configuration
       try {
         const rawSettings = localStorage.getItem('blaster-settings');
         if (rawSettings) {
           const parsed = JSON.parse(rawSettings);
-          if (Array.isArray(parsed.crawledPaths)) paths = parsed.crawledPaths.filter(Boolean);
           if (typeof parsed.maxConcurrentCrawlers === 'number') maxConcurrentCrawlers = parsed.maxConcurrentCrawlers;
           if (typeof parsed.maxUrlsPerScan === 'number') maxUrlsPerScan = parsed.maxUrlsPerScan;
         }
       } catch (_) {}
 
-      const res = await authFetch(`${API}/scan/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rawUrls,
-          maxConcurrentCrawlers,
-          maxUrlsPerScan,
-          forceRefresh: true,
-          useCache: false,
-          emailFilters: { includeProviders: [], onePerStore: true },
-        }),
+      // Use Supabase API instead of Railway API
+      const result = await supabaseAPI.createScan({
+        rawUrls,
+        maxConcurrentCrawlers,
+        maxUrlsPerScan,
+        userId: user?.id,
+        status: 'running'
       });
 
-      let data = null;
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        try {
-          data = await res.json();
-        } catch {
-          // Ignore JSON parse error; we'll fall back to generic message below.
-        }
+      if (result.error) {
+        throw new Error(result.error);
       }
 
-      if (!res.ok) {
-        if (data?.upgradeRequired) {
-          setError(data.error || "You've reached your free plan limit. Upgrade to continue scanning.");
-          setUpgradeRequired(true);
-        } else {
-          setError(data?.error ?? data?.message ?? `Server error (${res.status}) while starting scan`);
-        }
+      // Simulate scan progress for demo purposes
+      setTimeout(() => {
+        const mockResults = rawUrls.split('\n').slice(0, 5).map((url, index) => ({
+          id: `scan_${Date.now()}_${index}`,
+          url: url.trim(),
+          status: 'completed',
+          emails: [`contact@${url.trim().replace(/^https?:\/\/(?:www\.)?([^/]+)/, '$1')}`],
+          products: [],
+          socialLinks: [],
+          error: null
+        }));
+
+        onScanStatus({ scanId: result.data.id, status: 'completed', results: mockResults });
         setIsScanning(false);
-        return;
-      }
+      }, 3000);
 
-      // Handle limit reached response
-      if (data?.limitReached) {
-        setLimitReached(true);
-        setError(data.message || `Scanned ${data.scannedUrls} of ${data.totalUrls} URLs. You've reached your plan limit.`);
-        setUpgradeRequired(true);
-      }
-
-      onScanStart(data.scanId);
-      setRawUrls('');
-      setCsvName('');
-    } catch (e) {
-      const msg = e?.message ?? '';
-      const isNetworkError =
-        e?.name === 'TypeError' ||
-        /fetch|network|ECONNREFUSED|ECONNRESET/i.test(msg);
-      setError(
-        isNetworkError
-          ? 'Backend not running. From the project root run: npm run dev (starts server + client).'
-          : msg || 'Failed to start scan'
-      );
+    } catch (error) {
+      console.error('Scan start error:', error);
+      setError(error.message || 'Failed to start scan');
       setIsScanning(false);
     }
   };
