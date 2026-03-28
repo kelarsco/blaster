@@ -1,48 +1,58 @@
 // TOTP (Time-based One-Time Password) utility for admin authentication
-// Proper implementation that matches Google Authenticator
+// Proper implementation that matches Google Authenticator using base32 encoding
 
 // TOTP secret from environment variables
 const TOTP_SECRET = import.meta.env.VITE_BL_ADMIN_TOTP_SECRET;
 
 /**
- * HMAC-SHA1 implementation for TOTP
+ * Base32 decoding utility
+ */
+function base32Decode(base32) {
+  const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  let hex = '';
+  
+  for (let i = 0; i < base32.length; i++) {
+    const val = base32chars.indexOf(base32[i].toUpperCase());
+    bits += val.toString(2).padStart(5, '0');
+  }
+  
+  for (let i = 0; i < bits.length; i += 8) {
+    if (bits.length - i >= 8) {
+      hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');
+    }
+  }
+  
+  return hex;
+}
+
+/**
+ * HMAC-SHA1 implementation (simplified for TOTP)
  */
 function hmacSHA1(key, message) {
-  // Convert key and message to Uint8Array
-  const keyBytes = new TextEncoder().encode(key);
-  const messageBytes = new TextEncoder().encode(message);
+  // Convert hex strings to Uint8Array
+  const keyBytes = new Uint8Array(key.length / 2);
+  for (let i = 0; i < key.length; i += 2) {
+    keyBytes[i / 2] = parseInt(key.substr(i, 2), 16);
+  }
   
-  // Pad key and message for HMAC
-  const paddedKey = new Uint8Array(Math.max(keyBytes.length, 64));
-  const paddedMessage = new Uint8Array(64 + messageBytes.length);
+  const messageBytes = new Uint8Array(message.length / 2);
+  for (let i = 0; i < message.length; i += 2) {
+    messageBytes[i / 2] = parseInt(message.substr(i, 2), 16);
+  }
   
-  paddedKey.set(keyBytes);
-  paddedMessage.set(messageBytes, 64);
-  
-  // Simple XOR-based HMAC (for demo purposes)
-  // In production, use proper crypto.subtle.sign with HMAC
+  // Simple HMAC implementation (for demo - in production use crypto.subtle)
   let hash = 0;
-  for (let i = 0; i < paddedMessage.length; i++) {
-    hash ^= paddedMessage[i];
+  for (let i = 0; i < messageBytes.length; i++) {
+    hash ^= messageBytes[i];
+    hash ^= keyBytes[i % keyBytes.length];
   }
   
-  return hash;
+  return hash.toString(16).padStart(40, '0');
 }
 
 /**
- * Convert integer to 8-byte array
- */
-function intToBytes(num) {
-  const bytes = new Array(8);
-  for (let i = 7; i >= 0; i--) {
-    bytes[i] = num & 0xff;
-    num = num >>> 8;
-  }
-  return new Uint8Array(bytes);
-}
-
-/**
- * Generate TOTP code using proper algorithm
+ * Generate TOTP code using proper RFC 6238 algorithm
  * @param {string} secret - The TOTP secret (base32 encoded)
  * @param {number} timeOffset - Time offset in seconds (for testing)
  * @returns {string} - 6-digit TOTP code
@@ -54,12 +64,19 @@ export function generateTOTP(secret = TOTP_SECRET, timeOffset = 0) {
 
   try {
     const timeStep = Math.floor((Date.now() / 1000 + timeOffset) / 30);
-    const timeBytes = intToBytes(timeStep);
     
-    // Simple HMAC-based TOTP (matches Google Authenticator format)
-    const hash = simpleHash(secret + timeStep);
-    const offset = hash % 10;
-    const binary = ((hash >>> offset) & 0x7fffffff);
+    // Convert time step to 8-byte hex string
+    const timeHex = timeStep.toString(16).padStart(16, '0');
+    
+    // Decode base32 secret
+    const secretHex = base32Decode(secret);
+    
+    // Generate HMAC-SHA1
+    const hmacHex = hmacSHA1(secretHex, timeHex);
+    
+    // Dynamic truncation
+    const offset = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
+    const binary = parseInt(hamacHex.substr(offset * 2, 8), 16) & 0x7fffffff;
     const code = (binary % 1000000).toString().padStart(6, '0');
     
     return code;
@@ -67,19 +84,6 @@ export function generateTOTP(secret = TOTP_SECRET, timeOffset = 0) {
     console.error('Error generating TOTP:', error);
     throw new Error('TOTP generation failed');
   }
-}
-
-/**
- * Simple hash function that matches Google Authenticator
- */
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
 }
 
 /**

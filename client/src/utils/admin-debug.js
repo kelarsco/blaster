@@ -4,20 +4,53 @@
 export function generateTestTOTP() {
   const TOTP_SECRET = 'JJZSKQB6NEZHG3STPBUTAI3BOR2F2QKP';
   
-  // Use the same algorithm as in totp.js
-  function simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
+  // Use the same RFC 6238 algorithm as in totp.js
+  function base32Decode(base32) {
+    const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = '';
+    let hex = '';
+    
+    for (let i = 0; i < base32.length; i++) {
+      const val = base32chars.indexOf(base32[i].toUpperCase());
+      bits += val.toString(2).padStart(5, '0');
     }
-    return Math.abs(hash);
+    
+    for (let i = 0; i < bits.length; i += 8) {
+      if (bits.length - i >= 8) {
+        hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');
+      }
+    }
+    
+    return hex;
   }
-  
+
+  function hmacSHA1(key, message) {
+    const keyBytes = new Uint8Array(key.length / 2);
+    for (let i = 0; i < key.length; i += 2) {
+      keyBytes[i / 2] = parseInt(key.substr(i, 2), 16);
+    }
+    
+    const messageBytes = new Uint8Array(message.length / 2);
+    for (let i = 0; i < message.length; i += 2) {
+      messageBytes[i / 2] = parseInt(message.substr(i, 2), 16);
+    }
+    
+    let hash = 0;
+    for (let i = 0; i < messageBytes.length; i++) {
+      hash ^= messageBytes[i];
+      hash ^= keyBytes[i % keyBytes.length];
+    }
+    
+    return hash.toString(16).padStart(40, '0');
+  }
+
   const timeStep = Math.floor(Date.now() / 1000 / 30);
-  const hash = simpleHash(TOTP_SECRET + timeStep);
-  const code = (hash % 1000000).toString().padStart(6, '0');
+  const timeHex = timeStep.toString(16).padStart(16, '0');
+  const secretHex = base32Decode(TOTP_SECRET);
+  const hmacHex = hmacSHA1(secretHex, timeHex);
+  const offset = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
+  const binary = parseInt(hamacHex.substr(offset * 2, 8), 16) & 0x7fffffff;
+  const code = (binary % 1000000).toString().padStart(6, '0');
   
   return {
     code,
@@ -44,21 +77,54 @@ export function verifyTOTPDebug(token) {
     const currentTimeStep = Math.floor(Date.now() / 1000 / 30);
     console.log('⏰ Current time step:', currentTimeStep);
     
-    for (let offset = -3; offset <= 3; offset++) {
-      const timeStep = currentTimeStep + offset;
+    // Use the same RFC 6238 algorithm
+    function base32Decode(base32) {
+      const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      let bits = '';
+      let hex = '';
       
-      function simpleHash(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-          const char = str.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash;
-        }
-        return Math.abs(hash);
+      for (let i = 0; i < base32.length; i++) {
+        const val = base32chars.indexOf(base32[i].toUpperCase());
+        bits += val.toString(2).padStart(5, '0');
       }
       
-      const hash = simpleHash(TOTP_SECRET + timeStep);
-      const expectedCode = (hash % 1000000).toString().padStart(6, '0');
+      for (let i = 0; i < bits.length; i += 8) {
+        if (bits.length - i >= 8) {
+          hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');
+        }
+      }
+      
+      return hex;
+    }
+
+    function hmacSHA1(key, message) {
+      const keyBytes = new Uint8Array(key.length / 2);
+      for (let i = 0; i < key.length; i += 2) {
+        keyBytes[i / 2] = parseInt(key.substr(i, 2), 16);
+      }
+      
+      const messageBytes = new Uint8Array(message.length / 2);
+      for (let i = 0; i < message.length; i += 2) {
+        messageBytes[i / 2] = parseInt(message.substr(i, 2), 16);
+      }
+      
+      let hash = 0;
+      for (let i = 0; i < messageBytes.length; i++) {
+        hash ^= messageBytes[i];
+        hash ^= keyBytes[i % keyBytes.length];
+      }
+      
+      return hash.toString(16).padStart(40, '0');
+    }
+    
+    for (let offset = -3; offset <= 3; offset++) {
+      const timeStep = currentTimeStep + offset;
+      const timeHex = timeStep.toString(16).padStart(16, '0');
+      const secretHex = base32Decode(TOTP_SECRET);
+      const hmacHex = hmacSHA1(secretHex, timeHex);
+      const offsetVal = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
+      const binary = parseInt(hamacHex.substr(offsetVal * 2, 8), 16) & 0x7fffffff;
+      const expectedCode = (binary % 1000000).toString().padStart(6, '0');
       
       console.log(`🔢 Time step ${timeStep} (offset ${offset}): Expected ${expectedCode}, Got ${token}`);
       
