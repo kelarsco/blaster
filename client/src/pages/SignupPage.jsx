@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { API } from '../api.js';
+import { useAuth } from '../context/SupabaseAuthContext';
 import { getStoredPlanId } from '../data/plans';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
 
@@ -13,7 +12,7 @@ function getPostSignupPath(search) {
 }
 
 export function SignupPage() {
-  const { user, loading, loginWithGoogle } = useAuth();
+  const { user, loading, signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -46,23 +45,14 @@ export function SignupPage() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password,
-          name: name.trim(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Signup failed');
-      if (data.needsVerification && data.email) {
-        navigate('/verify-email', { state: { email: data.email }, replace: true });
-        return;
+      const result = await signUp(email.trim().toLowerCase(), password, name.trim());
+      
+      if (!result.success) {
+        throw new Error(result.error);
       }
-      navigate(getPostSignupPath(location.search), { replace: true });
+      
+      // For Supabase, user needs to verify email first
+      navigate('/verify-email', { state: { email: email.trim().toLowerCase() }, replace: true });
     } catch (err) {
       setError(err.message || 'Signup failed');
     } finally {
@@ -174,7 +164,7 @@ export function SignupPage() {
       <div className="mt-5">
         <button
           type="button"
-          onClick={loginWithGoogle}
+          onClick={signInWithGoogle}
           className={authSecondaryButtonClass + ' flex items-center justify-center gap-2'}
         >
           <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden>

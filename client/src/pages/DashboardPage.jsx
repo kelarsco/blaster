@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext.jsx';
-import { API } from '../api.js';
+import { useAuth } from '../context/SupabaseAuthContext.jsx';
+import { supabaseAPI } from '../supabase-api.js';
 import { Send, Check, X, Mail } from 'react-feather';
 
 const SKELETON_DURATION_MS = 1500;
@@ -11,7 +11,7 @@ function Skeleton({ className = '' }) {
 }
 
 export default function DashboardPage() {
-  const { authFetch, subscription, user } = useAuth();
+  const { user, subscription } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0 });
   const [emailsExtracted, setEmailsExtracted] = useState(0);
@@ -37,28 +37,32 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchDashboardData = useCallback(() => {
-    if (!authFetch) return;
-    Promise.all([
-      authFetch(`${API}/campaigns`)
-        .then((r) => (r.ok ? r.json() : { campaigns: [] }))
-        .then((d) => {
-          const list = d.campaigns || [];
-          setCampaigns(list);
-          setStats({
-            total: list.length,
-            sent: list.reduce((s, c) => s + (c.sent || 0), 0),
-            failed: list.reduce((s, c) => s + (c.failed || 0), 0),
-          });
-        }),
-      authFetch(`${API}/activity`)
-        .then((r) => (r.ok ? r.json() : { activity: [] }))
-        .then((d) => setActivity(d.activity || [])),
-      authFetch(`${API}/scans/extracted-count`)
-        .then((r) => (r.ok ? r.json() : { extracted: 0 }))
-        .then((d) => setEmailsExtracted(Number(d.extracted || 0))),
-    ]);
-  }, [authFetch]);
+  const fetchDashboardData = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const [campaignsData, activityData] = await Promise.all([
+        supabaseAPI.getCampaigns(user.id),
+        supabaseAPI.getActivity(user.id)
+      ]);
+
+      const campaignList = campaignsData.data || [];
+      setCampaigns(campaignList);
+      setStats({
+        total: campaignList.length,
+        sent: campaignList.reduce((s, c) => s + (c.sent || 0), 0),
+        failed: campaignList.reduce((s, c) => s + (c.failed || 0), 0),
+      });
+      
+      setActivity(activityData.data || []);
+      
+      // For emails extracted, we'd need to implement this in Supabase
+      // For now, using a placeholder
+      setEmailsExtracted(0);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    }
+  }, [user]);
 
   useEffect(() => {
     const minDelay = new Promise((r) => setTimeout(r, SKELETON_DURATION_MS));
