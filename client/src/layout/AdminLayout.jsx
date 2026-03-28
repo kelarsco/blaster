@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
-import { API_BASE } from '../api';
+import { supabaseAdminAPI } from '../utils/supabase-admin';
 import { Logo } from '../components/Logo.jsx';
 
-const ADMIN_API = `${API_BASE}/api/bl-admin`;
 const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
 
 const navItems = [
@@ -74,16 +73,16 @@ export function AdminLayout() {
     setLastSeenState(getLastSeen());
   }, []);
 
-  const fetchCounts = useCallback(() => {
-    adminFetch('/sidebar-counts')
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((d) => setCounts({
-        users: d.users ?? 0,
-        subscriptions: d.subscriptions ?? 0,
-        messages: d.messages ?? 0,
-      }))
-      .catch(() => {});
-  }, [adminFetch]);
+  const fetchCounts = useCallback(async () => {
+    try {
+      const counts = await supabaseAdminAPI.getSidebarCounts();
+      setCounts(counts);
+    } catch (error) {
+      console.error('Error fetching admin counts:', error);
+      // Set default counts on error
+      setCounts({ users: 0, subscriptions: 0, messages: 0 });
+    }
+  }, []);
 
   useEffect(() => {
     fetchCounts();
@@ -113,11 +112,11 @@ export function AdminLayout() {
 
   const logout = async () => {
     try {
-      await fetch(`${ADMIN_API}/logout`, { method: 'POST', credentials: 'include' });
+      // No need to call logout API since we're using Supabase auth directly
+      logoutAdmin();
+      navigate('/bl-admin/login', { replace: true });
+      window.location.reload();
     } catch (_) {}
-    logoutAdmin();
-    navigate('/bl-admin/login', { replace: true });
-    window.location.reload();
   };
 
   return (

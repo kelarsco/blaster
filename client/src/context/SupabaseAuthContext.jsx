@@ -28,9 +28,14 @@ export function SupabaseAuthProvider({ children }) {
         if (session?.user) {
           setUser(session.user);
           
-          // Fetch subscription data
-          const { data: subscriptionData } = await supabaseAPI.getSubscription(session.user.id);
-          setSubscription(subscriptionData);
+          // Fetch subscription data (non-blocking)
+          try {
+            const { data: subscriptionData } = await supabaseAPI.getSubscription(session.user.id);
+            setSubscription(subscriptionData);
+          } catch (subError) {
+            console.warn('Failed to fetch subscription:', subError);
+            // Don't fail the entire auth flow for subscription errors
+          }
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
@@ -49,9 +54,14 @@ export function SupabaseAuthProvider({ children }) {
         if (session?.user) {
           setUser(session.user);
           
-          // Fetch subscription data
-          const { data: subscriptionData } = await supabaseAPI.getSubscription(session.user.id);
-          setSubscription(subscriptionData);
+          // Fetch subscription data (non-blocking)
+          try {
+            const { data: subscriptionData } = await supabaseAPI.getSubscription(session.user.id);
+            setSubscription(subscriptionData);
+          } catch (subError) {
+            console.warn('Failed to fetch subscription:', subError);
+            // Don't fail the entire auth flow for subscription errors
+          }
         } else {
           setUser(null);
           setSubscription(null);
