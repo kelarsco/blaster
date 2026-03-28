@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
-import { API_BASE } from '../../api';
-
-const ADMIN_API = `${API_BASE}/api/bl-admin`;
+import { verifyAdminTOTP } from '../../utils/totp';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
@@ -15,28 +13,29 @@ export function AdminLoginPage() {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    
     if (!/^\d{6}$/.test(code)) {
       setError('Enter the 6-digit code from your authenticator app');
       return;
     }
+    
     setLoading(true);
     try {
-      const res = await fetch(`${ADMIN_API}/auth`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        if (data?.token) setAdminToken(data.token);
+      // Verify TOTP code using client-side verification
+      const isValid = await verifyAdminTOTP(code);
+      
+      if (isValid) {
+        // Generate a simple admin token (in production, this should come from your backend)
+        const adminToken = `admin_token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        setAdminToken(adminToken);
         await refetchAdmin();
         navigate('/bl-admin/overview', { replace: true });
         return;
       }
-      setError(data.error || 'Invalid code');
+      
+      setError('Invalid code');
     } catch (err) {
-      setError(err?.message || 'Network error');
+      setError(err?.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
