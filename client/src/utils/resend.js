@@ -9,7 +9,12 @@ export async function sendEmail({ to, from, subject, html, text }) {
     return { error: 'Email service not configured' };
   }
 
+  console.log('Sending email:', { to, subject, from: from || 'noreply@wiblaster.com' });
+
   try {
+    // Use verified domain or default to your domain
+    const verifiedFrom = from || 'noreply@wiblaster.com';
+    
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -17,7 +22,7 @@ export async function sendEmail({ to, from, subject, html, text }) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: from || 'onboarding@resend.dev',
+        from: verifiedFrom,
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
@@ -26,6 +31,7 @@ export async function sendEmail({ to, from, subject, html, text }) {
     });
 
     const data = await response.json();
+    console.log('Resend response:', data);
     
     if (!response.ok) {
       throw new Error(data.message || 'Failed to send email');

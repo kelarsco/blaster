@@ -12,6 +12,18 @@ export const supabaseAPI = {
         data: { name }
       }
     });
+    
+    // Send verification email if signup was successful
+    if (data.user && !error) {
+      try {
+        const { sendVerificationEmail } = await import('../utils/resend.js');
+        await sendVerificationEmail(email, 'VERIFICATION_CODE');
+      } catch (emailError) {
+        console.warn('Failed to send verification email:', emailError);
+        // Don't fail the signup for email issues
+      }
+    }
+    
     return { data, error };
   },
 
@@ -139,9 +151,15 @@ export const supabaseAPI = {
 
   async logActivity(activityData) {
     try {
+      // Add timestamp to prevent exact duplicates
+      const activityWithTimestamp = {
+        ...activityData,
+        created_at: new Date().toISOString()
+      };
+      
       const { data, error } = await supabase
         .from('activity_logs')
-        .insert(activityData)
+        .insert(activityWithTimestamp)
         .select();
       
       // Handle duplicate entries gracefully
