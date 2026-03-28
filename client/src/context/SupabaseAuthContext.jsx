@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase, getSupabaseClient } from '../utils/supabase.js';
+import { supabase } from '../utils/supabase.js';
 import { supabaseAPI } from '../supabase-api.js';
 import { sendVerificationEmail } from '../utils/resend.js';
 
@@ -19,13 +19,12 @@ export function SupabaseAuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [adminChecked, setAdminChecked] = useState(false);
 
-  // Initialize auth state
+  // Initialize auth
   const initializeAuth = useCallback(async () => {
     try {
       console.log('🔧 Initializing Supabase auth...');
-      const client = await getSupabaseClient();
       
-      const { data: { session }, error } = await client.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
         console.warn('Failed to get session:', error);

@@ -13,70 +13,42 @@ if (!supabaseUrl || !supabaseKey) {
 
 // Global singleton instance
 let supabaseInstance = null;
-let isInitializing = false;
-let initializationPromise = null;
 
+// Create singleton immediately
 export const supabase = (() => {
   if (supabaseInstance) {
     return supabaseInstance;
   }
 
-  if (isInitializing) {
-    throw new Error('Supabase client is being initialized. Please wait for initialization to complete.');
-  }
-
-  isInitializing = true;
-  initializationPromise = (async () => {
-    try {
-      console.log('🔧 Initializing Supabase singleton client...');
-      
-      supabaseInstance = createClient(supabaseUrl, supabaseKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-          flow: 'pkce' // Use PKCE flow to avoid lock conflicts
-        },
-        db: {
-          schema: 'public'
-        },
-        realtime: {
-          params: {
-            eventsPerSecond: 10
-          }
-        },
-        global: {
-          headers: {
-            'X-Client-Info': 'wiblaster-client'
-          }
-        }
-      });
-
-      console.log('✅ Supabase singleton client initialized successfully');
-      return supabaseInstance;
-    } catch (error) {
-      console.error('❌ Failed to initialize Supabase client:', error);
-      isInitializing = false;
-      throw error;
-    } finally {
-      isInitializing = false;
+  console.log('🔧 Initializing Supabase singleton client...');
+  
+  supabaseInstance = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flow: 'pkce' // Use PKCE flow to avoid lock conflicts
+    },
+    db: {
+      schema: 'public'
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'wiblaster-client'
+      }
     }
-  })();
+  });
 
-  throw initializationPromise;
+  console.log('✅ Supabase singleton client initialized successfully');
+  return supabaseInstance;
 })();
 
-// Export a function to get the client safely
+// Export a function to get the client safely (for async operations)
 export async function getSupabaseClient() {
-  if (supabaseInstance) {
-    return supabaseInstance;
-  }
-  
-  if (initializationPromise) {
-    await initializationPromise;
-    return supabaseInstance;
-  }
-  
-  // If no initialization in progress, return the singleton (which will throw if not ready)
   return supabase;
 }
