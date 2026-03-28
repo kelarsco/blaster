@@ -78,10 +78,18 @@ export function UrlInput({
   };
 
   const startScan = async () => {
+    // Prevent multiple scans
+    if (isScanning) {
+      console.log('⚠️ Scan already in progress, ignoring request');
+      return;
+    }
+
     setError('');
     setUpgradeRequired(false);
     setLimitReached(false);
     setIsScanning(true);
+    
+    let scanTimeout = null;
     
     try {
       let maxConcurrentCrawlers = 5;
@@ -124,8 +132,8 @@ export function UrlInput({
         console.warn('⚠️ Supabase scan creation failed, using local mode:', supabaseError);
       }
 
-      // Simulate scan progress for demo purposes
-      setTimeout(() => {
+      // Simulate scan progress for demo purposes with proper cleanup
+      scanTimeout = setTimeout(() => {
         const mockResults = rawUrls.split('\n')
           .filter(url => url.trim())
           .slice(0, 5)
@@ -160,13 +168,37 @@ export function UrlInput({
       setError(error.message || 'Failed to start scan');
       setIsScanning(false);
     }
+    
+    // Cleanup function
+    return () => {
+      if (scanTimeout) {
+        clearTimeout(scanTimeout);
+        scanTimeout = null;
+      }
+    };
   };
+
+  // Reset scan state on component mount
+  useEffect(() => {
+    // Reset scanning state on mount to handle reload issues
+    setIsScanning(false);
+    setError('');
+    setUpgradeRequired(false);
+    setLimitReached(false);
+  }, []);
 
   useEffect(() => {
     if (scanStatus?.status === 'completed' || scanStatus?.status === 'failed') {
       setIsScanning(false);
     }
   }, [scanStatus?.status]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      setIsScanning(false);
+    };
+  }, []);
 
   return (
     <section className="bg-white rounded-2xl border border-[#e7e8f0] shadow-sm p-6">
