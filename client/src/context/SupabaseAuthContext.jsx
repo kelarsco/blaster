@@ -136,10 +136,13 @@ export function SupabaseAuthProvider({ children }) {
   // Google sign in
   const signInWithGoogle = useCallback(async () => {
     try {
+      // Use production URL or fallback to current origin
+      const redirectUrl = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/app/dashboard`
+          redirectTo: `${redirectUrl}/app/dashboard`
         }
       });
       
