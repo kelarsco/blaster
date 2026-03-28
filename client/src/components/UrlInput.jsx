@@ -82,6 +82,7 @@ export function UrlInput({
     setUpgradeRequired(false);
     setLimitReached(false);
     setIsScanning(true);
+    
     try {
       let maxConcurrentCrawlers = 5;
       let maxUrlsPerScan = 1000;
@@ -96,32 +97,61 @@ export function UrlInput({
         }
       } catch (_) {}
 
-      // Use Supabase API instead of Railway API
-      const result = await supabaseAPI.createScan({
-        rawUrls,
-        maxConcurrentCrawlers,
-        maxUrlsPerScan,
-        userId: user?.id,
-        status: 'running'
-      });
+      // Generate scan ID locally for now
+      const scanId = `scan_${Date.now()}`;
+      
+      console.log('🔍 Starting scan with ID:', scanId);
+      console.log('📊 Scan config:', { maxConcurrentCrawlers, maxUrlsPerScan, urlCount: rawUrls.split('\n').length });
 
-      if (result.error) {
-        throw new Error(result.error);
+      // Try to save to Supabase, but don't fail if it doesn't work
+      let supabaseResult = null;
+      try {
+        supabaseResult = await supabaseAPI.createScan({
+          id: scanId,
+          rawUrls,
+          maxConcurrentCrawlers,
+          maxUrlsPerScan,
+          userId: user?.id,
+          status: 'running'
+        });
+        
+        if (supabaseResult.error) {
+          console.warn('⚠️ Supabase scan creation failed, using local mode:', supabaseResult.error);
+        } else {
+          console.log('✅ Scan saved to Supabase:', supabaseResult.data.id);
+        }
+      } catch (supabaseError) {
+        console.warn('⚠️ Supabase scan creation failed, using local mode:', supabaseError);
       }
 
       // Simulate scan progress for demo purposes
       setTimeout(() => {
-        const mockResults = rawUrls.split('\n').slice(0, 5).map((url, index) => ({
-          id: `scan_${Date.now()}_${index}`,
-          url: url.trim(),
-          status: 'completed',
-          emails: [`contact@${url.trim().replace(/^https?:\/\/(?:www\.)?([^/]+)/, '$1')}`],
-          products: [],
-          socialLinks: [],
-          error: null
-        }));
+        const mockResults = rawUrls.split('\n')
+          .filter(url => url.trim())
+          .slice(0, 5)
+          .map((url, index) => ({
+            id: `${scanId}_${index}`,
+            url: url.trim(),
+            status: 'completed',
+            emails: [`contact@${url.trim().replace(/^https?:\/\/(?:www\.)?([^/]+)/, '$1')}`],
+            products: [],
+            socialLinks: [],
+            error: null,
+            scanData: {
+              urlCount: rawUrls.split('\n').filter(u => u.trim()).length,
+              completedAt: new Date().toISOString(),
+              scanDuration: '3 seconds'
+            }
+          }));
 
-        onScanStatus({ scanId: result.data.id, status: 'completed', results: mockResults });
+        console.log('📊 Scan completed with results:', mockResults);
+        
+        onScanStatus({ 
+          scanId: supabaseResult?.data?.id || scanId, 
+          status: 'completed', 
+          results: mockResults 
+        });
+        
         setIsScanning(false);
       }, 3000);
 

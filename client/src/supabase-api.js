@@ -39,12 +39,25 @@ export const supabaseAPI = {
 
   // Scans
   async createScan(scanData) {
-    const { data, error } = await supabase
-      .from('scans')
-      .insert(scanData)
-      .select()
-      .single();
-    return { data, error };
+    try {
+      const { data, error } = await supabase
+        .from('scans')
+        .insert(scanData)
+        .select()
+        .single();
+      
+      if (error) {
+        console.warn('Supabase scan creation error:', error);
+        // Don't throw error, just return null data so scanner can continue
+        return { data: null, error };
+      }
+      
+      console.log('Supabase scan created successfully:', data);
+      return { data, error: null };
+    } catch (error) {
+      console.error('Unexpected error creating scan:', error);
+      return { data: null, error };
+    }
   },
 
   async getScans(userId) {
