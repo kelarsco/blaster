@@ -101,7 +101,8 @@ async function start() {
       if (!db) {
         return res.status(503).json({ 
           ok: false, 
-          error: 'Database not initialized',
+          error: 'Database unavailable - Neon compute quota exceeded',
+          suggestion: 'Upgrade Neon plan or wait for quota reset',
           db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
         });
       }
@@ -113,9 +114,13 @@ async function start() {
       });
     } catch (e) {
       console.error('[health]', e?.message || e);
+      const errorMsg = e?.message || String(e);
+      const isNeonQuota = errorMsg.includes('compute time quota') || errorMsg.includes('exceeded');
       res.status(503).json({ 
         ok: false, 
-        error: e?.message || String(e),
+        error: errorMsg,
+        is_neon_quota: isNeonQuota,
+        suggestion: isNeonQuota ? 'Upgrade Neon plan or wait for quota reset' : 'Check database configuration',
         db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
       });
     }

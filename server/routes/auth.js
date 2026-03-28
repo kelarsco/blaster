@@ -153,7 +153,12 @@ authRoutes.get('/code-config', (_req, res) => {
 authRoutes.post('/register', authRateLimit, async (req, res) => {
   try {
     const db = getDb();
-    if (!db) return res.status(503).json({ error: 'Signup is not available. Please try again later.' });
+    if (!db) {
+      return res.status(503).json({ 
+        error: 'Database temporarily unavailable. Please try again later.',
+        retry_after: '1 hour' // Neon quota typically resets hourly
+      });
+    }
     if (!isVerificationEmailConfigured()) {
       return res.status(503).json({ error: 'Email verification is not configured. Contact support.' });
     }

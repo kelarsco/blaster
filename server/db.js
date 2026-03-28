@@ -57,10 +57,9 @@ export async function initDb() {
       }
     }
   }
-  console.error('DB schema failed after ' + maxAttempts + ' attempts. Server will exit - fix DATABASE_URL and redeploy.');
+  console.error('DB schema failed after ' + maxAttempts + ' attempts. Server will continue in read-only mode - upgrade Neon plan or wait for quota reset.');
+  // Don't exit - continue in read-only mode for basic functionality
   if (process.env.DB_INIT_EXIT === '1') process.exit(1);
-  // Force exit on DB failure to prevent 503 errors
-  process.exit(1);
   pool = null;
   return null;
 }
