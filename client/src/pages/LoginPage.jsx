@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { API } from '../api.js';
+import { useAuth } from '../context/SupabaseAuthContext';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 export function LoginPage() {
-  const { user, loading, setUser, setAccessToken, loginWithGoogle } = useAuth();
+  const { user, loading, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -44,32 +43,12 @@ export function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (data.code === 'EMAIL_NOT_VERIFIED') {
-          setError(data.error || 'Please verify your email first.');
-          return;
-        }
-        if (res.status === 403 && (data.error || '').toLowerCase().includes('deactivated')) {
-          setDeactivatedNotice(true);
-          setError('');
-          return;
-        }
-        if (res.status === 403 && data.code === 'SUSPENDED') {
-          setSuspendedNotice(true);
-          setError('');
-          return;
-        }
-        throw new Error(data.error || 'Login failed');
+      const result = await signIn(email.trim().toLowerCase(), password);
+      
+      if (!result.success) {
+        throw new Error(result.error);
       }
-      if (data.user) setUser(data.user);
-      if (data.accessToken) setAccessToken(data.accessToken);
+      
       navigate(from, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed');
@@ -166,7 +145,7 @@ export function LoginPage() {
       <div className="mt-5">
         <button
           type="button"
-          onClick={loginWithGoogle}
+          onClick={signInWithGoogle}
           className={authSecondaryButtonClass + ' flex items-center justify-center gap-2'}
         >
           <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
