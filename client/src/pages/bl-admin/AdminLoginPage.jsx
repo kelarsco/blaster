@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { verifyAdminTOTP } from '../../utils/totp';
+import { generateTestTOTP, verifyTOTPDebug } from '../../utils/admin-debug';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
@@ -9,10 +10,16 @@ export function AdminLoginPage() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+
+  // Generate test code for debugging
+  const testCode = generateTestTOTP();
+  console.log('🔧 Debug - Current valid TOTP code:', testCode);
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    setDebugInfo(null);
     
     if (!/^\d{6}$/.test(code)) {
       setError('Enter the 6-digit code from your authenticator app');
@@ -21,7 +28,11 @@ export function AdminLoginPage() {
     
     setLoading(true);
     try {
-      // Verify TOTP code using client-side verification
+      // Debug verification
+      const debugResult = verifyTOTPDebug(code);
+      setDebugInfo(debugResult);
+      
+      // Normal verification
       const isValid = await verifyAdminTOTP(code);
       
       if (isValid) {
@@ -36,6 +47,7 @@ export function AdminLoginPage() {
       setError('Invalid code');
     } catch (err) {
       setError(err?.message || 'Authentication failed');
+      setDebugInfo({ valid: false, error: err.message });
     } finally {
       setLoading(false);
     }
@@ -48,6 +60,17 @@ export function AdminLoginPage() {
         <p className="text-sm text-blaster-muted text-center mt-1">
           Enter the 6-digit code from your Google Authenticator app
         </p>
+        
+        {/* Debug Information */}
+        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-xs text-yellow-800 font-mono">
+            <strong>Debug - Current valid code:</strong> {testCode.code}
+          </p>
+          <p className="text-xs text-yellow-600 mt-1">
+            Check browser console for detailed verification logs
+          </p>
+        </div>
+        
         <form onSubmit={submit} className="mt-6 space-y-4">
           <input
             type="text"
@@ -61,6 +84,15 @@ export function AdminLoginPage() {
             autoFocus
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {debugInfo && (
+            <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+              <p className="text-xs text-blue-800">
+                <strong>Debug Result:</strong> {debugInfo.valid ? '✅ Valid' : '❌ Invalid'}
+                {debugInfo.timeStep && ` (Time step: ${debugInfo.timeStep}, Offset: ${debugInfo.offset || 0})`}
+              </p>
+              {debugInfo.error && <p className="text-xs text-red-600 mt-1">Error: {debugInfo.error}</p>}
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading || code.length !== 6}
