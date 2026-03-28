@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { API } from '../api.js';
-import { useAuth } from './AuthContext.jsx';
+import { useAuth } from './SupabaseAuthContext.jsx';
+import { supabaseAPI } from '../supabase-api.js';
 
 const ToolStateContext = createContext();
 
@@ -11,7 +11,7 @@ export function useToolState() {
 }
 
 export function ToolStateProvider({ children }) {
-  const { user, authFetch } = useAuth();
+  const { user } = useAuth();
   const prevUserId = useRef(null);
   const [scanId, setScanId] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('storereach-scanId') : null) || null);
   const [scanStatus, setScanStatus] = useState(null);
@@ -47,56 +47,77 @@ export function ToolStateProvider({ children }) {
   };
 
   const refreshScan = React.useCallback(async () => {
-    if (!scanId || !authFetch) return;
-    const statusRes = await authFetch(`${API}/scan/status/${scanId}`);
-    if (!statusRes.ok) {
-      if (statusRes.status === 404) clearStoredScan();
-      return;
-    }
-    const statusData = await statusRes.json();
-    setScanStatus(statusData);
-    const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
-    if (resultsRes.ok) {
-      const resultsData = await resultsRes.json();
-      if (resultsData?.results != null) setResults(resultsData.results);
-    }
-  }, [scanId, authFetch]);
-
-  useEffect(() => {
-    if (!scanId || !authFetch) return;
-    const fetchStatus = () =>
-      authFetch(`${API}/scan/status/${scanId}`).then((r) => (r.ok ? r.json() : r.status === 404 ? { _notFound: true } : null));
-    const fetchResults = () =>
-      authFetch(`${API}/scan/results/${scanId}`).then((r) => (r.ok ? r.json() : null));
-    fetchStatus().then((data) => {
-      if (data?._notFound) {
+    if (!scanId || !user) return;
+    
+    try {
+      // Get scan status from Supabase
+      const { data: scanData } = await supabaseAPI.getScans(user.id);
+      const currentScan = scanData?.find(s => s.id === scanId);
+      
+      if (!currentScan) {
         clearStoredScan();
         return;
       }
-      if (data) setScanStatus(data);
-    });
-    fetchResults().then((data) => data?.results != null && setResults(data.results));
+      
+      setScanStatus(currentScan);
+      
+      // Get scan results
+      const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
+      if (resultsData?.length > 0) {
+        setResults(resultsData);
+      }
+    } catch (error) {
+      console.error('Error refreshing scan:', error);
+    }
+  }, [scanId, user]);
+
+  useEffect(() => {
+    if (!scanId || !user) return;
+    
     let intervalId;
-    const poll = () => {
-      fetchStatus().then((data) => {
-        if (data?._notFound) {
+    
+    const poll = async () => {
+      try {
+        // Get scan status from Supabase
+        const { data: scanData } = await supabaseAPI.getScans(user.id);
+        const currentScan = scanData?.find(s => s.id === scanId);
+        
+        if (!currentScan) {
           clearStoredScan();
           if (intervalId) clearInterval(intervalId);
           return;
         }
-        if (!data) return;
-        setScanStatus(data);
-        if (data.status === 'completed' || data.status === 'failed') {
+        
+        setScanStatus(currentScan);
+        
+        if (currentScan.status === 'completed' || currentScan.status === 'failed') {
           if (intervalId) clearInterval(intervalId);
-          fetchResults().then((res) => res?.results != null && setResults(res.results));
+          // Get final results
+          const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
+          if (resultsData?.length > 0) {
+            setResults(resultsData);
+          }
           return;
         }
-        fetchResults().then((res) => res?.results != null && setResults(res.results));
-      });
+        
+        // Get results for in-progress scans
+        const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
+        if (resultsData?.length > 0) {
+          setResults(resultsData);
+        }
+      } catch (error) {
+        console.error('Error polling scan:', error);
+      }
     };
-    intervalId = setInterval(poll, 5000); // 5 seconds instead of 2 seconds
+    
+    // Initial fetch
+    poll();
+    
+    // Set up polling
+    intervalId = setInterval(poll, 5000);
+    
     return () => { if (intervalId) clearInterval(intervalId); };
-  }, [scanId, authFetch]);
+  }, [scanId, user]);
 
   const value = {
     scanId,
