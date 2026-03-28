@@ -30,7 +30,7 @@ export function VerifyEmailPage() {
       setError('Email and verification code are required');
       return;
     }
-    setVerifying(true);
+    setSubmitting(true);
     try {
       const res = await fetch(`${API}/auth/verify-email`, {
         method: 'POST',
@@ -46,7 +46,7 @@ export function VerifyEmailPage() {
     } catch (err) {
       setError(err.message || 'Verification failed');
     } finally {
-      setVerifying(false);
+      setSubmitting(false);
     }
   };
 
@@ -58,7 +58,7 @@ export function VerifyEmailPage() {
       setError('Enter your email to resend the code');
       return;
     }
-    setResending(true);
+    setSubmitting(true);
     try {
       const res = await fetch(`${API}/auth/resend-verification`, {
         method: 'POST',
@@ -72,7 +72,7 @@ export function VerifyEmailPage() {
     } catch (err) {
       setError(err.message || 'Failed to resend code');
     } finally {
-      setResending(false);
+      setSubmitting(false);
     }
   };
 
@@ -119,16 +119,16 @@ export function VerifyEmailPage() {
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         {resendSuccess && <p className="text-sm text-green-600">Code sent. Check your email.</p>}
-        <button type="submit" disabled={verifying || code.length !== 6} className={authPrimaryButtonClass}>
-          {verifying ? 'Verifying…' : 'Verify and continue'}
+        <button type="submit" disabled={submitting || code.length !== 6} className={authPrimaryButtonClass}>
+          {submitting ? 'Verifying…' : 'Verify and continue'}
         </button>
         <button
           type="button"
           onClick={handleResend}
-          disabled={resending}
+          disabled={submitting}
           className="w-full text-sm text-blaster-muted hover:text-blaster-fg py-2 disabled:opacity-50"
         >
-          {resending ? 'Sending…' : 'Resend code'}
+          {submitting ? 'Sending…' : 'Resend code'}
         </button>
       </form>
 

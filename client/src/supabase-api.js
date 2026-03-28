@@ -138,11 +138,23 @@ export const supabaseAPI = {
   },
 
   async logActivity(activityData) {
-    const { data, error } = await supabase
-      .from('activity_logs')
-      .insert(activityData)
-      .select();
-    return { data, error };
+    try {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .insert(activityData)
+        .select();
+      
+      // Handle duplicate entries gracefully
+      if (error && error.code === '23505') {
+        console.warn('Activity log already exists:', activityData);
+        return { data: null, error: null };
+      }
+      
+      return { data, error };
+    } catch (error) {
+      console.error('Error logging activity:', error);
+      return { data: null, error };
+    }
   },
 
   // Subscriptions
