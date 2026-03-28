@@ -3,9 +3,8 @@
 // Test TOTP code generation for debugging
 export function generateTestTOTP() {
   const TOTP_SECRET = 'JJZSKQB6NEZHG3STPBUTAI3BOR2F2QKP';
-  const timeStep = Math.floor(Date.now() / 1000 / 30);
   
-  // Simple hash function (same as in totp.js)
+  // Use the same algorithm as in totp.js
   function simpleHash(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -16,6 +15,7 @@ export function generateTestTOTP() {
     return Math.abs(hash);
   }
   
+  const timeStep = Math.floor(Date.now() / 1000 / 30);
   const hash = simpleHash(TOTP_SECRET + timeStep);
   const code = (hash % 1000000).toString().padStart(6, '0');
   
@@ -23,7 +23,9 @@ export function generateTestTOTP() {
     code,
     timeStep,
     timestamp: Date.now(),
-    secret: TOTP_SECRET
+    secret: TOTP_SECRET,
+    nextChange: ((timeStep + 1) * 30) * 1000,
+    timeUntilNext: (((timeStep + 1) * 30) * 1000) - Date.now()
   };
 }
 
