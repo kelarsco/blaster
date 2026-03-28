@@ -23,20 +23,12 @@ export const supabaseAPI = {
       email,
       password,
       options: {
-        data: { name }
+        data: { name },
+        emailRedirectTo: 'https://wiblaster.com/app/dashboard'
       }
     });
     
-    // Send verification email if signup was successful
-    if (data.user && !error) {
-      try {
-        await sendVerificationEmail(email, 'VERIFICATION_CODE');
-      } catch (emailError) {
-        console.warn('Failed to send verification email:', emailError);
-        // Don't fail the signup for email issues
-      }
-    }
-    
+    // Don't send verification email - let Resend handle it
     return { data, error };
   },
 

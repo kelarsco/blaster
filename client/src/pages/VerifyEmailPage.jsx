@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/SupabaseAuthContext';
+import { sendVerificationEmail } from '../utils/resend';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass } from '../layout/AuthLayout';
 
 export function VerifyEmailPage() {
@@ -60,14 +61,10 @@ export function VerifyEmailPage() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/auth/resend-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to resend');
+      const result = await sendVerificationEmail(email.trim().toLowerCase(), 'RESEND_CODE');
+      if (result.error) {
+        throw new Error(result.error);
+      }
       setResendSuccess(true);
     } catch (err) {
       setError(err.message || 'Failed to resend code');

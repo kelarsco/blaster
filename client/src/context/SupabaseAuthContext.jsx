@@ -82,8 +82,16 @@ export function SupabaseAuthProvider({ children }) {
       
       if (error) throw error;
       
-      // Log activity
+      // Send verification email using Resend
       if (data.user) {
+        try {
+          await sendVerificationEmail(email, 'SIGNUP_CODE');
+        } catch (emailError) {
+          console.warn('Failed to send verification email:', emailError);
+          // Don't fail the signup for email issues
+        }
+        
+        // Log activity
         await supabaseAPI.logActivity({
           user_id: data.user.id,
           type: 'user_registered',
@@ -146,8 +154,8 @@ export function SupabaseAuthProvider({ children }) {
   // Google sign in
   const signInWithGoogle = useCallback(async () => {
     try {
-      // Use production URL or fallback to current origin
-      const redirectUrl = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
+      // Always use production URL
+      const redirectUrl = 'https://wiblaster.com';
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
