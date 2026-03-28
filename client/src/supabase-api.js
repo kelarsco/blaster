@@ -141,8 +141,7 @@ export const supabaseAPI = {
     const { data, error } = await supabase
       .from('activity_logs')
       .insert(activityData)
-      .select()
-      .single();
+      .select();
     return { data, error };
   },
 

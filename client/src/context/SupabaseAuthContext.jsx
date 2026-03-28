@@ -1,11 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabase.js';
 import { supabaseAPI } from '../supabase-api.js';
+import { sendVerificationEmail } from '../utils/resend.js';
 
 const AuthContext = createContext(null);
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within SupabaseAuthProvider');
+  }
   return ctx;
 }
 
