@@ -64,13 +64,14 @@ export function AdminProvider({ children }) {
   }, [refetchAdmin]);
 
   const value = {
+    adminToken,
+    setAdminToken,
     adminFetch,
     refetchAdmin,
-    setAdminToken,
     logoutAdmin,
     isAdmin,
     adminChecked,
-    adminApi: ADMIN_API,
+    adminApi: 'simulated', // No longer using Railway API
   };
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
