@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { API } from '../api.js';
+import { useAuth } from '../context/SupabaseAuthContext';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass } from '../layout/AuthLayout';
 
 export function VerifyEmailPage() {
-  const { setUser, setAccessTokenState } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const emailFromState = location.state?.email || '';
   const [email, setEmail] = useState(emailFromState);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
 
   useEffect(() => {

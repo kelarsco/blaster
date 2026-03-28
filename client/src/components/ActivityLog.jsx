@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { API } from '../api.js';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/SupabaseAuthContext';
 
 function formatDate(iso) {
   if (!iso) return '—';
