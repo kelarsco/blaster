@@ -47,9 +47,9 @@ export function generateTestTOTP() {
   const timeStep = Math.floor(Date.now() / 1000 / 30);
   const timeHex = timeStep.toString(16).padStart(16, '0');
   const secretHex = base32Decode(TOTP_SECRET);
-  const hmacHex = hmacSHA1(secretHex, timeHex);
-  const offset = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
-  const binary = parseInt(hamacHex.substr(offset * 2, 8), 16) & 0x7fffffff;
+  const hmacResult = hmacSHA1(secretHex, timeHex);
+  const offset = parseInt(hmacResult.substr(-1, 1), 16) & 0x0f;
+  const binary = parseInt(hmacResult.substr(offset * 2, 8), 16) & 0x7fffffff;
   const code = (binary % 1000000).toString().padStart(6, '0');
   
   return {
@@ -121,9 +121,9 @@ export function verifyTOTPDebug(token) {
       const timeStep = currentTimeStep + offset;
       const timeHex = timeStep.toString(16).padStart(16, '0');
       const secretHex = base32Decode(TOTP_SECRET);
-      const hmacHex = hmacSHA1(secretHex, timeHex);
-      const offsetVal = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
-      const binary = parseInt(hamacHex.substr(offsetVal * 2, 8), 16) & 0x7fffffff;
+      const hmacResult = hmacSHA1(secretHex, timeHex);
+      const offsetVal = parseInt(hmacResult.substr(-1, 1), 16) & 0x0f;
+      const binary = parseInt(hmacResult.substr(offsetVal * 2, 8), 16) & 0x7fffffff;
       const expectedCode = (binary % 1000000).toString().padStart(6, '0');
       
       console.log(`🔢 Time step ${timeStep} (offset ${offset}): Expected ${expectedCode}, Got ${token}`);

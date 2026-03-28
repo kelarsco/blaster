@@ -19,12 +19,33 @@ export function SupabaseAuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [adminChecked, setAdminChecked] = useState(false);
 
+  // Add a safety timeout to prevent infinite loading
+  useEffect(() => {
+    const safetyTimeout = setTimeout(() => {
+      console.warn('🚨 Safety timeout: Forcing loading to false');
+      setLoading(false);
+      setAdminChecked(true);
+    }, 10000); // 10 second safety timeout
+
+    return () => clearTimeout(safetyTimeout);
+  }, []);
+
   // Initialize auth
   const initializeAuth = useCallback(async () => {
     try {
       console.log('🔧 Initializing Supabase auth...');
       
+      // Set a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('Auth initialization timeout, forcing loading to false');
+        setLoading(false);
+        setAdminChecked(true);
+      }, 5000); // 5 second timeout
+      
       const { data: { session }, error } = await supabase.auth.getSession();
+      
+      // Clear timeout since we got a response
+      clearTimeout(timeoutId);
       
       if (error) {
         console.warn('Failed to get session:', error);
@@ -88,6 +109,7 @@ export function SupabaseAuthProvider({ children }) {
           setSubscription(null);
         }
         
+        // Always set loading to false after auth state change
         setLoading(false);
       }
     );

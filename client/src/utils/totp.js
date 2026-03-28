@@ -52,6 +52,19 @@ function hmacSHA1(key, message) {
 }
 
 /**
+ * Simple hash function for fallback (not used in proper TOTP)
+ */
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+}
+
+/**
  * Generate TOTP code using proper RFC 6238 algorithm
  * @param {string} secret - The TOTP secret (base32 encoded)
  * @param {number} timeOffset - Time offset in seconds (for testing)
@@ -72,11 +85,11 @@ export function generateTOTP(secret = TOTP_SECRET, timeOffset = 0) {
     const secretHex = base32Decode(secret);
     
     // Generate HMAC-SHA1
-    const hmacHex = hmacSHA1(secretHex, timeHex);
+    const hmacResult = hmacSHA1(secretHex, timeHex);
     
     // Dynamic truncation
-    const offset = parseInt(hmacHex.substr(-1, 1), 16) & 0x0f;
-    const binary = parseInt(hamacHex.substr(offset * 2, 8), 16) & 0x7fffffff;
+    const offset = parseInt(hmacResult.substr(-1, 1), 16) & 0x0f;
+    const binary = parseInt(hmacResult.substr(offset * 2, 8), 16) & 0x7fffffff;
     const code = (binary % 1000000).toString().padStart(6, '0');
     
     return code;
