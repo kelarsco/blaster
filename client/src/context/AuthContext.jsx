@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { API } from '../api.js';
+import { API, API_BASE } from '../api.js';
 import { OAUTH_POPUP_RESULT_STORAGE_KEY } from '../utils/oauth.js';
 
 const AuthContext = createContext(null);
