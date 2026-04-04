@@ -113,7 +113,7 @@ export function AdminLayout() {
 
   const logout = async () => {
     try {
-      // No need to call logout API since we're using Supabase auth directly
+      // No need to call logout API since we're using Railway auth directly
       logoutAdmin();
       navigate('/bl-admin/login', { replace: true });
       window.location.reload();

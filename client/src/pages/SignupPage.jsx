@@ -51,7 +51,7 @@ export function SignupPage() {
         throw new Error(result.error);
       }
       
-      // For Supabase, user needs to verify email first
+      // For Railway, user needs to verify email first
       navigate('/verify-email', { state: { email: email.trim().toLowerCase() }, replace: true });
     } catch (err) {
       setError(err.message || 'Signup failed');
