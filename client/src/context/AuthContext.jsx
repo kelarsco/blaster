@@ -38,6 +38,42 @@ export function AuthProvider({ children }) {
     } catch (_) {}
   }, []);
 
+  // Initialize authentication state
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          // Try to fetch user data with the stored token
+          const res = await fetch(`${API}/auth/me`, {
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include',
+          });
+          
+          if (res.ok) {
+            const userData = await res.json();
+            setUser(userData);
+            setAccessTokenState(token);
+          } else {
+            // Token is invalid, clear it
+            localStorage.removeItem('accessToken');
+            setAccessTokenState(null);
+          }
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+      } finally {
+        // Always set loading to false after initialization
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
+  }, []);
+
   // Fetch user data and subscription
   useEffect(() => {
     if (!user) return;
@@ -224,6 +260,60 @@ export function AuthProvider({ children }) {
       });
   };
 
+  const signIn = async (email, password) => {
+    try {
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include',
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+      
+      if (data.accessToken) {
+        setAccessTokenState(data.accessToken);
+        persistAccessToken(data.accessToken);
+        setUser(data.user);
+      }
+      
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const signUp = async (email, password, name) => {
+    try {
+      const res = await fetch(`${API}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name }),
+        credentials: 'include',
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+      
+      if (data.accessToken) {
+        setAccessTokenState(data.accessToken);
+        persistAccessToken(data.accessToken);
+        setUser(data.user);
+      }
+      
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -238,6 +328,8 @@ export function AuthProvider({ children }) {
         authFetch,
         loginWithGoogle,
         logout,
+        signIn,
+        signUp,
       }}
     >
       {children}
