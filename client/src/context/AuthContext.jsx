@@ -139,6 +139,12 @@ export function AuthProvider({ children }) {
 
   /** Open Google OAuth in a popup when possible; fallback to full-page redirect. */
   const loginWithGoogle = useCallback(() => {
+    // Check if API_BASE is configured
+    if (!API_BASE || API_BASE === '') {
+      alert('Google OAuth is not configured yet. Please:\n1. Deploy your Railway backend\n2. Set VITE_API_URL in your environment\n3. Configure Google OAuth in Railway');
+      return;
+    }
+
     const url = `${API}/auth/google`;
     let handled = false;
 
@@ -262,6 +268,11 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     try {
+      // Check if API_BASE is configured
+      if (!API_BASE || API_BASE === '') {
+        throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
+      }
+
       const res = await fetch(`${API}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -289,6 +300,11 @@ export function AuthProvider({ children }) {
 
   const signUp = async (email, password, name) => {
     try {
+      // Check if API_BASE is configured
+      if (!API_BASE || API_BASE === '') {
+        throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
+      }
+
       const res = await fetch(`${API}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
