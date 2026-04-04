@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
-import { supabaseAdminAPI } from '../utils/supabase-admin';
 import { Logo } from '../components/Logo.jsx';
 
 const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
@@ -75,7 +74,9 @@ export function AdminLayout() {
 
   const fetchCounts = useCallback(async () => {
     try {
-      const counts = await supabaseAdminAPI.getSidebarCounts();
+      // TODO: Implement admin sidebar counts with Railway API
+      // const counts = await adminAPI.getSidebarCounts();
+      const counts = { users: 0, subscriptions: 0, messages: 0 };
       setCounts(counts);
     } catch (error) {
       console.error('Error fetching admin counts:', error);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { Logo } from '../components/Logo.jsx';
 import { Search, Mail, BarChart2, Shield, Zap, TrendingUp } from 'react-feather';
 import { HeroSplitText } from '../components/HeroSplitText';

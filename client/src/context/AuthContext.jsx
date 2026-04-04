@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { API } from '../api.js';
+import { OAUTH_POPUP_RESULT_STORAGE_KEY } from '../utils/oauth.js';
 
 const AuthContext = createContext(null);
-const ACCESS_TOKEN_STORAGE_KEY = 'wiblaster_access_token';
-const OAUTH_POPUP_RESULT_STORAGE_KEY = 'wiblaster_oauth_popup_result';
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
   return ctx;
 }
 
@@ -15,105 +17,28 @@ export function AuthProvider({ children }) {
   const [accessToken, setAccessTokenState] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
-  const refreshPromiseRef = useRef(null);
+  const [adminChecked, setAdminChecked] = useState(false);
 
+  // Persist access token to localStorage
   const persistAccessToken = useCallback((token) => {
     try {
-      if (token) localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-      else localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-    } catch (_) {
-      // Ignore storage errors (private mode, blocked storage).
-    }
-  }, []);
-
-  /** Single refresh in flight; others wait for it. Prevents 429 from parallel refresh calls. */
-  const doRefresh = useCallback(() => {
-    if (refreshPromiseRef.current) return refreshPromiseRef.current;
-    const p = fetch(`${API}/auth/refresh`, { method: 'POST', credentials: 'include' })
-      .then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        if (r.status === 403 && data?.code === 'SUSPENDED') {
-          return { status: 403, suspended: true, data };
-        }
-        if (r.ok && data?.user && data?.accessToken) return { ok: true, user: data.user, accessToken: data.accessToken };
-        return { status: r.status, ok: false };
-      })
-      .finally(() => {
-        refreshPromiseRef.current = null;
-      });
-    refreshPromiseRef.current = p;
-    return p;
-  }, []);
-
-  /** Try to restore session from stored access token, then fallback to refresh token cookie. */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        let restored = false;
-        let storedToken = null;
-        try {
-          storedToken = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-        } catch (_) {}
-        if (storedToken) {
-          const meRes = await fetch(`${API}/auth/me`, {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${storedToken}` },
-            credentials: 'include',
-          });
-          if (meRes.ok) {
-            const me = await meRes.json().catch(() => null);
-            if (me?.id) {
-              restored = true;
-              if (!cancelled) {
-                setUser(me);
-                setAccessTokenState(storedToken);
-              }
-            }
-          } else {
-            persistAccessToken(null);
-          }
-        }
-        if (!restored) {
-          const result = await doRefresh();
-          if (cancelled) return;
-          if (result?.suspended) {
-            setUser(null);
-            setAccessTokenState(null);
-            persistAccessToken(null);
-            const msg = encodeURIComponent(result.data?.error || 'Account suspended.');
-            window.location.href = `/login?error=suspended&message=${msg}`;
-            return;
-          }
-          if (result?.ok && result.user && result.accessToken) {
-            setUser(result.user);
-            setAccessTokenState(result.accessToken);
-            persistAccessToken(result.accessToken);
-            
-            // Fetch subscription data
-            fetch(`${API}/billing/subscription`, {
-              headers: { 'Authorization': `Bearer ${result.accessToken}` }
-            })
-              .then(r => r.json())
-              .then(data => {
-                if (data.subscription) {
-                  setSubscription(data.subscription);
-                }
-              })
-              .catch(() => {
-                // Ignore subscription fetch errors
-              });
-          }
-        }
-      } catch (_) {
-        // Keep unauthenticated state when restore fails.
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (token) {
+        localStorage.setItem('accessToken', token);
+      } else {
+        localStorage.removeItem('accessToken');
       }
-    })();
-    return () => { cancelled = true; };
-  }, [doRefresh, persistAccessToken]);
+    } catch (_) {}
+  }, []);
 
+  // Load access token from localStorage on mount
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (token) setAccessTokenState(token);
+    } catch (_) {}
+  }, []);
+
+  // Fetch user data and subscription
   useEffect(() => {
     if (!user) return;
     const token = sessionStorage.getItem('pendingInviteToken');
@@ -125,6 +50,22 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ token }),
     }).catch(() => {});
   }, [user]);
+
+  /** Refresh access token using refresh token from cookies. */
+  const doRefresh = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false };
+      return { ok: true, accessToken: data.accessToken, user: data.user };
+    } catch (_) {
+      return { ok: false };
+    }
+  }, []);
 
   /** Authenticated fetch: adds Bearer token, on 401 tries refresh once (shared lock) then retries. Never retries refresh on 429/failure. */
   const authFetch = useCallback(async (url, options = {}) => {

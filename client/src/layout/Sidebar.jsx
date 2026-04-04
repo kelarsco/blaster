@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
-import { supabaseAPI } from '../supabase-api';
+import { useAuth } from '../context/AuthContext';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 import { Logo } from '../components/Logo.jsx';
 
@@ -119,7 +118,7 @@ function daysUntilDate(endDate) {
 }
 
 export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileClose }) {
-  const { user } = useAuth();
+  const { user, authFetch } = useAuth();
   const [subscription, setSubscription] = useState(null);
   const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
@@ -133,17 +132,18 @@ export function Sidebar({ loading, onOpenActivity, mobileOpen = false, onMobileC
       return;
     }
     
-    // Use Supabase API instead of Railway API
-    supabaseAPI.getSubscription(user.id).then(({ data, error }) => {
-      if (error) {
-        console.warn('Failed to fetch subscription:', error);
+    // Use Railway API to fetch subscription
+    authFetch(`${API}/billing/subscription`).then(async (res) => {
+      if (!res.ok) {
+        console.warn('Failed to fetch subscription:', res.statusText);
         setSubscription(null);
       } else {
-        setSubscription(data);
+        const data = await res.json();
+        setSubscription(data.subscription);
       }
       setSubscriptionLoaded(true);
     });
-  }, [user]);
+  }, [user, authFetch]);
 
   useEffect(() => {
     fetchSubscription();

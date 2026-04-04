@@ -1,15 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
-import { supabaseAPI } from '../supabase-api';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Upload, FileText, X } from 'react-feather';
+import { useAuth } from '../context/AuthContext';
+import { API } from '../api.js';
 
-const URL_TOKEN_REGEX = /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
+const URL_TOKEN_REGEX = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
 
 function normalizeStoreUrl(input) {
   const raw = (input || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
   if (!raw) return null;
-  const token = raw.match(URL_TOKEN_REGEX)?.[0] || raw;
-  const withScheme = /^https?:\/\//i.test(token) ? token : `https://${token}`;
+  let url = raw.trim();
+  if (!url) return '';
+  
+  // Ensure URL has protocol
+  if (!url.match(/^https?:\/\//)) {
+    url = 'https://' + url;
+  }
+  
+  const withScheme = /^https?:\/\//i.test(url) ? url : `https://${url}`;
   try {
     const parsed = new URL(withScheme);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
@@ -47,7 +54,7 @@ export function UrlInput({
   existingResults = [],
   existingScanId,
 }) {
-  const { user } = useAuth();
+  const { authFetch } = useAuth();
   const [rawUrls, setRawUrls] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
@@ -89,8 +96,6 @@ export function UrlInput({
     setLimitReached(false);
     setIsScanning(true);
     
-    let scanTimeout = null;
-    
     try {
       let maxConcurrentCrawlers = 5;
       let maxUrlsPerScan = 1000;
@@ -105,77 +110,43 @@ export function UrlInput({
         }
       } catch (_) {}
 
-      // Generate scan ID locally for now
-      const scanId = `scan_${Date.now()}`;
-      
-      console.log('🔍 Starting scan with ID:', scanId);
-      console.log('📊 Scan config:', { maxConcurrentCrawlers, maxUrlsPerScan, urlCount: rawUrls.split('\n').length });
+      const urls = parseUrls(rawUrls);
+      console.log('🔍 Starting scan with config:', { maxConcurrentCrawlers, maxUrlsPerScan, urlCount: urls.length });
 
-      // Try to save to Supabase, but don't fail if it doesn't work
-      let supabaseResult = null;
-      try {
-        supabaseResult = await supabaseAPI.createScan({
-          id: scanId,
-          rawUrls,
+      // Use Railway API to start scan
+      const res = await authFetch(`${API}/scan/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          urls,
           maxConcurrentCrawlers,
           maxUrlsPerScan,
-          userId: user?.id,
-          status: 'running'
-        });
-        
-        if (supabaseResult.error) {
-          console.warn('⚠️ Supabase scan creation failed, using local mode:', supabaseResult.error);
-        } else {
-          console.log('✅ Scan saved to Supabase:', supabaseResult.data.id);
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      
+      if (!res.ok) {
+        if (res.status === 402) {
+          setUpgradeRequired(true);
+          return;
         }
-      } catch (supabaseError) {
-        console.warn('⚠️ Supabase scan creation failed, using local mode:', supabaseError);
+        if (res.status === 429) {
+          setLimitReached(true);
+          return;
+        }
+        throw new Error(data.error || 'Failed to start scan');
       }
 
-      // Simulate scan progress for demo purposes with proper cleanup
-      scanTimeout = setTimeout(() => {
-        const mockResults = rawUrls.split('\n')
-          .filter(url => url.trim())
-          .slice(0, 5)
-          .map((url, index) => ({
-            id: `${scanId}_${index}`,
-            url: url.trim(),
-            status: 'completed',
-            emails: [`contact@${url.trim().replace(/^https?:\/\/(?:www\.)?([^/]+)/, '$1')}`],
-            products: [],
-            socialLinks: [],
-            error: null,
-            scanData: {
-              urlCount: rawUrls.split('\n').filter(u => u.trim()).length,
-              completedAt: new Date().toISOString(),
-              scanDuration: '3 seconds'
-            }
-          }));
-
-        console.log('📊 Scan completed with results:', mockResults);
-        
-        onScanStatus({ 
-          scanId: supabaseResult?.data?.id || scanId, 
-          status: 'completed', 
-          results: mockResults 
-        });
-        
-        setIsScanning(false);
-      }, 3000);
+      if (data.scanId) {
+        onScanStart(data.scanId);
+      }
 
     } catch (error) {
       console.error('Scan start error:', error);
       setError(error.message || 'Failed to start scan');
       setIsScanning(false);
     }
-    
-    // Cleanup function
-    return () => {
-      if (scanTimeout) {
-        clearTimeout(scanTimeout);
-        scanTimeout = null;
-      }
-    };
   };
 
   // Reset scan state on component mount

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 

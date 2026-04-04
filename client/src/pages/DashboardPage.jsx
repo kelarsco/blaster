@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext.jsx';
-import { supabaseAPI } from '../supabase-api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { Send, Check, X, Mail } from 'react-feather';
 
 const SKELETON_DURATION_MS = 1500;

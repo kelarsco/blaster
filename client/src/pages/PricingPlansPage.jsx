@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X } from 'react-feather';
-import { useAuth } from '../context/SupabaseAuthContext';
-import { supabaseAPI } from '../supabase-api.js';
+import { API } from '../api.js';
+import { useAuth } from '../context/AuthContext';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 import {
   PLANS,
@@ -12,7 +12,7 @@ import {
 } from '../data/plans';
 
 export function PricingPlansPage() {
-  const { user } = useAuth();
+  const { authFetch } = useAuth();
   const [billingPeriod, setBillingPeriod] = useState('monthly');
   const [subscription, setSubscription] = useState(null);
   const [subscribingPlanId, setSubscribingPlanId] = useState(null);
@@ -24,13 +24,10 @@ export function PricingPlansPage() {
   };
 
   useEffect(() => {
-    // Fetch subscription using SupabaseAPI
-    if (user) {
-      supabaseAPI.getSubscription(user.id)
-        .then((d) => setSubscription(d.subscription || null))
-        .catch(() => setSubscription(null));
-    }
-  }, [user]);
+    authFetch(`${API}/billing/subscription`)
+      .then((d) => setSubscription(d.subscription || null))
+      .catch(() => setSubscription(null));
+  }, [authFetch]);
 
   const handleSubscribe = async (plan) => {
     if (plan.customContact) {
@@ -50,12 +47,25 @@ export function PricingPlansPage() {
       const planId = 'trial_weekly';
       setSubscribingPlanId(planId);
       try {
-        // Use Supabase to initialize payment (this will need to be implemented)
-        // For now, show a message that payment integration is being updated
-        showNotice('Payment integration is being updated. Please contact support for manual subscription setup.', 'Payment System Update');
-        setSubscribingPlanId(null);
+        const res = await authFetch(`${API}/billing/initialize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.authorizationUrl) {
+          if (data.reference) {
+            try {
+              sessionStorage.setItem('paystack-pending-reference', data.reference);
+            } catch (_) {}
+          }
+          window.location.href = data.authorizationUrl;
+          return;
+        }
+        throw new Error(data.error || 'Payment initialization failed');
       } catch (err) {
         showNotice(err.message || 'Failed to start subscription. Please try again.');
+      } finally {
         setSubscribingPlanId(null);
       }
       return;
@@ -65,12 +75,25 @@ export function PricingPlansPage() {
     const planId = isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
     setSubscribingPlanId(planId);
     try {
-      // Use Supabase to initialize payment (this will need to be implemented)
-      // For now, show a message that payment integration is being updated
-      showNotice('Payment integration is being updated. Please contact support for manual subscription setup.', 'Payment System Update');
-      setSubscribingPlanId(null);
+      const res = await authFetch(`${API}/billing/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.authorizationUrl) {
+        if (data.reference) {
+          try {
+            sessionStorage.setItem('paystack-pending-reference', data.reference);
+          } catch (_) {}
+        }
+        window.location.href = data.authorizationUrl;
+        return;
+      }
+      throw new Error(data.error || 'Payment initialization failed');
     } catch (err) {
       showNotice(err.message || 'Failed to start subscription. Please try again.');
+    } finally {
       setSubscribingPlanId(null);
     }
   };

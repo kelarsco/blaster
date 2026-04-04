@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UrlInput } from '../components/UrlInput';
 import { ResultsDashboard } from '../components/ResultsDashboard';
 import { useToolState } from '../context/ToolStateContext';
-import { useAuth } from '../context/SupabaseAuthContext.jsx';
-import { supabaseAPI } from '../supabase-api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ScannerPage() {
   const {

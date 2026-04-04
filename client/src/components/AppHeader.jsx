@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { loadProfileFromStorage, loadProfileImageFromStorage } from '../utils/profileStorage';
 import { Logo } from './Logo.jsx';
 

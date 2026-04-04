@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { useAuth } from './SupabaseAuthContext.jsx';
-import { supabaseAPI } from '../supabase-api.js';
+import { useAuth } from './AuthContext.jsx';
 
 const ToolStateContext = createContext();
 
@@ -11,7 +10,7 @@ export function useToolState() {
 }
 
 export function ToolStateProvider({ children }) {
-  const { user } = useAuth();
+  const { user, authFetch } = useAuth();
   const prevUserId = useRef(null);
   const [scanId, setScanId] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('storereach-scanId') : null) || null);
   const [scanStatus, setScanStatus] = useState(null);
@@ -19,7 +18,7 @@ export function ToolStateProvider({ children }) {
   const [automationOpen, setAutomationOpen] = useState(false);
   const [activeCampaignId, setActiveCampaignId] = useState(null);
 
-  // Only clear scan when switching to a different user (logout or login as another). Do not clear on initial load when user becomes available (so reload keeps the same scan).
+  // Only clear scan when switching to a different user (logout or login as another). Do not clear on initial load when user becomes available (so reload keeps same scan).
   useEffect(() => {
     const uid = user?.id ?? null;
     const prev = prevUserId.current;
@@ -46,30 +45,37 @@ export function ToolStateProvider({ children }) {
     setResults([]);
   };
 
-  const refreshScan = React.useCallback(async () => {
-    if (!scanId || !user) return;
+  const fetchScanStatus = async (scanId) => {
+    if (!user || !scanId) return;
     
     try {
-      // Get scan status from Supabase
-      const { data: scanData } = await supabaseAPI.getScans(user.id);
-      const currentScan = scanData?.find(s => s.id === scanId);
+      // Get scan status from Railway API
+      const res = await authFetch(`${API}/scans`);
+      if (!res.ok) throw new Error('Failed to fetch scan status');
+      
+      const scansData = await res.json();
+      const currentScan = scansData?.find(s => s.id === scanId);
       
       if (!currentScan) {
-        clearStoredScan();
+        setScanStatus({ status: 'not_found' });
         return;
       }
       
       setScanStatus(currentScan);
       
       // Get scan results
-      const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
-      if (resultsData?.length > 0) {
-        setResults(resultsData);
+      const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
+      if (resultsRes.ok) {
+        const resultsData = await resultsRes.json();
+        if (resultsData?.length > 0) {
+          setResults(resultsData);
+        }
       }
     } catch (error) {
-      console.error('Error refreshing scan:', error);
+      console.error('Failed to fetch scan status:', error);
+      setScanStatus({ status: 'error', error: error.message });
     }
-  }, [scanId, user]);
+  };
 
   useEffect(() => {
     if (!scanId || !user) return;
@@ -78,9 +84,12 @@ export function ToolStateProvider({ children }) {
     
     const poll = async () => {
       try {
-        // Get scan status from Supabase
-        const { data: scanData } = await supabaseAPI.getScans(user.id);
-        const currentScan = scanData?.find(s => s.id === scanId);
+        // Get scan status from Railway API
+        const res = await authFetch(`${API}/scans`);
+        if (!res.ok) throw new Error('Failed to fetch scan status');
+        
+        const scansData = await res.json();
+        const currentScan = scansData?.find(s => s.id === scanId);
         
         if (!currentScan) {
           clearStoredScan();
@@ -93,17 +102,23 @@ export function ToolStateProvider({ children }) {
         if (currentScan.status === 'completed' || currentScan.status === 'failed') {
           if (intervalId) clearInterval(intervalId);
           // Get final results
-          const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
-          if (resultsData?.length > 0) {
-            setResults(resultsData);
+          const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
+          if (resultsRes.ok) {
+            const resultsData = await resultsRes.json();
+            if (resultsData?.length > 0) {
+              setResults(resultsData);
+            }
           }
           return;
         }
         
         // Get results for in-progress scans
-        const { data: resultsData } = await supabaseAPI.getScanResults(scanId);
-        if (resultsData?.length > 0) {
-          setResults(resultsData);
+        const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
+        if (resultsRes.ok) {
+          const resultsData = await resultsRes.json();
+          if (resultsData?.length > 0) {
+            setResults(resultsData);
+          }
         }
       } catch (error) {
         console.error('Error polling scan:', error);
@@ -118,6 +133,10 @@ export function ToolStateProvider({ children }) {
     
     return () => { if (intervalId) clearInterval(intervalId); };
   }, [scanId, user]);
+
+  const refreshScan = () => {
+    if (scanId) fetchScanStatus(scanId);
+  };
 
   const value = {
     scanId,

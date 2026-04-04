@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { sendVerificationEmail } from '../utils/resend';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass } from '../layout/AuthLayout';
 

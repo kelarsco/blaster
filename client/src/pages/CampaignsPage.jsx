@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useToolState } from '../context/ToolStateContext';
-import { useAuth } from '../context/SupabaseAuthContext';
+import { useAuth } from '../context/AuthContext';
 import { AutomationModal } from '../components/AutomationModal';
 import { RecipientSourceModal } from '../components/RecipientSourceModal';
 import { ExecutionDashboard } from '../components/ExecutionDashboard';

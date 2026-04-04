@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
-import { SupabaseAuthProvider, useAuth } from './context/SupabaseAuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToolStateProvider } from './context/ToolStateContext';
 import { SubscriptionGuard } from './components/SubscriptionGuard';
 import { LandingPage } from './pages/LandingPage';
@@ -152,11 +152,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <SupabaseAuthProvider>
+      <AuthProvider>
         <GlobalPreloaderGate>
           <AppRoutes />
         </GlobalPreloaderGate>
-      </SupabaseAuthProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
