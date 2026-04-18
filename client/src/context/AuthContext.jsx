@@ -320,15 +320,20 @@ export function AuthProvider({ children }) {
         credentials: 'include',
       });
       
+      console.log('Signup response status:', res.status);
+      
       let data;
       try {
         const text = await res.text();
+        console.log('Signup response text:', text);
         data = JSON.parse(text);
       } catch (parseError) {
-        console.error('❌ Failed to parse JSON response:', parseError);
+        console.error('Failed to parse JSON response:', parseError);
         console.error('Response text:', await res.clone().text());
         throw new Error('Backend returned invalid response. Please check if Railway backend is running properly.');
       }
+      
+      console.log('Signup parsed data:', data);
       
       if (!res.ok) {
         throw new Error(data.error || `Registration failed (${res.status})`);

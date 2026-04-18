@@ -47,13 +47,13 @@ export function SignupPage() {
     try {
       const result = await signUp(email.trim().toLowerCase(), password, name.trim());
       
-      if (!result.success) {
-        throw new Error(result.error);
-      }
+      console.log('Signup result:', result);
       
       // For Railway, user needs to verify email first
+      // If signup was successful, redirect to verification page
       navigate('/verify-email', { state: { email: email.trim().toLowerCase() }, replace: true });
     } catch (err) {
+      console.error('Signup error:', err);
       setError(err.message || 'Signup failed');
     } finally {
       setSubmitting(false);
