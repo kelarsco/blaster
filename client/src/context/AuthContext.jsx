@@ -280,10 +280,18 @@ export function AuthProvider({ children }) {
         credentials: 'include',
       });
       
-      const data = await res.json();
+      let data;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('❌ Failed to parse JSON response:', parseError);
+        console.error('Response text:', await res.clone().text());
+        throw new Error('Backend returned invalid response. Please check if Railway backend is running properly.');
+      }
       
       if (!res.ok) {
-        throw new Error(data.error || 'Login failed');
+        throw new Error(data.error || `Login failed (${res.status})`);
       }
       
       if (data.accessToken) {
@@ -312,10 +320,18 @@ export function AuthProvider({ children }) {
         credentials: 'include',
       });
       
-      const data = await res.json();
+      let data;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('❌ Failed to parse JSON response:', parseError);
+        console.error('Response text:', await res.clone().text());
+        throw new Error('Backend returned invalid response. Please check if Railway backend is running properly.');
+      }
       
       if (!res.ok) {
-        throw new Error(data.error || 'Registration failed');
+        throw new Error(data.error || `Registration failed (${res.status})`);
       }
       
       if (data.accessToken) {
