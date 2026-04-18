@@ -1,31 +1,25 @@
-// Resend Email Utility - Direct API calls to Resend
-// This sends real emails using Resend API
+// Resend Email Utility - Railway Backend API calls
+// This sends emails through Railway backend which calls Resend API
 
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
+import { API } from '../api.js';
 
 /**
- * Send email using Resend API
+ * Send email using Railway backend API
  * @param {Object} emailData - Email data
  * @returns {Promise<Object>} - Email sending result
  */
 export async function sendEmail({ to, from, subject, html, text }) {
-  if (!RESEND_API_KEY) {
-    console.warn('Resend API key not found in environment variables');
-    return { error: 'Email service not configured' };
-  }
-
-  console.log('📧 Sending email via Resend API:', { to, subject, from: from || 'noreply@wiblaster.com' });
+  console.log('Sending email via Railway backend:', { to, subject, from: from || 'noreply@wiblaster.com' });
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
+    const response = await fetch(`${API}/email/send`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        to,
         from: from || 'noreply@wiblaster.com',
-        to: Array.isArray(to) ? to : [to],
         subject,
         html,
         text,
@@ -35,13 +29,13 @@ export async function sendEmail({ to, from, subject, html, text }) {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to send email');
+      throw new Error(data.error || 'Failed to send email');
     }
 
-    console.log('✅ Email sent successfully via Resend:', data);
+    console.log('Email sent successfully via Railway:', data);
     return { data };
   } catch (error) {
-    console.error('❌ Email sending error:', error);
+    console.error('Email sending error:', error);
     return { error: error.message };
   }
 }
