@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 import { Logo } from '../components/Logo.jsx';
 

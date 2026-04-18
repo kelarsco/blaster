@@ -40,8 +40,16 @@ export default function DashboardPage() {
         authFetch(`${API}/activity`)
       ]);
 
-      const campaignList = (await campaignsRes.json())?.data || [];
-      const activityList = (await activityRes.json())?.data || [];
+      let campaignList = [];
+      let activityList = [];
+      
+      if (campaignsRes && campaignsRes.ok) {
+        campaignList = (await campaignsRes.json())?.data || [];
+      }
+      
+      if (activityRes && activityRes.ok) {
+        activityList = (await activityRes.json())?.data || [];
+      }
       
       setCampaigns(campaignList);
       setActivity(activityList);
@@ -55,13 +63,26 @@ export default function DashboardPage() {
       setEmailsExtracted(activityList.reduce((sum, a) => sum + (a.emailsFound || 0), 0));
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      // Set empty data on error
+      setCampaigns([]);
+      setActivity([]);
+      setStats({ total: 0, sent: 0, failed: 0 });
+      setEmailsExtracted(0);
     } finally {
+      // Always set loading to false
       setLoading(false);
     }
   }, [user, authFetch]);
 
   useEffect(() => {
     fetchDashboardData();
+    
+    // Fallback: Ensure loading is never stuck
+    const fallback = setTimeout(() => {
+      setLoading(false);
+    }, 5000); // 5 second fallback
+    
+    return () => clearTimeout(fallback);
   }, [fetchDashboardData]);
 
   const recentActivity = activity.slice(0, 5);

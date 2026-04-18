@@ -9,20 +9,32 @@ function normalizeStoreUrl(input) {
   const raw = (input || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
   if (!raw) return null;
   let url = raw.trim();
-  if (!url) return '';
+  if (!url) return null;
   
   // Ensure URL has protocol
   if (!url.match(/^https?:\/\//)) {
     url = 'https://' + url;
   }
   
-  const withScheme = /^https?:\/\//i.test(url) ? url : `https://${url}`;
   try {
-    const parsed = new URL(withScheme);
+    const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (!host) return null;
-    return `https://${host}`;
-  } catch (_) {
+    if (!host) {
+      console.log('❌ No hostname found for:', url);
+      return null;
+    }
+    
+    // Basic domain validation - should have at least one dot and valid characters
+    if (!host.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+      console.log('❌ Invalid domain format:', host);
+      return null;
+    }
+    
+    const normalized = `https://${host}`;
+    console.log('✅ Normalized URL:', raw, '->', normalized);
+    return normalized;
+  } catch (error) {
+    console.log('❌ URL parsing error for:', url, error.message);
     return null;
   }
 }
@@ -37,12 +49,17 @@ function parseUrls(text) {
   const urls = [];
   for (const s of raw) {
     const normalized = normalizeStoreUrl(s);
-    if (!normalized) continue;
+    console.log('🔍 Processing URL:', s, '->', normalized);
+    if (!normalized) {
+      console.log('❌ Invalid URL skipped:', s);
+      continue;
+    }
     if (!seen.has(normalized)) {
       seen.add(normalized);
       urls.push(normalized);
     }
   }
+  console.log('✅ Final valid URLs:', urls);
   return urls.slice(0, 1000);
 }
 
@@ -113,6 +130,11 @@ export function UrlInput({
       const urls = parseUrls(rawUrls);
       console.log('🔍 Starting scan with config:', { maxConcurrentCrawlers, maxUrlsPerScan, urlCount: urls.length });
 
+      // Validate we have valid URLs
+      if (urls.length === 0) {
+        throw new Error('No valid URLs provided. Please enter valid store URLs (e.g., amazon.com, shopify.com)');
+      }
+
       // Use Railway API to start scan
       const res = await authFetch(`${API}/scan/start`, {
         method: 'POST',
@@ -135,7 +157,10 @@ export function UrlInput({
           setLimitReached(true);
           return;
         }
-        throw new Error(data.error || 'Failed to start scan');
+        if (res.status === 400) {
+          throw new Error(data.error || 'Invalid URLs provided. Please check your input and try again.');
+        }
+        throw new Error(data.error || `Failed to start scan (${res.status})`);
       }
 
       if (data.scanId) {

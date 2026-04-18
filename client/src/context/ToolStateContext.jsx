@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext.jsx';
+import { API } from '../api.js';
 
 const ToolStateContext = createContext();
 
