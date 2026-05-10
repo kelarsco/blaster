@@ -133,17 +133,36 @@ export function UrlInput({
       }
 
       // Use Railway API to start scan
+      const requestBody = {
+        urls,
+        maxConcurrentCrawlers,
+        maxUrlsPerScan,
+      };
+      
+      console.log('🚀 Sending scan request:', {
+        urlCount: urls.length,
+        urls: urls.slice(0, 3), // Show first 3 URLs for debugging
+        maxConcurrentCrawlers,
+        maxUrlsPerScan,
+      });
+      
       const res = await authFetch(`${API}/scan/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          urls,
-          maxConcurrentCrawlers,
-          maxUrlsPerScan,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      const data = await res.json().catch(() => ({}));
+      let data;
+      try {
+        const responseText = await res.text();
+        data = JSON.parse(responseText);
+        console.log('📄 Backend response:', { status: res.status, data });
+      } catch (parseError) {
+        console.error('❌ Failed to parse backend response:', parseError);
+        const responseText = await res.clone().text();
+        console.error('Raw response text:', responseText);
+        data = { error: 'Invalid backend response' };
+      }
       
       if (!res.ok) {
         if (res.status === 402) {
@@ -155,6 +174,7 @@ export function UrlInput({
           return;
         }
         if (res.status === 400) {
+          console.error('❌ 400 Bad Request - Backend says:', data);
           throw new Error(data.error || 'Invalid URLs provided. Please check your input and try again.');
         }
         throw new Error(data.error || `Failed to start scan (${res.status})`);
