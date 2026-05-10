@@ -24,11 +24,8 @@ function normalizeStoreUrl(input) {
       return null;
     }
     
-    // Basic domain validation - should have at least one dot and valid characters
-    if (!host.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
-      console.log('❌ Invalid domain format:', host);
-      return null;
-    }
+    // Skip strict domain validation - let URL constructor handle validation
+    // This allows more URLs to pass through
     
     const normalized = `https://${host}`;
     console.log('✅ Normalized URL:', raw, '->', normalized);
