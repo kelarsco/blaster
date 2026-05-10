@@ -126,9 +126,9 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="flex items-center">
-                <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
+              {/*   <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
                   <Mail className="h-6 w-6 text-blue-600" />
-                </div>
+                </div> */}
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Emails</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
@@ -138,9 +138,9 @@ export default function DashboardPage() {
             
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="flex items-center">
-                <div className="flex-shrink-0 bg-green-100 rounded-lg p-3">
+               {/*  <div className="flex-shrink-0 bg-green-100 rounded-lg p-3">
                   <Send className="h-6 w-6 text-green-600" />
-                </div>
+                </div> */}
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Sent</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.sent}</p>
@@ -150,9 +150,9 @@ export default function DashboardPage() {
             
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="flex items-center">
-                <div className="flex-shrink-0 bg-red-100 rounded-lg p-3">
+             {/*    <div className="flex-shrink-0 bg-red-100 rounded-lg p-3">
                   <X className="h-6 w-6 text-red-600" />
-                </div>
+                </div> */}
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Failed</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.failed}</p>
@@ -162,9 +162,9 @@ export default function DashboardPage() {
             
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="flex items-center">
-                <div className="flex-shrink-0 bg-purple-100 rounded-lg p-3">
+              {/*   <div className="flex-shrink-0 bg-purple-100 rounded-lg p-3">
                   <Check className="h-6 w-6 text-purple-600" />
-                </div>
+                </div> */}
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Emails Extracted</p>
                   <p className="text-2xl font-bold text-gray-900">{emailsExtracted}</p>
