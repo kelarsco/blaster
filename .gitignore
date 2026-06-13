@@ -2,5 +2,5 @@ node_modules/
 .env
 .env.local
 *.db
-client/dist
+server/.dev-server-port
 .DS_Store

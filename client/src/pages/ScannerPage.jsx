@@ -4,6 +4,7 @@ import { UrlInput } from '../components/UrlInput';
 import { ResultsDashboard } from '../components/ResultsDashboard';
 import { useToolState } from '../context/ToolStateContext';
 import { useAuth } from '../context/AuthContext.jsx';
+import { API } from '../api.js';
 
 export default function ScannerPage() {
   const {
@@ -15,7 +16,7 @@ export default function ScannerPage() {
     setResults,
     setAutomationOpen,
   } = useToolState();
-  const { user } = useAuth();
+  const { authFetch } = useAuth();
   const navigate = useNavigate();
 
   return (

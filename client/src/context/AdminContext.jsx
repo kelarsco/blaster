@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { API } from '../api.js';
 
 const ADMIN_TOKEN_STORAGE_KEY = 'wiblaster_admin_token';
 
@@ -24,40 +25,51 @@ export function AdminProvider({ children }) {
     } catch (_) {}
   }, []);
 
-  // Simple admin validation based on token presence
-  const refetchAdmin = useCallback(() => {
-    return new Promise((resolve) => {
-      if (adminToken && adminToken.startsWith('admin_token_')) {
+  const refetchAdmin = useCallback(async () => {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+      const res = await fetch(`${API}/bl-admin/me`, {
+        credentials: 'include',
+        headers,
+      });
+      if (res.ok) {
         setIsAdmin(true);
         setAdminChecked(true);
-        resolve(true);
-      } else {
-        setIsAdmin(false);
-        setAdminChecked(true);
-        resolve(false);
+        return true;
       }
-    });
-  }, [adminToken]);
+      setIsAdmin(false);
+      setAdminChecked(true);
+      if (adminToken) setAdminToken('');
+      return false;
+    } catch (_) {
+      setIsAdmin(false);
+      setAdminChecked(true);
+      return false;
+    }
+  }, [adminToken, setAdminToken]);
 
   const adminFetch = useCallback(async (path, options = {}) => {
-    // Since we don't have a backend, we'll simulate admin API calls
-    console.log('Admin API call simulated:', path, options);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Return mock response
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }, []);
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = path.startsWith('http') ? path : `${API}/bl-admin${normalizedPath}`;
+    const headers = { ...options.headers };
+    if (!headers['Content-Type'] && options.body) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+    return fetch(url, { ...options, credentials: 'include', headers });
+  }, [adminToken]);
 
-  const logoutAdmin = useCallback(() => {
+  const logoutAdmin = useCallback(async () => {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+      await fetch(`${API}/bl-admin/logout`, { method: 'POST', credentials: 'include', headers });
+    } catch (_) {}
     setIsAdmin(false);
     setAdminChecked(true);
     setAdminToken('');
-  }, [setAdminToken]);
+  }, [adminToken, setAdminToken]);
 
   useEffect(() => {
     refetchAdmin();
@@ -71,7 +83,6 @@ export function AdminProvider({ children }) {
     logoutAdmin,
     isAdmin,
     adminChecked,
-    adminApi: 'simulated', // No longer using Railway API
   };
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;

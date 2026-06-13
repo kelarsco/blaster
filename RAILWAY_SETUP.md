@@ -26,11 +26,25 @@ FRONTEND_URL=http://localhost:3000
 JWT_SECRET=your-super-secret-jwt-key-here
 ```
 
-#### Google OAuth (Optional)
+#### Google OAuth (required for “Sign in with Google”)
 ```
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_CLIENT_ID=108521960351-e4nbs81qqa7pp88lac8rma7vqu2sobk1.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-secret-from-google-console
+GOOGLE_CALLBACK_URL=https://blaster-production.up.railway.app/api/auth/google/callback
+FRONTEND_URL=https://blaster-production.up.railway.app
+SESSION_SECRET=long-random-string
+JWT_ACCESS_SECRET=long-random-string
+JWT_REFRESH_SECRET=long-random-string
 ```
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → your OAuth client:
+
+- **Authorized JavaScript origins:** `https://blaster-production.up.railway.app`
+- **Authorized redirect URIs:** `https://blaster-production.up.railway.app/api/auth/google/callback`
+
+Keep localhost URIs for local dev. After changing Railway variables, **redeploy** the service.
+
+Check config: `GET https://blaster-production.up.railway.app/api/auth/google/setup`
 
 #### Resend Email (Optional)
 ```

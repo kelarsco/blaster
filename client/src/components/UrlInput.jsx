@@ -1,9 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, X } from 'react-feather';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
-
-const URL_TOKEN_REGEX = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
 
 function normalizeStoreUrl(input) {
   const raw = (input || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
@@ -19,19 +17,9 @@ function normalizeStoreUrl(input) {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (!host) {
-      console.log('❌ No hostname found for:', url);
-      return null;
-    }
-    
-    // Skip strict domain validation - let URL constructor handle validation
-    // This allows more URLs to pass through
-    
-    const normalized = `https://${host}`;
-    console.log('✅ Normalized URL:', raw, '->', normalized);
-    return normalized;
-  } catch (error) {
-    console.log('❌ URL parsing error for:', url, error.message);
+    if (!host) return null;
+    return `https://${host}`;
+  } catch {
     return null;
   }
 }
@@ -46,17 +34,12 @@ function parseUrls(text) {
   const urls = [];
   for (const s of raw) {
     const normalized = normalizeStoreUrl(s);
-    console.log('🔍 Processing URL:', s, '->', normalized);
-    if (!normalized) {
-      console.log('❌ Invalid URL skipped:', s);
-      continue;
-    }
+    if (!normalized) continue;
     if (!seen.has(normalized)) {
       seen.add(normalized);
       urls.push(normalized);
     }
   }
-  console.log('✅ Final valid URLs:', urls);
   return urls.slice(0, 1000);
 }
 
@@ -77,7 +60,8 @@ export function UrlInput({
   const [csvName, setCsvName] = useState('');
 
   const urlCount = parseUrls(rawUrls).length;
-  const isScanRunning = isScanning || (scanStatus && scanStatus.status === 'running');
+  const isScanRunning =
+    isScanning || (scanStatus && ['running', 'pending'].includes(scanStatus.status));
   const isValid = urlCount >= 1 && urlCount <= 1000 && !isScanRunning;
 
   const onCsvUpload = async (event) => {
@@ -100,10 +84,7 @@ export function UrlInput({
 
   const startScan = async () => {
     // Prevent multiple scans
-    if (isScanning) {
-      console.log('⚠️ Scan already in progress, ignoring request');
-      return;
-    }
+    if (isScanning) return;
 
     setError('');
     setUpgradeRequired(false);
@@ -125,27 +106,18 @@ export function UrlInput({
       } catch (_) {}
 
       const urls = parseUrls(rawUrls);
-      console.log('🔍 Starting scan with config:', { maxConcurrentCrawlers, maxUrlsPerScan, urlCount: urls.length });
 
       // Validate we have valid URLs
       if (urls.length === 0) {
         throw new Error('No valid URLs provided. Please enter valid store URLs (e.g., amazon.com, shopify.com)');
       }
 
-      // Use Railway API to start scan
       const requestBody = {
-        urls,
+        rawUrls: urls.join('\n'),
         maxConcurrentCrawlers,
         maxUrlsPerScan,
       };
-      
-      console.log('🚀 Sending scan request:', {
-        urlCount: urls.length,
-        urls: urls.slice(0, 3), // Show first 3 URLs for debugging
-        maxConcurrentCrawlers,
-        maxUrlsPerScan,
-      });
-      
+
       const res = await authFetch(`${API}/scan/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -156,26 +128,26 @@ export function UrlInput({
       try {
         const responseText = await res.text();
         data = JSON.parse(responseText);
-        console.log('📄 Backend response:', { status: res.status, data });
-      } catch (parseError) {
-        console.error('❌ Failed to parse backend response:', parseError);
-        const responseText = await res.clone().text();
-        console.error('Raw response text:', responseText);
+      } catch {
         data = { error: 'Invalid backend response' };
       }
       
       if (!res.ok) {
         if (res.status === 402) {
           setUpgradeRequired(true);
+          setIsScanning(false);
           return;
         }
         if (res.status === 429) {
           setLimitReached(true);
+          setIsScanning(false);
           return;
         }
         if (res.status === 400) {
-          console.error('❌ 400 Bad Request - Backend says:', data);
           throw new Error(data.error || 'Invalid URLs provided. Please check your input and try again.');
+        }
+        if (res.status === 503 || res.status === 502) {
+          throw new Error('Cannot reach the API server. Run npm run dev from the project root.');
         }
         throw new Error(data.error || `Failed to start scan (${res.status})`);
       }
@@ -186,7 +158,12 @@ export function UrlInput({
 
     } catch (error) {
       console.error('Scan start error:', error);
-      setError(error.message || 'Failed to start scan');
+      const msg = error?.message || '';
+      if (/failed to fetch|network|load failed/i.test(msg)) {
+        setError('Cannot reach the API server. Run npm run dev from the project root (or cd server && npm run dev in a separate terminal).');
+      } else {
+        setError(msg || 'Failed to start scan');
+      }
       setIsScanning(false);
     }
   };

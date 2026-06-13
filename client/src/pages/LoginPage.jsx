@@ -35,7 +35,23 @@ export function LoginPage() {
       setError('');
       return;
     }
-    if (msg && (err === 'wrong_method' || err === 'NO_DB' || err === 'NO_EMAIL')) setError(decodeURIComponent(msg));
+    if (msg && (err === 'wrong_method' || err === 'NO_DB' || err === 'NO_EMAIL' || err === 'google_failed')) {
+      setError(decodeURIComponent(msg));
+      return;
+    }
+    if (err === 'google_failed') {
+      setError('Google sign-in failed. Please try again.');
+      return;
+    }
+    if (err === '1') {
+      setError(
+        'Google sign-in failed. On Railway, set GOOGLE_CALLBACK_URL to https://blaster-production.up.railway.app/api/auth/google/callback and add the same URI in Google Cloud Console. Redeploy after updating env vars.'
+      );
+      return;
+    }
+    if (err === 'google_not_configured') {
+      setError('Google sign-in is not available. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and SESSION_SECRET on Railway.');
+    }
   }, [searchParams]);
 
   const handleEmailLogin = async (e) => {
@@ -43,12 +59,7 @@ export function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      const result = await signIn(email.trim().toLowerCase(), password);
-      
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
+      await signIn(email.trim().toLowerCase(), password);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed');

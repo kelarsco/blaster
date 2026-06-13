@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import { API } from '../api.js';
+import { mapScanStatus, parseScanResultsPayload } from '../utils/scanStatus.js';
 
 const ToolStateContext = createContext();
 
@@ -46,94 +47,79 @@ export function ToolStateProvider({ children }) {
     setResults([]);
   };
 
-  const fetchScanStatus = async (scanId) => {
-    if (!user || !scanId) return;
-    
-    try {
-      // Get scan status from Railway API
-      const res = await authFetch(`${API}/scans`);
-      if (!res.ok) throw new Error('Failed to fetch scan status');
-      
-      const scansData = await res.json();
-      const currentScan = scansData?.find(s => s.id === scanId);
-      
-      if (!currentScan) {
-        setScanStatus({ status: 'not_found' });
-        return;
-      }
-      
-      setScanStatus(currentScan);
-      
-      // Get scan results
-      const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
-      if (resultsRes.ok) {
-        const resultsData = await resultsRes.json();
-        if (resultsData?.length > 0) {
-          setResults(resultsData);
+  const fetchScanResults = useCallback(
+    async (id) => {
+      const resultsRes = await authFetch(`${API}/scan/results/${id}`);
+      if (!resultsRes.ok) return;
+      const resultsData = await resultsRes.json();
+      const parsed = parseScanResultsPayload(resultsData);
+      if (parsed.length > 0) setResults(parsed);
+    },
+    [authFetch]
+  );
+
+  const fetchScanStatus = useCallback(
+    async (id) => {
+      if (!user || !id) return;
+
+      try {
+        const res = await authFetch(`${API}/scan/status/${id}`);
+        if (res.status === 404) {
+          setScanStatus({ scanId: id, status: 'not_found' });
+          return;
         }
+        if (!res.ok) throw new Error('Failed to fetch scan status');
+
+        const data = await res.json();
+        const currentScan = mapScanStatus(data);
+        setScanStatus(currentScan);
+
+        await fetchScanResults(id);
+      } catch (error) {
+        console.error('Failed to fetch scan status:', error);
+        setScanStatus({ scanId: id, status: 'error', error: error.message });
       }
-    } catch (error) {
-      console.error('Failed to fetch scan status:', error);
-      setScanStatus({ status: 'error', error: error.message });
-    }
-  };
+    },
+    [user, authFetch, fetchScanResults]
+  );
 
   useEffect(() => {
     if (!scanId || !user) return;
-    
+
     let intervalId;
-    
+    let stopped = false;
+
     const poll = async () => {
       try {
-        // Get scan status from Railway API
-        const res = await authFetch(`${API}/scans`);
+        const res = await authFetch(`${API}/scan/status/${scanId}`);
+        if (res.status === 404) return;
         if (!res.ok) throw new Error('Failed to fetch scan status');
-        
-        const scansData = await res.json();
-        const currentScan = scansData?.find(s => s.id === scanId);
-        
-        if (!currentScan) {
-          clearStoredScan();
-          if (intervalId) clearInterval(intervalId);
-          return;
-        }
-        
+
+        const data = await res.json();
+        const currentScan = mapScanStatus(data);
         setScanStatus(currentScan);
-        
+
+        await fetchScanResults(scanId);
+
         if (currentScan.status === 'completed' || currentScan.status === 'failed') {
+          stopped = true;
           if (intervalId) clearInterval(intervalId);
-          // Get final results
-          const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
-          if (resultsRes.ok) {
-            const resultsData = await resultsRes.json();
-            if (resultsData?.length > 0) {
-              setResults(resultsData);
-            }
-          }
-          return;
-        }
-        
-        // Get results for in-progress scans
-        const resultsRes = await authFetch(`${API}/scan/results/${scanId}`);
-        if (resultsRes.ok) {
-          const resultsData = await resultsRes.json();
-          if (resultsData?.length > 0) {
-            setResults(resultsData);
-          }
         }
       } catch (error) {
         console.error('Error polling scan:', error);
       }
     };
-    
-    // Initial fetch
+
     poll();
-    
-    // Set up polling
-    intervalId = setInterval(poll, 5000);
-    
-    return () => { if (intervalId) clearInterval(intervalId); };
-  }, [scanId, user]);
+    intervalId = setInterval(() => {
+      if (!stopped) poll();
+    }, 3000);
+
+    return () => {
+      stopped = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [scanId, user, authFetch, fetchScanResults]);
 
   const refreshScan = () => {
     if (scanId) fetchScanStatus(scanId);

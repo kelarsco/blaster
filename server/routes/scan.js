@@ -24,6 +24,48 @@ function parseUrls(text) {
   return urls.slice(0, 1000);
 }
 
+scanRoutes.get('/recent', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not signed in' });
+    const db = getDb();
+    if (db) {
+      const result = await db.query(
+        `SELECT id, status, total_urls, processed, found_count, created_at
+         FROM scans WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`,
+        [userId]
+      );
+      return res.json(
+        (result.rows || []).map((row) => ({
+          id: row.id,
+          status: row.status,
+          totalUrls: row.total_urls ?? 0,
+          processed: row.processed ?? 0,
+          foundCount: row.found_count ?? 0,
+          createdAt: row.created_at,
+        }))
+      );
+    }
+    const scans = [];
+    for (const [id, row] of memoryStore.scans.entries()) {
+      if (row?.user_id !== userId) continue;
+      scans.push({
+        id,
+        status: row.status,
+        totalUrls: row.total_urls ?? 0,
+        processed: row.processed ?? 0,
+        foundCount: row.found_count ?? 0,
+        createdAt: row.created_at,
+      });
+    }
+    scans.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return res.json(scans.slice(0, 20));
+  } catch (e) {
+    console.error('[scan recent]', e?.message || e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 scanRoutes.get('/analytics', requireAuth, async (req, res) => {
   try {
     const db = getDb();
@@ -57,7 +99,10 @@ scanRoutes.get('/analytics', requireAuth, async (req, res) => {
 scanRoutes.post('/start', requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
-    const rawUrls = body.rawUrls ?? body.raw_urls;
+    let rawUrls = body.rawUrls ?? body.raw_urls;
+    if (rawUrls == null && body.urls != null) {
+      rawUrls = Array.isArray(body.urls) ? body.urls.join('\n') : body.urls;
+    }
     const emailFilters = body.emailFilters ?? body.email_filters ?? {};
     const excludeStoreUrls = body.excludeStoreUrls ?? body.exclude_store_urls ?? [];
     const previousScanId = body.previousScanId ?? body.previous_scan_id ?? null;
@@ -134,8 +179,8 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
     if (db) {
       try {
         await db.query(
-          `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count) VALUES ($1, $2, 'pending', $3, 0, 0)`,
-          [scanId, userId, storesToScan]
+          `INSERT INTO scans (id, user_id, status, total_urls, processed, found_count, raw_input) VALUES ($1, $2, 'pending', $3, 0, 0, $4)`,
+          [scanId, userId, storesToScan, limitedUrls.join('\n')]
         );
       } catch (dbErr) {
         console.warn('[scan/start] DB insert failed, continuing in memory:', dbErr?.message || dbErr);
@@ -150,6 +195,20 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       created_at: new Date(),
     });
     memoryStore.results.set(scanId, []);
+    const actualUrlCount = limitedUrls.length;
+    if (db) {
+      try {
+        await db.query(
+          `UPDATE scans SET total_urls = $1, updated_at = NOW() WHERE id = $2`,
+          [actualUrlCount, scanId]
+        );
+      } catch (_) {}
+    }
+    memoryStore.scans.set(scanId, {
+      ...(memoryStore.scans.get(scanId) || {}),
+      total_urls: actualUrlCount,
+    });
+
     await addScanJob({
       scanId,
       userId: userId || undefined,
@@ -180,36 +239,67 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
   }
 });
 
+function mergeScanStatus(dbRow, memoryRow) {
+  if (!dbRow && !memoryRow) return null;
+  if (!dbRow) {
+    return {
+      scanId: memoryRow.scanId,
+      status: memoryRow.status ?? 'unknown',
+      totalUrls: memoryRow.total_urls ?? 0,
+      processed: memoryRow.processed ?? 0,
+      foundCount: memoryRow.found_count ?? 0,
+      createdAt: memoryRow.created_at,
+    };
+  }
+  if (!memoryRow) {
+    return {
+      scanId: dbRow.id,
+      status: dbRow.status ?? 'unknown',
+      totalUrls: dbRow.total_urls ?? 0,
+      processed: dbRow.processed ?? 0,
+      foundCount: dbRow.found_count ?? 0,
+      createdAt: dbRow.created_at,
+    };
+  }
+  const statusRank = { completed: 4, failed: 4, running: 3, pending: 2 };
+  const dbRank = statusRank[dbRow.status] ?? 1;
+  const memRank = statusRank[memoryRow.status] ?? 1;
+  const status = memRank >= dbRank ? memoryRow.status : dbRow.status;
+  return {
+    scanId: dbRow.id,
+    status: status ?? 'unknown',
+    totalUrls: Math.max(dbRow.total_urls ?? 0, memoryRow.total_urls ?? 0),
+    processed: Math.max(dbRow.processed ?? 0, memoryRow.processed ?? 0),
+    foundCount: Math.max(dbRow.found_count ?? 0, memoryRow.found_count ?? 0),
+    createdAt: dbRow.created_at ?? memoryRow.created_at,
+  };
+}
+
 scanRoutes.get('/status/:scanId', requireAuth, async (req, res) => {
   try {
+    const scanId = req.params.scanId;
+    const memoryRow = memoryStore.scans.get(scanId);
     const db = getDb();
     if (db) {
       try {
-        const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [req.params.scanId, req.user.id]);
+        const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [scanId, req.user.id]);
         const row = result?.rows?.[0];
         if (row) {
-          return res.json({
-            scanId: row.id,
-            status: row.status ?? 'unknown',
-            totalUrls: row.total_urls ?? 0,
-            processed: row.processed ?? 0,
-            foundCount: row.found_count ?? 0,
-            createdAt: row.created_at,
-          });
+          const merged = mergeScanStatus(row, memoryRow);
+          return res.json(merged);
         }
       } catch (dbErr) {
         console.warn('[scan status] DB read failed, falling back to memory:', dbErr?.message || dbErr);
       }
     }
-    const row = memoryStore.scans.get(req.params.scanId);
-    if (!row) return res.status(404).json({ error: 'Scan not found' });
+    if (!memoryRow) return res.status(404).json({ error: 'Scan not found' });
     res.json({
-      scanId: req.params.scanId,
-      status: row.status ?? 'unknown',
-      totalUrls: row.total_urls ?? 0,
-      processed: row.processed ?? 0,
-      foundCount: row.found_count ?? 0,
-      createdAt: row.created_at,
+      scanId,
+      status: memoryRow.status ?? 'unknown',
+      totalUrls: memoryRow.total_urls ?? 0,
+      processed: memoryRow.processed ?? 0,
+      foundCount: memoryRow.found_count ?? 0,
+      createdAt: memoryRow.created_at,
     });
   } catch (e) {
     console.error('[scan status]', e?.message || e);

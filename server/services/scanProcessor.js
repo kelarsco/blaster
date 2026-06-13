@@ -8,7 +8,7 @@ import { getDb, memoryStore } from '../db.js';
 const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 8);
 const DELAY_BETWEEN_STORES_MS = 1200;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 85000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
 function parseUrls(text) {
@@ -95,16 +95,19 @@ export async function processScan(payload) {
   let urls = parseUrls(rawInput || '');
   const cap = typeof maxUrlsPerScan === 'number' && maxUrlsPerScan > 0 ? Math.min(maxUrlsPerScan, 5000) : 1000;
   urls = urls.slice(0, cap);
-  upsertMemoryScan(scanId, { total_urls: urls.length, status: 'pending', processed: 0, found_count: 0 });
+  let processed = payload.initialProcessed ?? 0;
+  let foundCount = payload.initialFoundCount ?? 0;
+  const totalUrlCount = payload.totalUrlCount ?? urls.length;
+  upsertMemoryScan(scanId, { total_urls: totalUrlCount, status: 'pending', processed, found_count: foundCount });
 
   if (urls.length === 0) {
-    upsertMemoryScan(scanId, { status: 'completed', processed: 0, found_count: 0 });
+    upsertMemoryScan(scanId, { status: 'completed', processed, found_count: foundCount });
     if (db) {
       try {
         await runDbQueryWithRetry(
           db,
-          `UPDATE scans SET status = 'completed', processed = 0, found_count = 0, updated_at = NOW() WHERE id = $1`,
-          [scanId]
+          `UPDATE scans SET status = 'completed', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
+          [processed, foundCount, scanId]
         );
       } catch (e) {
         console.warn('[scanProcessor] finalize-empty update failed:', e?.message || e);
@@ -113,18 +116,16 @@ export async function processScan(payload) {
     return;
   }
 
-  let processed = 0;
-  let foundCount = 0;
   const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
   memoryStore.results.set(scanId, memoryResults);
 
-  upsertMemoryScan(scanId, { status: 'running', total_urls: urls.length });
+  upsertMemoryScan(scanId, { status: 'running', total_urls: totalUrlCount, processed, found_count: foundCount });
   if (db) {
     try {
       await runDbQueryWithRetry(
         db,
-        `UPDATE scans SET total_urls = $1, status = 'running', updated_at = NOW() WHERE id = $2`,
-        [urls.length, scanId]
+        `UPDATE scans SET total_urls = $1, status = 'running', processed = $2, found_count = $3, updated_at = NOW() WHERE id = $4`,
+        [totalUrlCount, processed, foundCount, scanId]
       );
     } catch (e) {
       console.warn('[scanProcessor] start status update failed:', e?.message || e);
@@ -215,6 +216,7 @@ export async function processScan(payload) {
   for (let i = 0; i < urls.length; i += concurrency) {
     if (i > 0) await delay(DELAY_BETWEEN_STORES_MS);
     const batch = urls.slice(i, i + concurrency);
+    console.log(`[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`);
     const settled = await Promise.allSettled(batch.map((storeUrl) => processOneWithTimeout(storeUrl)));
     const outcomes = settled.map((s, idx) => {
       if (s.status === 'fulfilled') return s.value;

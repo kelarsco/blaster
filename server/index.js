@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { initDb, getDb } from './db.js';
 import { resumePendingCampaignsOnStartup } from './services/campaignResume.js';
+import { resumePendingScansOnStartup } from './services/scanResume.js';
 import { syncPaystackPlans } from './services/paystackSync.js';
 import { scanRoutes } from './routes/scan.js';
 import { exportRoutes } from './routes/export.js';
@@ -154,28 +155,47 @@ async function start() {
   }
 
   await resumePendingCampaignsOnStartup();
+  await resumePendingScansOnStartup();
   syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
   const basePort = Number(process.env.PORT) || 4000;
-  const maxTries = 10;
+  const isDev = process.env.NODE_ENV !== 'production';
+  const maxTries = isDev ? 1 : 10;
   let server = null;
+  let boundPort = basePort;
   for (let tryPort = basePort; tryPort < basePort + maxTries; tryPort++) {
     try {
       await new Promise((resolve, reject) => {
         server = app.listen(tryPort, () => resolve());
         server.on('error', (err) => reject(err));
       });
+      boundPort = tryPort;
       console.log(`wiblaster server running at http://localhost:${tryPort}`);
-      if (tryPort !== basePort) {
+      if (!isDev && tryPort !== basePort) {
         console.log(`(Port ${basePort} was in use. If using Vite dev, set VITE_API_PORT=${tryPort} in client .env and restart.)`);
+      }
+      if (isDev) {
+        try {
+          fs.writeFileSync(path.join(__dirname, '.dev-server-port'), String(tryPort));
+        } catch (_) {}
       }
       break;
     } catch (err) {
-      if (err.code !== 'EADDRINUSE' || tryPort === basePort + maxTries - 1) {
-        console.error(`\nCould not bind to port ${tryPort}. To free a port, run:`);
-        console.error('  netstat -ano | findstr :4000');
-        console.error('  taskkill /PID <number_from_above> /F\n');
-        throw err;
+      if (err.code === 'EADDRINUSE') {
+        if (isDev) {
+          console.error(`\nPort ${tryPort} is already in use. Stop the other server process, then restart:`);
+          console.error('  netstat -ano | findstr :4000');
+          console.error('  taskkill /PID <number_from_above> /F\n');
+          throw err;
+        }
+        if (tryPort === basePort + maxTries - 1) {
+          console.error(`\nCould not bind to port ${tryPort}. To free a port, run:`);
+          console.error('  netstat -ano | findstr :4000');
+          console.error('  taskkill /PID <number_from_above> /F\n');
+          throw err;
+        }
+        continue;
       }
+      throw err;
     }
   }
 }

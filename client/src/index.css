@@ -16,6 +16,21 @@
   .card-body-mobile {
     @apply p-4 md:p-6;
   }
+
+  /* Dashboard typography: Inter body, Montserrat headings */
+  .dashboard-fonts {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-optical-sizing: auto;
+  }
+  .dashboard-fonts h1,
+  .dashboard-fonts h2,
+  .dashboard-fonts h3,
+  .dashboard-fonts h4,
+  .dashboard-fonts .page-title-mobile,
+  .dashboard-fonts .card-title-mobile {
+    font-family: 'Montserrat', 'Inter', system-ui, sans-serif;
+    font-optical-sizing: auto;
+  }
 }
 
 :root {
@@ -93,6 +108,41 @@ input:focus, textarea:focus {
 }
 .btn-danger {
   @apply px-4 py-2 rounded-lg font-medium bg-red-600/90 text-white hover:bg-red-500 transition;
+}
+
+@keyframes hero-email-bounce-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2, 0.05) rotate(-22deg);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2, 0.85) rotate(-22deg);
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(0.92, 1.08) rotate(-22deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(-22deg);
+  }
+}
+
+.hero-email-letter {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.hero-email-icon {
+  opacity: 0;
+  pointer-events: none;
+  top: 43px;
+  width: 204px;
+  height: 71px;
+}
+
+.hero-email-icon--visible {
+  animation: hero-email-bounce-in 0.7s cubic-bezier(0.34, 1.45, 0.64, 1) forwards;
 }
 
 /* wiblaster landing & app - clickable links use #6366F1; btn-blaster-accent keeps white text */

@@ -1,6 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
+import { memoryStore } from '../db.js';
 
 const inMemoryJobs = new Map();
+
+function markScanFailed(scanId) {
+  const prev = memoryStore.scans.get(scanId) || {};
+  memoryStore.scans.set(scanId, { ...prev, status: 'failed' });
+}
 
 export async function addScanJob(data) {
   const id = data.scanId || uuidv4();
@@ -30,6 +36,7 @@ async function runInMemoryScan(scanId) {
     rec.status = 'completed';
   } catch (err) {
     rec.status = 'failed';
+    markScanFailed(scanId);
     console.error('[scan job failed]', scanId, err?.message || err);
     if (err?.stack) console.error(err.stack);
     try {

@@ -1,20 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '../components/Logo.jsx';
+import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 
 export function TermsOfServicePage() {
   return (
-    <div className="min-h-screen bg-blaster-bg font-landing text-blaster-fg">
-      <header className="sticky top-0 z-40 bg-blaster-bg border-b border-blaster-border">
-        <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 font-bold text-lg uppercase tracking-tight text-blaster-fg">
-            <Logo />
-          </Link>
-          <Link to="/" className="text-sm text-blaster-muted hover:text-blaster-fg transition">
-            Back to home
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-blaster-bg font-poppins text-black">
+      <MarketingHeader />
 
       <main className="max-w-3xl mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold text-blaster-fg">Terms of Service</h1>

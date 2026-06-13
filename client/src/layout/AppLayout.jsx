@@ -6,6 +6,7 @@ import { ActivityLog } from '../components/ActivityLog';
 import { HelpPanel } from '../components/HelpPanel';
 import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
+import { BackendStatusBanner } from '../components/BackendStatusBanner';
 
 const LAYOUT_SKELETON_MS = 1500;
 const SCROLL_THRESHOLD = 10;
@@ -67,7 +68,7 @@ export function AppLayout() {
   }, []);
 
   return (
-    <div className="min-h-screen flex bg-blaster-bg-app">
+    <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
       <Sidebar
         loading={layoutLoading}
         onOpenActivity={() => setShowActivity(true)}
@@ -89,6 +90,7 @@ export function AppLayout() {
         </svg>
       </button>
       <div className="flex-1 min-w-0 ml-0 md:ml-64 flex flex-col min-h-screen">
+        <BackendStatusBanner />
         <AppHeader loading={layoutLoading} onOpenHelp={() => setShowHelp(true)} onOpenSupport={() => setShowSupport(true)} />
         <main ref={mainRef} className="flex-1 overflow-auto relative">
           <div key={location.pathname} className="relative min-h-full">

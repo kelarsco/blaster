@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Check, X, ChevronDown } from 'react-feather';
 import { Logo } from '../components/Logo.jsx';
+import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 import {
   PLANS,
   MONTHS_BILLED_ANNUALLY,
@@ -12,51 +13,12 @@ import {
   PLAN_KEY,
 } from '../data/plans';
 
-const SIDEBAR_DURATION_MS = 300;
-
-const NAV_LINKS = [
-  { href: '/#features', label: 'Solutions' },
-  { href: '/#security', label: 'Security' },
-  { href: '/#how', label: 'How it works' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/#faq', label: 'FAQ' },
-];
-
 export function PricingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [billingPeriod, setBillingPeriod] = useState('monthly');
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarClosing, setSidebarClosing] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(false);
-  const closeTimeoutRef = useRef(null);
   const isAnnually = billingPeriod === 'annually';
-
-  useEffect(() => {
-    if (sidebarOpen && !sidebarClosing) {
-      const t = setTimeout(() => setSidebarVisible(true), 10);
-      return () => clearTimeout(t);
-    }
-    setSidebarVisible(false);
-  }, [sidebarOpen, sidebarClosing]);
-
-  const closeSidebar = () => {
-    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-    setSidebarClosing(true);
-    setSidebarVisible(false);
-    closeTimeoutRef.current = setTimeout(() => {
-      setSidebarOpen(false);
-      setSidebarClosing(false);
-      closeTimeoutRef.current = null;
-    }, SIDEBAR_DURATION_MS);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-    };
-  }, []);
 
   const handleChoosePlan = (plan) => {
     if (plan.customContact) {
@@ -82,101 +44,8 @@ export function PricingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-blaster-bg font-landing text-blaster-fg">
-      <header className="sticky top-0 z-40 bg-blaster-bg">
-        <div className="max-w-6xl mx-auto px-4 py-1.5 sm:py-2.5 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-sm sm:text-lg uppercase tracking-tight text-blaster-fg shrink-0 min-w-0">
-            <Logo />
-          </Link>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <Link
-              to="/signup"
-              className="inline-flex items-center justify-center px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-blaster-fg text-white text-sm font-semibold btn-landing-pop whitespace-nowrap scale-[0.84] sm:scale-100 origin-center"
-            >
-              Get Started Free
-            </Link>
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-lg text-blaster-fg hover:bg-blaster-border/50 transition btn-landing-pop"
-              aria-label="Open menu"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {sidebarOpen && (
-        <>
-          <div
-            className={`fixed inset-0 z-50 bg-black/30 backdrop-blur-sm sidebar-overlay ${sidebarVisible ? 'sidebar-overlay-open' : ''} ${sidebarClosing ? 'sidebar-overlay-closing' : ''}`}
-            onClick={closeSidebar}
-            aria-hidden
-          />
-          <aside
-            className={`fixed top-0 right-0 z-50 w-full max-w-sm h-full bg-white border-l border-blaster-border shadow-xl flex flex-col sidebar-panel rounded-tl-2xl rounded-bl-2xl ${sidebarVisible ? 'sidebar-panel-open' : ''} ${sidebarClosing ? 'sidebar-panel-closing' : ''}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-blaster-border">
-              <span className="font-bold text-black">Menu</span>
-              <button
-                type="button"
-                onClick={closeSidebar}
-                className="p-2 rounded-lg text-black hover:bg-blaster-bg-app transition"
-                aria-label="Close menu"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-              {NAV_LINKS.map((l) => (
-                <Link
-                  key={l.href}
-                  to={l.href}
-                  onClick={closeSidebar}
-                  className="block py-3 text-black font-medium hover:opacity-80 transition"
-                >
-                  {l.label}
-                </Link>
-              ))}
-              <Link to="/login" onClick={closeSidebar} className="block py-3 text-black font-medium hover:opacity-80 transition">
-                Log in
-              </Link>
-              <Link
-                to="/signup"
-                onClick={closeSidebar}
-                className="block py-3 text-black font-medium hover:opacity-80 transition"
-              >
-                Get Started Free
-              </Link>
-            </nav>
-            <div className="p-4 border-t border-blaster-border shrink-0">
-              <div className="rounded-xl bg-blaster-accent/10 border border-blaster-accent/20 p-4">
-                <h3 className="font-bold text-black text-center">Scale your outreach</h3>
-                <p className="text-sm text-blaster-muted text-center mt-1">
-                  Find emails from store sites and send campaigns with multiple senders.
-                </p>
-                <Link
-                  to="/signup"
-                  onClick={closeSidebar}
-                  className="mt-3 block text-center text-sm font-medium text-black hover:underline"
-                >
-                  Learn more →
-                </Link>
-              </div>
-              <p className="text-xs text-blaster-muted mt-4">© {new Date().getFullYear()} wiblaster.</p>
-              <Link to="/privacy" onClick={closeSidebar} className="text-xs text-blaster-muted hover:underline mt-1 inline-block">
-                Privacy Policy
-              </Link>
-            </div>
-          </aside>
-        </>
-      )}
+    <div className="min-h-screen bg-blaster-bg font-poppins text-black">
+      <MarketingHeader />
 
       <main className="max-w-6xl mx-auto px-4 py-12 sm:py-16">
         <div className="text-center">

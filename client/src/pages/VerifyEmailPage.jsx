@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { sendVerificationEmail } from '../utils/resend';
+import { API } from '../api.js';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass } from '../layout/AuthLayout';
 
 export function VerifyEmailPage() {
-  const { user } = useAuth();
+  const { setUser, setAccessToken } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const emailFromState = location.state?.email || '';
@@ -13,7 +13,6 @@ export function VerifyEmailPage() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
 
   useEffect(() => {
@@ -42,7 +41,7 @@ export function VerifyEmailPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Verification failed');
       if (data.user) setUser(data.user);
-      if (data.accessToken) setAccessTokenState(data.accessToken);
+      if (data.accessToken) setAccessToken(data.accessToken, data.user);
       navigate('/app/dashboard', { replace: true });
     } catch (err) {
       setError(err.message || 'Verification failed');
@@ -61,10 +60,14 @@ export function VerifyEmailPage() {
     }
     setSubmitting(true);
     try {
-      const result = await sendVerificationEmail(email.trim().toLowerCase(), 'RESEND_CODE');
-      if (result.error) {
-        throw new Error(result.error);
-      }
+      const res = await fetch(`${API}/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to resend code');
       setResendSuccess(true);
     } catch (err) {
       setError(err.message || 'Failed to resend code');

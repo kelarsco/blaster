@@ -74,16 +74,19 @@ export function AdminLayout() {
 
   const fetchCounts = useCallback(async () => {
     try {
-      // TODO: Implement admin sidebar counts with Railway API
-      // const counts = await adminAPI.getSidebarCounts();
-      const counts = { users: 0, subscriptions: 0, messages: 0 };
-      setCounts(counts);
+      const res = await adminFetch('/sidebar-counts');
+      if (res.ok) {
+        const data = await res.json();
+        setCounts({
+          users: Number(data.users) || 0,
+          subscriptions: Number(data.subscriptions) || 0,
+          messages: Number(data.messages) || 0,
+        });
+      }
     } catch (error) {
       console.error('Error fetching admin counts:', error);
-      // Set default counts on error
-      setCounts({ users: 0, subscriptions: 0, messages: 0 });
     }
-  }, []);
+  }, [adminFetch]);
 
   useEffect(() => {
     fetchCounts();
@@ -113,15 +116,13 @@ export function AdminLayout() {
 
   const logout = async () => {
     try {
-      // No need to call logout API since we're using Railway auth directly
-      logoutAdmin();
+      await logoutAdmin();
       navigate('/bl-admin/login', { replace: true });
-      window.location.reload();
     } catch (_) {}
   };
 
   return (
-    <div className="min-h-screen flex bg-blaster-bg-app">
+    <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
       {sidebarOpen && (
         <div
           className="md:hidden fixed inset-0 z-20 bg-black/50"

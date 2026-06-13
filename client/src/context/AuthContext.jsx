@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { API, API_BASE } from '../api.js';
-import { OAUTH_POPUP_RESULT_STORAGE_KEY } from '../utils/oauth.js';
-
 const AuthContext = createContext(null);
 
 export function useAuth() {
@@ -17,9 +15,7 @@ export function AuthProvider({ children }) {
   const [accessToken, setAccessTokenState] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [adminChecked, setAdminChecked] = useState(false);
 
-  // Persist access token to localStorage
   const persistAccessToken = useCallback((token) => {
     try {
       if (token) {
@@ -30,63 +26,6 @@ export function AuthProvider({ children }) {
     } catch (_) {}
   }, []);
 
-  // Load access token from localStorage on mount
-  useEffect(() => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      if (token) setAccessTokenState(token);
-    } catch (_) {}
-  }, []);
-
-  // Initialize authentication state
-  useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          // Try to fetch user data with the stored token
-          const res = await fetch(`${API}/auth/me`, {
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            credentials: 'include',
-          });
-          
-          if (res.ok) {
-            const userData = await res.json();
-            setUser(userData);
-            setAccessTokenState(token);
-          } else {
-            // Token is invalid, clear it
-            localStorage.removeItem('accessToken');
-            setAccessTokenState(null);
-          }
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-      } finally {
-        // Always set loading to false after initialization
-        setLoading(false);
-      }
-    };
-
-    initializeAuth();
-  }, []);
-
-  // Fetch user data and subscription
-  useEffect(() => {
-    if (!user) return;
-    const token = sessionStorage.getItem('pendingInviteToken');
-    if (!token) return;
-    sessionStorage.removeItem('pendingInviteToken');
-    authFetch(`${API}/invites/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    }).catch(() => {});
-  }, [user]);
-
   /** Refresh access token using refresh token from cookies. */
   const doRefresh = useCallback(async () => {
     try {
@@ -95,15 +34,66 @@ export function AuthProvider({ children }) {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
       });
-      const data = await res.json();
-      if (!res.ok) return { ok: false };
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403 && data.code === 'SUSPENDED') {
+        return { ok: false, suspended: true, data };
+      }
+      if (!res.ok || !data.accessToken) return { ok: false };
       return { ok: true, accessToken: data.accessToken, user: data.user };
     } catch (_) {
       return { ok: false };
     }
   }, []);
 
-  /** Authenticated fetch: adds Bearer token, on 401 tries refresh once (shared lock) then retries. Never retries refresh on 429/failure. */
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        const storedToken = localStorage.getItem('accessToken');
+        if (storedToken) {
+          const res = await fetch(`${API}/auth/me`, {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${storedToken}`,
+            },
+            credentials: 'include',
+          });
+
+          if (res.ok) {
+            const userData = await res.json();
+            setUser(userData);
+            setAccessTokenState(storedToken);
+            return;
+          }
+        }
+
+        const refreshResult = await doRefresh();
+        if (refreshResult?.suspended) {
+          persistAccessToken(null);
+          setAccessTokenState(null);
+          setUser(null);
+          return;
+        }
+        if (refreshResult?.ok && refreshResult.accessToken) {
+          setUser(refreshResult.user);
+          setAccessTokenState(refreshResult.accessToken);
+          persistAccessToken(refreshResult.accessToken);
+          return;
+        }
+
+        persistAccessToken(null);
+        setAccessTokenState(null);
+        setUser(null);
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
+  }, [doRefresh, persistAccessToken]);
+
+  /** Authenticated fetch: adds Bearer token, on 401 tries refresh once then retries. */
   const authFetch = useCallback(async (url, options = {}) => {
     const headers = { ...options.headers };
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
@@ -125,7 +115,6 @@ export function AuthProvider({ children }) {
         const retryHeaders = { ...options.headers, Authorization: `Bearer ${refreshResult.accessToken}` };
         res = await fetch(url, { ...options, credentials: 'include', headers: retryHeaders });
       }
-      // 429 or other refresh failure: do not retry refresh, return original 401
     }
     return res;
   }, [accessToken, doRefresh, persistAccessToken]);
@@ -137,124 +126,14 @@ export function AuthProvider({ children }) {
     if (userData) setUser(userData);
   }, [persistAccessToken]);
 
-  /** Open Google OAuth in a popup when possible; fallback to full-page redirect. */
+  /** Google OAuth — full-page redirect (works with Vite proxy at localhost:3000). */
   const loginWithGoogle = useCallback(() => {
-    // Check if API_BASE is configured
-    if (!API_BASE || API_BASE === '') {
-      alert('Google OAuth is not configured yet. Please:\n1. Deploy your Railway backend\n2. Set VITE_API_URL in your environment\n3. Configure Google OAuth in Railway');
+    if (!API_BASE && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+      alert('Google OAuth is not configured yet. Set VITE_API_URL to your backend URL.');
       return;
     }
-
-    const url = `${API}/auth/google`;
-    let handled = false;
-
-    const finishOauth = (token) => {
-      if (!token || handled) return;
-      handled = true;
-      setAccessToken(token);
-      fetch(`${API}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: 'include',
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((userData) => {
-          if (userData) {
-            setUser(userData);
-            window.location.href = '/app/dashboard';
-            return;
-          }
-          window.location.href = '/login?error=google_failed';
-        })
-        .catch(() => {
-          // On failure just go to login; user can retry
-          window.location.href = '/login?error=google_failed';
-        });
-    };
-
-    // Try popup first
-    const width = 500;
-    const height = 600;
-    const left = window.screenX + (window.innerWidth - width) / 2;
-    const top = window.screenY + (window.innerHeight - height) / 2;
-    const popup = window.open(
-      url,
-      'google-login',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-    );
-
-    // If popup was blocked, fallback to full redirect
-    if (!popup) {
-      window.location.href = url;
-      return;
-    }
-
-    let popupClosedPoll = null;
-    const cleanup = () => {
-      window.removeEventListener('message', handleMessage);
-      window.removeEventListener('storage', handleStorage);
-      if (popupClosedPoll) {
-        window.clearInterval(popupClosedPoll);
-        popupClosedPoll = null;
-      }
-    };
-
-    const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data || {};
-      if (data.type === 'oauth-success' && data.token) {
-        cleanup();
-        try {
-          popup.close();
-        } catch (_) {}
-        finishOauth(data.token);
-      } else if (data.type === 'oauth-error') {
-        cleanup();
-        try {
-          popup.close();
-        } catch (_) {}
-        const msg = data.message ? encodeURIComponent(data.message) : '';
-        window.location.href = `/login?error=google_failed&message=${msg}`;
-      }
-    };
-
-    const handleStorage = (event) => {
-      if (event.key !== OAUTH_POPUP_RESULT_STORAGE_KEY || !event.newValue) return;
-      try {
-        const payload = JSON.parse(event.newValue);
-        if (payload?.type === 'oauth-success' && payload?.token) {
-          cleanup();
-          try {
-            popup.close();
-          } catch (_) {}
-          finishOauth(payload.token);
-        } else if (payload?.type === 'oauth-error') {
-          cleanup();
-          try {
-            popup.close();
-          } catch (_) {}
-          const msg = payload?.message ? encodeURIComponent(payload.message) : '';
-          window.location.href = `/login?error=google_failed&message=${msg}`;
-        }
-      } catch (_) {
-        // Ignore malformed storage payloads.
-      } finally {
-        try {
-          localStorage.removeItem(OAUTH_POPUP_RESULT_STORAGE_KEY);
-        } catch (_) {}
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    window.addEventListener('storage', handleStorage);
-
-    // If popup was blocked from opener, it may close without messaging parent.
-    popupClosedPoll = window.setInterval(() => {
-      if (!popup.closed || handled) return;
-      cleanup();
-      // Final fallback: move to full-page OAuth flow so login can still complete.
-      window.location.href = url;
-    }, 500);
-  }, [setAccessToken, setUser]);
+    window.location.href = `${API}/auth/google`;
+  }, []);
 
   const logout = () => {
     fetch(`${API}/auth/logout`, { method: 'POST', credentials: 'include' })
@@ -267,89 +146,74 @@ export function AuthProvider({ children }) {
   };
 
   const signIn = async (email, password) => {
-    try {
-      // Check if API_BASE is configured
-      if (!API_BASE || API_BASE === '') {
-        throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
-      }
-
-      const res = await fetch(`${API}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
-      
-      let data;
-      try {
-        const text = await res.text();
-        data = JSON.parse(text);
-      } catch (parseError) {
-        console.error('❌ Failed to parse JSON response:', parseError);
-        console.error('Response text:', await res.clone().text());
-        throw new Error('Backend returned invalid response. Please check if Railway backend is running properly.');
-      }
-      
-      if (!res.ok) {
-        throw new Error(data.error || `Login failed (${res.status})`);
-      }
-      
-      if (data.accessToken) {
-        setAccessTokenState(data.accessToken);
-        persistAccessToken(data.accessToken);
-        setUser(data.user);
-      }
-      
-      return data;
-    } catch (error) {
-      throw error;
+    if (!API_BASE || API_BASE === '') {
+      throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
     }
+
+    const res = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+      credentials: 'include',
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (_) {
+      throw new Error('Backend returned invalid response. Please check if the backend is running properly.');
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || `Login failed (${res.status})`);
+    }
+
+    if (data.accessToken) {
+      setAccessTokenState(data.accessToken);
+      persistAccessToken(data.accessToken);
+      setUser(data.user);
+    }
+
+    return data;
   };
 
   const signUp = async (email, password, name) => {
-    try {
-      // Check if API_BASE is configured
-      if (!API_BASE || API_BASE === '') {
-        throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
-      }
-
-      const res = await fetch(`${API}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
-        credentials: 'include',
-      });
-      
-      console.log('Signup response status:', res.status);
-      
-      let data;
-      try {
-        const text = await res.text();
-        console.log('Signup response text:', text);
-        data = JSON.parse(text);
-      } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError);
-        console.error('Response text:', await res.clone().text());
-        throw new Error('Backend returned invalid response. Please check if Railway backend is running properly.');
-      }
-      
-      console.log('Signup parsed data:', data);
-      
-      if (!res.ok) {
-        throw new Error(data.error || `Registration failed (${res.status})`);
-      }
-      
-      if (data.accessToken) {
-        setAccessTokenState(data.accessToken);
-        persistAccessToken(data.accessToken);
-        setUser(data.user);
-      }
-      
-      return data;
-    } catch (error) {
-      throw error;
+    if (!API_BASE || API_BASE === '') {
+      throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
     }
+
+    const res = await fetch(`${API}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name }),
+      credentials: 'include',
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (_) {
+      throw new Error('Backend returned invalid response. Please check if the backend is running properly.');
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || `Registration failed (${res.status})`);
+    }
+
+    return data;
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const token = sessionStorage.getItem('pendingInviteToken');
+    if (!token) return;
+    sessionStorage.removeItem('pendingInviteToken');
+    authFetch(`${API}/invites/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }).catch(() => {});
+  }, [user, authFetch]);
 
   return (
     <AuthContext.Provider
@@ -364,6 +228,7 @@ export function AuthProvider({ children }) {
         setSubscription,
         authFetch,
         loginWithGoogle,
+        signInWithGoogle: loginWithGoogle,
         logout,
         signIn,
         signUp,

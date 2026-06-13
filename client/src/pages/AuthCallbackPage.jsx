@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
+import { handleOAuthPopupResult } from '../utils/oauth.js';
 
 /** Handles OAuth callback: ?token=ACCESS_TOKEN from backend redirect. Sets token, fetches user, redirects to app. */
 export function AuthCallbackPage() {
-  const OAUTH_POPUP_RESULT_STORAGE_KEY = 'wiblaster_oauth_popup_result';
   const [searchParams] = useSearchParams();
   const { setAccessToken, setUser } = useAuth();
   const navigate = useNavigate();
@@ -21,31 +21,9 @@ export function AuthCallbackPage() {
       return;
     }
 
-    // If we're in a popup, notify opener first. If opener is blocked by COOP, use localStorage.
     if (isPopup) {
-      let notified = false;
-      try {
-        window.opener.postMessage({ type: 'oauth-success', token }, window.location.origin);
-        notified = true;
-      } catch (_) {
-        // Ignore and fallback to storage channel.
-      }
-      if (!notified) {
-        try {
-          localStorage.setItem(
-            OAUTH_POPUP_RESULT_STORAGE_KEY,
-            JSON.stringify({ type: 'oauth-success', token, ts: Date.now() })
-          );
-        } catch (_) {
-          // Ignore storage failures and continue with normal flow.
-        }
-      }
-      try {
-        window.close();
-        return;
-      } catch (_) {
-        // ignore if the browser blocks close; we'll still render the fallback UI.
-      }
+      handleOAuthPopupResult(token);
+      return;
     }
 
     // Normal full-page callback flow

@@ -5,7 +5,7 @@ import { API } from '../api.js';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
 
 export function ResetPasswordPage() {
-  const { setUser, setAccessTokenState } = useAuth();
+  const { setUser, setAccessToken } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
@@ -41,8 +41,8 @@ export function ResetPasswordPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Reset failed');
-      if (data.user) setUser(data.user);
-      if (data.accessToken) setAccessTokenState(data.accessToken);
+      if (data.accessToken) setAccessToken(data.accessToken, data.user);
+      else if (data.user) setUser(data.user);
       navigate('/app/dashboard', { replace: true });
     } catch (err) {
       setError(err.message || 'Reset failed');

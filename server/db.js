@@ -294,6 +294,7 @@ async function runSchema(p) {
       UPDATE plans SET amount = 295000, paystack_plan_code = NULL WHERE id = 'premium_annual';
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+      ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_input TEXT;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE sender_groups ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE campaign_presets ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;

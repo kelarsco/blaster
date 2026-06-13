@@ -25,35 +25,33 @@ import {
   getRefreshCookieName,
   getAccessTTLSeconds,
 } from '../services/tokenAuth.js';
+import {
+  resolveFrontendUrl,
+  resolveGoogleCallbackURL,
+  getOAuthSetupInfo,
+} from '../services/oauthUrls.js';
+
 const hasGoogleConfig =
   process.env.GOOGLE_CLIENT_ID &&
   process.env.GOOGLE_CLIENT_SECRET &&
   process.env.SESSION_SECRET;
 
-const normalizeUrl = (value, fallback = '') => {
-  const raw = (value || fallback || '').trim();
-  if (!raw) return '';
-  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  return withScheme.replace(/\/$/, '');
-};
-
-const FRONTEND_URL = () => normalizeUrl(process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000');
-const OAUTH_CALLBACK_BASE_URL = () => normalizeUrl(
-  process.env.GOOGLE_CALLBACK_BASE_URL ||
-  process.env.BACKEND_URL ||
-  process.env.RAILWAY_STATIC_URL ||
-  process.env.RAILWAY_PUBLIC_DOMAIN ||
-  process.env.RENDER_EXTERNAL_URL ||
-  FRONTEND_URL()
-);
+const FRONTEND_URL = () => resolveFrontendUrl();
 
 // Session serialization
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 if (hasGoogleConfig) {
-  const callbackPath = '/api/auth/google/callback';
-  const callbackURL = normalizeUrl(process.env.GOOGLE_CALLBACK_URL || `${OAUTH_CALLBACK_BASE_URL()}${callbackPath}`);
+  const callbackURL = resolveGoogleCallbackURL();
+  console.log('[auth] Google OAuth enabled. Callback URL:', callbackURL);
+  console.log('[auth] Frontend URL after login:', FRONTEND_URL());
+  if (process.env.GOOGLE_CALLBACK_URL?.includes('localhost') && callbackURL.includes('railway.app')) {
+    console.warn(
+      '[auth] GOOGLE_CALLBACK_URL is localhost but Railway host detected — using production callback:',
+      callbackURL
+    );
+  }
   passport.use(
     new GoogleStrategy(
       {
@@ -495,38 +493,63 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   }
 });
 
+function loginRedirect(query = '') {
+  const base = FRONTEND_URL();
+  return `${base}/login${query ? `?${query}` : ''}`;
+}
+
+/** Debug: expected Google redirect URI for this deployment (no secrets). */
+authRoutes.get('/google/setup', (req, res) => {
+  res.json(getOAuthSetupInfo(req));
+});
+
 authRoutes.get('/google', (req, res, next) => {
-  if (!hasGoogleConfig) return res.redirect(302, '/login');
-  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured'));
+  const callbackURL = resolveGoogleCallbackURL(req);
+  passport.authenticate('google', { scope: ['profile', 'email'], callbackURL })(req, res, next);
 });
 
 authRoutes.get('/google/callback', (req, res, next) => {
-  if (!hasGoogleConfig) return res.redirect(302, '/login');
-  passport.authenticate('google', async (err, user, info) => {
-    if (err) return res.redirect(302, '/login?error=1');
+  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured'));
+  const callbackURL = resolveGoogleCallbackURL(req);
+  passport.authenticate('google', { callbackURL }, async (err, user, info) => {
+    if (err) {
+      const oauthErr = err?.oauthError || err?.data?.error || err?.message || 'oauth_error';
+      console.error('[auth google/callback] OAuth error:', oauthErr, err?.message || err);
+      const expectedCallback = resolveGoogleCallbackURL(req);
+      const message =
+        oauthErr === 'invalid_client'
+          ? 'Google OAuth client misconfigured. Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on Railway.'
+          : oauthErr === 'redirect_uri_mismatch'
+            ? `Redirect URI mismatch. Add this exact URI in Google Cloud Console: ${expectedCallback}`
+            : 'Google sign-in failed. Please try again.';
+      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(message)}`));
+    }
     if (info?.code === 'WRONG_METHOD') {
-      return res.redirect(302, `/login?error=wrong_method&message=${encodeURIComponent(info.message || '')}`);
+      return res.redirect(302, loginRedirect(`error=wrong_method&message=${encodeURIComponent(info.message || '')}`));
     }
     if (info?.code === 'NO_DB' || info?.code === 'NO_EMAIL') {
-      return res.redirect(302, `/login?error=${info.code}&message=${encodeURIComponent(info.message || '')}`);
+      return res.redirect(302, loginRedirect(`error=${info.code}&message=${encodeURIComponent(info.message || '')}`));
     }
     if (info?.code === 'DEACTIVATED') {
-      return res.redirect(302, `/login?error=deactivated&message=${encodeURIComponent(info.message || '')}`);
+      return res.redirect(302, loginRedirect(`error=deactivated&message=${encodeURIComponent(info.message || '')}`));
     }
     if (info?.code === 'SUSPENDED') {
-      return res.redirect(302, `/login?error=suspended&message=${encodeURIComponent(info.message || '')}`);
+      return res.redirect(302, loginRedirect(`error=suspended&message=${encodeURIComponent(info.message || '')}`));
     }
-    if (!user) return res.redirect(302, '/login?error=1');
+    if (!user) {
+      return res.redirect(302, loginRedirect('error=google_failed&message=Sign-in%20was%20cancelled%20or%20denied.'));
+    }
     try {
       const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
       const accessToken = createAccessToken(userForToken);
       const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
       setRefreshTokenCookie(res, refreshToken, expiresAt);
       const base = FRONTEND_URL();
-      res.redirect(302, base + '/auth/callback?token=' + encodeURIComponent(accessToken));
+      res.redirect(302, `${base}/auth/callback?token=${encodeURIComponent(accessToken)}`);
     } catch (e) {
       console.error('[auth google/callback]', e?.message || e);
-      res.redirect(302, '/login?error=1');
+      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(e?.message || 'Token issue')}`));
     }
   })(req, res, next);
 });
