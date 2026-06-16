@@ -9,14 +9,16 @@ import { SignupPage } from './pages/SignupPage';
 import { AppLayout } from './layout/AppLayout';
 import { AccountLayout } from './layout/AccountLayout';
 import DashboardPage from './pages/DashboardPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 import ScannerPage from './pages/ScannerPage';
 import { CampaignsPage } from './pages/CampaignsPage';
+import { ManualSendPage } from './pages/ManualSendPage';
+import { TemplatesPage } from './pages/TemplatesPage';
 import { SendersPage } from './pages/SendersPage';
-import { SettingsPage } from './pages/SettingsPage';
+import { ResourcesPage } from './pages/ResourcesPage';
+import { StoresPage } from './pages/StoresPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
-import { DomainEmailSendingPage } from './pages/DomainEmailSendingPage';
-import { DomainInboxPage } from './pages/DomainInboxPage';
 import { ManagePlanPage } from './pages/ManagePlanPage';
 import { BillingOverviewPage } from './pages/BillingOverviewPage';
 import { BillingMonthlyPlanPage } from './pages/BillingMonthlyPlanPage';
@@ -39,6 +41,7 @@ import { AdminOverviewPage } from './pages/bl-admin/AdminOverviewPage';
 import { AdminUsersPage } from './pages/bl-admin/AdminUsersPage';
 import { AdminSubscriptionsPage } from './pages/bl-admin/AdminSubscriptionsPage';
 import { AdminMessagesPage } from './pages/bl-admin/AdminMessagesPage';
+import { AdminResourcesPage } from './pages/bl-admin/AdminResourcesPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
 
 function ScrollToTop() {
@@ -101,6 +104,7 @@ function AppRoutes() {
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
             <Route path="messages" element={<AdminMessagesPage />} />
+            <Route path="resources" element={<AdminResourcesPage />} />
           </Route>
         </Route>
         <Route
@@ -115,13 +119,15 @@ function AppRoutes() {
         >
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="stores" element={<StoresPage />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="scanner" element={<ScannerPage />} />
           <Route path="campaigns" element={<CampaignsPage />} />
+          <Route path="campaigns/send/:runId" element={<ManualSendPage />} />
+          <Route path="templates" element={<TemplatesPage />} />
           <Route path="senders" element={<SendersPage />} />
-          <Route path="domain-email-sending" element={<DomainEmailSendingPage />} />
-          <Route path="domain-inbox" element={<DomainInboxPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route path="resources" element={<ResourcesPage />} />
           <Route path="account" element={<AccountLayout />}>
             <Route index element={<ProfilePage />} />
             <Route path="settings" element={<Navigate to="/app/account/settings/usage" replace />} />
@@ -135,7 +141,7 @@ function AppRoutes() {
             <Route path="billing/extra-credit" element={<BillingExtraCreditPage />} />
             <Route path="pricing" element={<PricingPlansPage />} />
           </Route>
-          <Route path="settings/*" element={<Navigate to="/app/settings" replace />} />
+          <Route path="settings/*" element={<Navigate to="/app/dashboard" replace />} />
           <Route path="profile" element={<Navigate to="/app/account" replace />} />
           <Route path="profile/*" element={<Navigate to="/app/account" replace />} />
           <Route path="billing" element={<Navigate to="/app/account/settings/usage" replace />} />

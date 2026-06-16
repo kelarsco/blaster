@@ -493,8 +493,8 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
   }
 });
 
-function loginRedirect(query = '') {
-  const base = FRONTEND_URL();
+function loginRedirect(query = '', req) {
+  const base = resolveFrontendUrl(req);
   return `${base}/login${query ? `?${query}` : ''}`;
 }
 
@@ -504,13 +504,13 @@ authRoutes.get('/google/setup', (req, res) => {
 });
 
 authRoutes.get('/google', (req, res, next) => {
-  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured'));
+  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured', req));
   const callbackURL = resolveGoogleCallbackURL(req);
   passport.authenticate('google', { scope: ['profile', 'email'], callbackURL })(req, res, next);
 });
 
 authRoutes.get('/google/callback', (req, res, next) => {
-  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured'));
+  if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured', req));
   const callbackURL = resolveGoogleCallbackURL(req);
   passport.authenticate('google', { callbackURL }, async (err, user, info) => {
     if (err) {
@@ -523,33 +523,33 @@ authRoutes.get('/google/callback', (req, res, next) => {
           : oauthErr === 'redirect_uri_mismatch'
             ? `Redirect URI mismatch. Add this exact URI in Google Cloud Console: ${expectedCallback}`
             : 'Google sign-in failed. Please try again.';
-      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(message)}`));
+      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(message)}`, req));
     }
     if (info?.code === 'WRONG_METHOD') {
-      return res.redirect(302, loginRedirect(`error=wrong_method&message=${encodeURIComponent(info.message || '')}`));
+      return res.redirect(302, loginRedirect(`error=wrong_method&message=${encodeURIComponent(info.message || '')}`, req));
     }
     if (info?.code === 'NO_DB' || info?.code === 'NO_EMAIL') {
-      return res.redirect(302, loginRedirect(`error=${info.code}&message=${encodeURIComponent(info.message || '')}`));
+      return res.redirect(302, loginRedirect(`error=${info.code}&message=${encodeURIComponent(info.message || '')}`, req));
     }
     if (info?.code === 'DEACTIVATED') {
-      return res.redirect(302, loginRedirect(`error=deactivated&message=${encodeURIComponent(info.message || '')}`));
+      return res.redirect(302, loginRedirect(`error=deactivated&message=${encodeURIComponent(info.message || '')}`, req));
     }
     if (info?.code === 'SUSPENDED') {
-      return res.redirect(302, loginRedirect(`error=suspended&message=${encodeURIComponent(info.message || '')}`));
+      return res.redirect(302, loginRedirect(`error=suspended&message=${encodeURIComponent(info.message || '')}`, req));
     }
     if (!user) {
-      return res.redirect(302, loginRedirect('error=google_failed&message=Sign-in%20was%20cancelled%20or%20denied.'));
+      return res.redirect(302, loginRedirect('error=google_failed&message=Sign-in%20was%20cancelled%20or%20denied.', req));
     }
     try {
       const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
       const accessToken = createAccessToken(userForToken);
       const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
       setRefreshTokenCookie(res, refreshToken, expiresAt);
-      const base = FRONTEND_URL();
+      const base = resolveFrontendUrl(req);
       res.redirect(302, `${base}/auth/callback?token=${encodeURIComponent(accessToken)}`);
     } catch (e) {
       console.error('[auth google/callback]', e?.message || e);
-      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(e?.message || 'Token issue')}`));
+      return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(e?.message || 'Token issue')}`, req));
     }
   })(req, res, next);
 });

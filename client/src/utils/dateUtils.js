@@ -14,3 +14,13 @@ export function formatUTCDateOnly(isoOrDate) {
   const year = d.getUTCFullYear();
   return `${day} ${month} ${year}`;
 }
+
+export function formatTimeOfDayGreeting(name) {
+  const hour = new Date().getHours();
+  let period = 'evening';
+  if (hour < 12) period = 'morning';
+  else if (hour < 17) period = 'afternoon';
+
+  const greeting = `Good ${period}`;
+  return name ? `${greeting}, ${name}` : greeting;
+}

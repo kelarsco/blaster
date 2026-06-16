@@ -10,6 +10,7 @@ let pool = null;
 export const memoryStore = {
   scans: new Map(),
   results: new Map(),
+  resources: [],
 };
 
 export function getDb() {
@@ -311,6 +312,7 @@ async function runSchema(p) {
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_status TEXT NOT NULL DEFAULT 'pending';
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_error TEXT;
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_synced_at TIMESTAMPTZ;
+      ALTER TABLE email_lists ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -471,6 +473,19 @@ async function runSchema(p) {
       CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at);
 
+      CREATE TABLE IF NOT EXISTS user_streaks (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        daily_target INTEGER,
+        current_streak_days INTEGER DEFAULT 0,
+        highest_streak_badge_earned INTEGER DEFAULT 0,
+        total_emails_sent INTEGER DEFAULT 0,
+        last_qualifying_date DATE,
+        emails_sent_today INTEGER DEFAULT 0,
+        emails_today_date DATE,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_streaks_updated ON user_streaks(updated_at);
+
       CREATE TABLE IF NOT EXISTS support_threads (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -488,13 +503,25 @@ async function runSchema(p) {
       );
       CREATE INDEX IF NOT EXISTS idx_support_messages_thread ON support_messages(thread_id);
 
+      CREATE TABLE IF NOT EXISTS resources (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN ('video', 'document')),
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(type);
+      CREATE INDEX IF NOT EXISTS idx_resources_created ON resources(created_at DESC);
+
       UPDATE users SET email_verified = 1, email_verified_at = COALESCE(updated_at, created_at) WHERE auth_provider = 'google' AND (email_verified IS NULL OR email_verified = 0);
       UPDATE users SET email_verified = 1 WHERE password_hash IS NOT NULL AND (email_verified IS NULL OR email_verified = 0);
     `);
     await migrateStoreNotesPK(p);
     await migrateScanResultsCascade(p);
+    await migrateScanResultsContactColumns(p);
     await migrateCampaignChildCascade(p);
     await migrateSendersGmailOAuth(p);
+    await migrateManualCampaigns(p);
   } finally {
     client.release();
   }
@@ -510,6 +537,19 @@ async function migrateScanResultsCascade(pool) {
     `);
   } catch (e) {
     console.warn('[migrateScanResultsCascade]', e?.message || e);
+  }
+}
+
+async function migrateScanResultsContactColumns(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS phone TEXT;
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS whatsapp TEXT;
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS instagram TEXT;
+      ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS tiktok TEXT;
+    `);
+  } catch (e) {
+    console.warn('[migrateScanResultsContactColumns]', e?.message || e);
   }
 }
 
@@ -541,9 +581,54 @@ async function migrateSendersGmailOAuth(pool) {
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_status TEXT;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS daily_sent INTEGER DEFAULT 0;
       ALTER TABLE senders ADD COLUMN IF NOT EXISTS oauth_connected_at TIMESTAMPTZ;
+      ALTER TABLE senders ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'pending';
     `);
   } catch (e) {
     console.warn('[migrateSendersGmailOAuth]', e?.message || e);
+  }
+}
+
+async function migrateManualCampaigns(pool) {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS manual_campaign_runs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email_list_id TEXT REFERENCES email_lists(id) ON DELETE SET NULL,
+        sender_group_id TEXT REFERENCES sender_groups(id) ON DELETE SET NULL,
+        template_ids TEXT,
+        recipient_queue TEXT,
+        current_index INTEGER DEFAULT 0,
+        sender_order TEXT,
+        last_sender_email TEXT,
+        status TEXT NOT NULL DEFAULT 'in_progress',
+        total_sent INTEGER DEFAULT 0,
+        sender_cycle_index INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_manual_runs_user ON manual_campaign_runs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_manual_runs_list ON manual_campaign_runs(email_list_id);
+
+      CREATE TABLE IF NOT EXISTS manual_send_events (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES manual_campaign_runs(id) ON DELETE CASCADE,
+        recipient_email TEXT NOT NULL,
+        recipient_store_url TEXT,
+        sender_email TEXT,
+        subject TEXT,
+        tracking_token TEXT UNIQUE,
+        opened_at TIMESTAMPTZ,
+        marked_sent SMALLINT DEFAULT 1,
+        sent_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_manual_send_run ON manual_send_events(run_id);
+      CREATE INDEX IF NOT EXISTS idx_manual_send_token ON manual_send_events(tracking_token);
+      CREATE INDEX IF NOT EXISTS idx_manual_send_email ON manual_send_events(recipient_email);
+      ALTER TABLE manual_campaign_runs ADD COLUMN IF NOT EXISTS sender_cycle_index INTEGER DEFAULT 0;
+    `);
+  } catch (e) {
+    console.warn('[migrateManualCampaigns]', e?.message || e);
   }
 }
 

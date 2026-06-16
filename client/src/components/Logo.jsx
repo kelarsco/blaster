@@ -1,11 +1,21 @@
 import React from 'react';
 
-export function Logo({ className = '' }) {
+export function Logo({ className = '', variant = 'full' }) {
+  if (variant === 'icon') {
+    return (
+      <img
+        src="/logo.png"
+        alt="wiblaster"
+        className={`h-8 w-8 object-contain ${className}`}
+      />
+    );
+  }
+
   return (
-    <img 
-      src="/logo new.png" 
-      alt="wiblaster" 
-      className={`w-[120px] md:w-[170px] h-auto ${className}`}
+    <img
+      src="/logo new.png"
+      alt="wiblaster"
+      className={`w-[170px] h-auto ${className}`}
     />
   );
 }

@@ -24,18 +24,22 @@ function normalizeRecipients(recipients) {
   return out;
 }
 
+function visibleLists(lists) {
+  return (lists || []).filter((item) => !item.archivedAt);
+}
+
 emailListRoutes.get('/', requireAuth, async (req, res) => {
   const userId = req.user?.id;
   const db = getDb();
   if (!userId) return res.status(401).json({ error: 'Not signed in' });
   if (!db) {
-    return res.json({ lists: memoryEmailListsByUser.get(userId) || [] });
+    return res.json({ lists: visibleLists(memoryEmailListsByUser.get(userId)) });
   }
   try {
     const result = await db.query(
       `SELECT id, name, recipients_json, created_at
        FROM email_lists
-       WHERE user_id = $1
+       WHERE user_id = $1 AND archived_at IS NULL
        ORDER BY created_at DESC`,
       [userId]
     );
@@ -95,11 +99,17 @@ emailListRoutes.delete('/:id', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid list id' });
   if (!db) {
     const prev = memoryEmailListsByUser.get(userId) || [];
-    memoryEmailListsByUser.set(userId, prev.filter((item) => item.id !== id));
+    memoryEmailListsByUser.set(
+      userId,
+      prev.map((item) => (item.id === id ? { ...item, archivedAt: new Date().toISOString() } : item))
+    );
     return res.json({ ok: true });
   }
   try {
-    await db.query('DELETE FROM email_lists WHERE id = $1 AND user_id = $2', [id, userId]);
+    await db.query(
+      'UPDATE email_lists SET archived_at = NOW(), updated_at = NOW() WHERE id = $1 AND user_id = $2 AND archived_at IS NULL',
+      [id, userId]
+    );
     return res.json({ ok: true });
   } catch (e) {
     console.error('[email-lists delete]', e?.message || e);

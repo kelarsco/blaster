@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { API, API_BASE } from '../api.js';
+import { API, hasConfiguredBackend } from '../api.js';
 const AuthContext = createContext(null);
 
 export function useAuth() {
@@ -126,9 +126,9 @@ export function AuthProvider({ children }) {
     if (userData) setUser(userData);
   }, [persistAccessToken]);
 
-  /** Google OAuth — full-page redirect (works with Vite proxy at localhost:3000). */
+  /** Google OAuth — full-page redirect (Vite /api proxy in dev, or VITE_API_URL in production). */
   const loginWithGoogle = useCallback(() => {
-    if (!API_BASE && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    if (!hasConfiguredBackend) {
       alert('Google OAuth is not configured yet. Set VITE_API_URL to your backend URL.');
       return;
     }
@@ -146,7 +146,7 @@ export function AuthProvider({ children }) {
   };
 
   const signIn = async (email, password) => {
-    if (!API_BASE || API_BASE === '') {
+    if (!hasConfiguredBackend) {
       throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
     }
 
@@ -178,7 +178,7 @@ export function AuthProvider({ children }) {
   };
 
   const signUp = async (email, password, name) => {
-    if (!API_BASE || API_BASE === '') {
+    if (!hasConfiguredBackend) {
       throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
     }
 

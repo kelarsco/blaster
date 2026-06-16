@@ -1,3 +1,5 @@
+@import './styles/stores-page.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -15,6 +17,34 @@
   }
   .card-body-mobile {
     @apply p-4 md:p-6;
+  }
+
+  .blaster-checkbox {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+    border: 1px solid #e5e5e5;
+    background-color: #ffffff;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+
+  .blaster-checkbox:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+  }
+
+  .blaster-checkbox:checked {
+    border-color: transparent;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3E%3Cpath d='M12.207 4.793a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L6.5 9.086l4.293-4.293a1 1 0 0 1 1.414 0z'/%3E%3C/svg%3E"),
+      linear-gradient(to right, #6366f1, #fcb04c);
+    background-size: 0.65rem 0.65rem, 100% 100%;
+    background-position: center, center;
+    background-repeat: no-repeat;
   }
 
   /* Dashboard typography: Inter body, Montserrat headings */
@@ -149,8 +179,8 @@ input:focus, textarea:focus {
 .text-blaster-accent:not(.btn-blaster-accent),
 a.text-blaster-accent:not(.btn-blaster-accent),
 button.text-blaster-accent:not(.btn-blaster-accent),
-a[class*="blaster-accent"]:not(.btn-blaster-accent),
-button[class*="blaster-accent"]:not(.btn-blaster-accent),
+a[class*="text-blaster-accent"]:not(.btn-blaster-accent),
+button[class*="text-blaster-accent"]:not(.btn-blaster-accent),
 a.font-medium[class*="underline"],
 button.font-medium[class*="underline"],
 .link-accent {
@@ -158,8 +188,8 @@ button.font-medium[class*="underline"],
 }
 a.text-blaster-accent:hover,
 button.text-blaster-accent:hover:not(.btn-blaster-accent),
-a[class*="blaster-accent"]:hover:not(.btn-blaster-accent),
-button[class*="blaster-accent"]:hover:not(.btn-blaster-accent) {
+a[class*="text-blaster-accent"]:hover:not(.btn-blaster-accent),
+button[class*="text-blaster-accent"]:hover:not(.btn-blaster-accent) {
   color: #4f46e5 !important;
 }
 .btn-blaster-cta {
@@ -188,6 +218,27 @@ button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
 }
 .input:focus, textarea:focus {
   @apply outline-none ring-2 ring-blaster-accent/30;
+}
+
+/* Templates page — saved list scroll (transparent track, subtle dark thumb) */
+.templates-list-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+}
+.templates-list-scroll::-webkit-scrollbar {
+  width: 3px;
+  max-width: 3px;
+}
+.templates-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+.templates-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 9999px;
+}
+.templates-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
 }
 
 @keyframes refresh-spin {
@@ -262,4 +313,15 @@ button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
   opacity: 0;
   animation: landing-split-in 0.5s ease-out forwards;
   white-space: pre;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

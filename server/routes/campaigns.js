@@ -53,13 +53,95 @@ campaignRoutes.get('/messaged-emails', requireAuth, async (req, res) => {
        FROM campaign_sends cs
        JOIN campaigns c ON c.id = cs.campaign_id
        WHERE c.user_id = $1 AND cs.status = 'sent' AND cs.email IS NOT NULL
-       ORDER BY LOWER(cs.email)`,
+       UNION
+       SELECT DISTINCT LOWER(mse.recipient_email) AS email
+       FROM manual_send_events mse
+       JOIN manual_campaign_runs mcr ON mcr.id = mse.run_id
+       WHERE mcr.user_id = $1 AND mse.recipient_email IS NOT NULL
+       ORDER BY email`,
       [req.user.id]
     );
     return res.json({ emails: (result.rows || []).map((r) => r.email).filter(Boolean) });
   } catch (err) {
     console.error('[campaigns GET /messaged-emails]', err?.message || err);
     return res.status(503).json({ emails: [] });
+  }
+});
+
+campaignRoutes.get('/dashboard-metrics', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const userId = req.user.id;
+    if (!db) {
+      return res.json({
+        emailLists: [],
+        manualRuns: [],
+        sendEvents: [],
+      });
+    }
+
+    const listsResult = await db.query(
+      `SELECT id, name, created_at AS "createdAt"
+       FROM email_lists
+       WHERE user_id = $1 AND archived_at IS NULL
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const runsResult = await db.query(
+      `SELECT id, status, email_list_id AS "emailListId", created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM manual_campaign_runs
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const manualSendsResult = await db.query(
+      `SELECT
+         mse.recipient_email AS email,
+         mse.recipient_store_url AS "storeUrl",
+         mse.sent_at AS "sentAt",
+         mse.opened_at AS "openedAt"
+       FROM manual_send_events mse
+       JOIN manual_campaign_runs mcr ON mcr.id = mse.run_id
+       WHERE mcr.user_id = $1`,
+      [userId]
+    );
+
+    const autoSendsResult = await db.query(
+      `SELECT
+         cs.email,
+         NULL AS "storeUrl",
+         cs.sent_at AS "sentAt",
+         NULL AS "openedAt"
+       FROM campaign_sends cs
+       JOIN campaigns c ON c.id = cs.campaign_id
+       WHERE c.user_id = $1 AND cs.status = 'sent'`,
+      [userId]
+    );
+
+    const sendEvents = [
+      ...(manualSendsResult.rows || []),
+      ...(autoSendsResult.rows || []),
+    ].map((row) => ({
+      email: row.email || '',
+      storeUrl: row.storeUrl || '',
+      sentAt: row.sentAt,
+      openedAt: row.openedAt,
+    }));
+
+    return res.json({
+      emailLists: listsResult.rows || [],
+      manualRuns: runsResult.rows || [],
+      sendEvents,
+    });
+  } catch (err) {
+    console.error('[campaigns GET /dashboard-metrics]', err?.message || err);
+    return res.status(503).json({
+      emailLists: [],
+      manualRuns: [],
+      sendEvents: [],
+    });
   }
 });
 

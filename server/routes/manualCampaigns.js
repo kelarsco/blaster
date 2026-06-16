@@ -1,0 +1,346 @@
+import { Router } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { getDb } from '../db.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { shuffleArray, pickNextSender } from '../services/senderShuffle.js';
+import { recordEmailSent } from '../services/streakService.js';
+import { logActivity } from './activity.js';
+
+export const manualCampaignRoutes = Router();
+
+function parseJson(val, fallback) {
+  if (!val) return fallback;
+  if (typeof val === 'object') return val;
+  try {
+    return JSON.parse(val);
+  } catch {
+    return fallback;
+  }
+}
+
+function fillTemplate(text, recipient) {
+  const storeUrl = recipient.storeUrl || recipient.store_url || '';
+  const domain = storeUrl.replace(/^https?:\/\//, '').split('/')[0] || '';
+  return String(text || '')
+    .replace(/\{\{store_url\}\}/gi, storeUrl)
+    .replace(/\{\{store_domain\}\}/gi, domain)
+    .replace(/\{\{email\}\}/gi, recipient.email || '');
+}
+
+function randomTemplate(templates) {
+  if (!templates?.length) {
+    return { subject: '{{store_url}}', body: 'Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards' };
+  }
+  const t = templates[Math.floor(Math.random() * templates.length)];
+  const subject = typeof t === 'string' ? t : (t.subject || t.value || '{{store_url}}');
+  const body = typeof t === 'string' ? t : (t.body || t.text || '');
+  return { subject, body };
+}
+
+async function loadPresets(db, userId, templateIds) {
+  if (!templateIds?.length) return { subjects: [], templates: [] };
+  const placeholders = templateIds.map((_, i) => `$${i + 2}`).join(',');
+  const result = await db.query(
+    `SELECT subjects, templates FROM campaign_presets WHERE user_id = $1 AND id IN (${placeholders})`,
+    [userId, ...templateIds]
+  );
+  const subjects = [];
+  const templates = [];
+  for (const row of result.rows || []) {
+    const subs = parseJson(row.subjects, []);
+    const tmps = parseJson(row.templates, []);
+    for (const s of subs) {
+      const v = typeof s === 'string' ? s : s?.value;
+      if (v) subjects.push(v);
+    }
+    for (const t of tmps) {
+      const b = typeof t === 'string' ? t : (t?.body || t?.text);
+      if (b) templates.push({ body: b });
+    }
+  }
+  return { subjects, templates };
+}
+
+async function loadGroupEmails(db, groupId, userId) {
+  const result = await db.query(
+    `SELECT s.email FROM senders s
+     JOIN sender_group_members sgm ON sgm.sender_id = s.id
+     JOIN sender_groups sg ON sg.id = sgm.group_id
+     WHERE sg.id = $1 AND sg.user_id = $2 AND s.is_active = 1
+       AND COALESCE(s.verification_status, 'verified') = 'verified'
+     ORDER BY s.created_at`,
+    [groupId, userId]
+  );
+  return (result.rows || []).map((r) => r.email).filter(Boolean);
+}
+
+function rowToRun(row) {
+  return {
+    id: row.id,
+    emailListId: row.email_list_id,
+    senderGroupId: row.sender_group_id,
+    templateIds: parseJson(row.template_ids, []),
+    recipientQueue: parseJson(row.recipient_queue, []),
+    currentIndex: row.current_index || 0,
+    senderOrder: parseJson(row.sender_order, []),
+    lastSenderEmail: row.last_sender_email || null,
+    senderCycleIndex: row.sender_cycle_index || 0,
+    status: row.status,
+    totalSent: row.total_sent || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+manualCampaignRoutes.get('/', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ run: null });
+    const { emailListId } = req.query;
+    if (!emailListId) return res.json({ run: null });
+    const result = await db.query(
+      `SELECT * FROM manual_campaign_runs
+       WHERE user_id = $1 AND email_list_id = $2 AND status IN ('in_progress', 'paused')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [req.user.id, emailListId]
+    );
+    const row = result.rows[0];
+    res.json({ run: row ? rowToRun(row) : null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /start before /:runId
+manualCampaignRoutes.post('/start', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+    const { emailListId, senderGroupId, templateIds = [], recipients = [] } = req.body || {};
+
+    if (!emailListId || !senderGroupId || !recipients?.length) {
+      return res.status(400).json({ error: 'emailListId, senderGroupId, and recipients required' });
+    }
+    if (!templateIds?.length) {
+      return res.status(400).json({ error: 'Select at least one template' });
+    }
+
+    const groupEmails = await loadGroupEmails(db, senderGroupId, userId);
+    if (!groupEmails.length) {
+      return res.status(400).json({ error: 'Sender group has no verified emails' });
+    }
+
+    const existing = await db.query(
+      `SELECT * FROM manual_campaign_runs
+       WHERE user_id = $1 AND email_list_id = $2 AND status IN ('in_progress', 'paused')
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId, emailListId]
+    );
+
+    if (existing.rows[0]) {
+      await db.query(
+        "UPDATE manual_campaign_runs SET status = 'in_progress', updated_at = NOW() WHERE id = $1",
+        [existing.rows[0].id]
+      );
+      const run = rowToRun(existing.rows[0]);
+      return res.json({ run: { ...run, status: 'in_progress' }, resumed: true });
+    }
+
+    const id = uuidv4();
+    const senderOrder = shuffleArray(groupEmails);
+    await db.query(
+      `INSERT INTO manual_campaign_runs
+        (id, user_id, email_list_id, sender_group_id, template_ids, recipient_queue, current_index, sender_order, status, total_sent)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, $7, 'in_progress', 0)`,
+      [
+        id, userId, emailListId, senderGroupId,
+        JSON.stringify(templateIds),
+        JSON.stringify(recipients),
+        JSON.stringify(senderOrder),
+      ]
+    );
+    logActivity('manual_campaign_start', { runId: id, emailListId, total: recipients.length }, userId);
+    const row = (await db.query('SELECT * FROM manual_campaign_runs WHERE id = $1', [id])).rows[0];
+    res.json({ run: rowToRun(row), resumed: false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+manualCampaignRoutes.get('/:runId', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, req.user.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    const events = await db.query(
+      'SELECT recipient_email, sender_email, sent_at, opened_at FROM manual_send_events WHERE run_id = $1 ORDER BY sent_at',
+      [row.id]
+    );
+    res.json({ run: rowToRun(row), sendLog: events.rows || [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, req.user.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    if (row.status === 'paused') {
+      await db.query(
+        "UPDATE manual_campaign_runs SET status = 'in_progress', updated_at = NOW() WHERE id = $1",
+        [row.id]
+      );
+    }
+    if (row.status === 'completed') {
+      return res.json({ completed: true, totalSent: row.total_sent, totalQueued: parseJson(row.recipient_queue, []).length });
+    }
+
+    const queue = parseJson(row.recipient_queue, []);
+    const idx = row.current_index || 0;
+    if (idx >= queue.length) {
+      await db.query(
+        "UPDATE manual_campaign_runs SET status = 'completed', updated_at = NOW() WHERE id = $1",
+        [row.id]
+      );
+      return res.json({ completed: true, totalSent: row.total_sent, totalQueued: queue.length });
+    }
+
+    const recipient = queue[idx];
+    let senderOrder = parseJson(row.sender_order, []);
+    const pick = pickNextSender(senderOrder, row.sender_cycle_index || 0, row.last_sender_email);
+    senderOrder = pick.order;
+
+    const { subjects, templates } = await loadPresets(db, req.user.id, parseJson(row.template_ids, []));
+    const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
+    const subjectRaw = subjects.length
+      ? subjects[Math.floor(Math.random() * subjects.length)]
+      : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
+    const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
+
+    const subject = fillTemplate(subjectRaw, recipient);
+    const body = fillTemplate(bodyRaw, recipient);
+    const senderEmail = pick.email || senderOrder[0];
+
+    res.json({
+      completed: false,
+      currentIndex: idx,
+      totalQueued: queue.length,
+      totalSent: row.total_sent || 0,
+      recipient,
+      senderEmail,
+      subject,
+      body,
+      senderOrder,
+      senderPickIndex: pick.index,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+    const { senderEmail, subject, body, senderOrder, senderPickIndex } = req.body || {};
+
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, userId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    if (row.status === 'completed') return res.status(400).json({ error: 'Campaign already completed' });
+
+    const queue = parseJson(row.recipient_queue, []);
+    const idx = row.current_index || 0;
+    if (idx >= queue.length) {
+      return res.status(400).json({ error: 'No more recipients' });
+    }
+
+    const recipient = queue[idx];
+    const trackingToken = uuidv4().replace(/-/g, '');
+    const eventId = uuidv4();
+
+    await db.query(
+      `INSERT INTO manual_send_events
+        (id, run_id, recipient_email, recipient_store_url, sender_email, subject, tracking_token)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        eventId, row.id, recipient.email,
+        recipient.storeUrl || recipient.store_url || null,
+        senderEmail, subject, trackingToken,
+      ]
+    );
+
+    const nextIndex = idx + 1;
+    const completed = nextIndex >= queue.length;
+    const order = senderOrder || parseJson(row.sender_order, []);
+    const nextCycleIndex = (senderPickIndex != null ? senderPickIndex + 1 : (row.sender_cycle_index || 0) + 1);
+    await db.query(
+      `UPDATE manual_campaign_runs SET
+        current_index = $2,
+        last_sender_email = $3,
+        sender_order = $4,
+        sender_cycle_index = $5,
+        total_sent = total_sent + 1,
+        status = $6,
+        updated_at = NOW()
+       WHERE id = $1`,
+      [
+        row.id,
+        nextIndex,
+        senderEmail,
+        JSON.stringify(order),
+        nextCycleIndex,
+        completed ? 'completed' : row.status,
+      ]
+    );
+
+    await recordEmailSent(userId, 1);
+
+    const apiBase = process.env.PUBLIC_API_URL || process.env.FRONTEND_URL?.replace(/\/$/, '') || '';
+    const trackUrl = `${apiBase}/api/track/open/${trackingToken}`;
+
+    res.json({
+      ok: true,
+      trackingToken,
+      trackUrl,
+      trackingPixelHtml: `<img src="${trackUrl}" width="1" height="1" alt="" style="display:none;border:0;" />`,
+      nextIndex,
+      completed,
+      totalSent: (row.total_sent || 0) + 1,
+      totalQueued: queue.length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+manualCampaignRoutes.post('/:runId/pause', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    await db.query(
+      "UPDATE manual_campaign_runs SET status = 'paused', updated_at = NOW() WHERE id = $1 AND user_id = $2",
+      [req.params.runId, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});

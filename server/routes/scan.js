@@ -77,7 +77,7 @@ scanRoutes.get('/analytics', requireAuth, async (req, res) => {
         `SELECT COALESCE(COUNT(*), 0) AS extracted
          FROM scan_results sr
          JOIN scans s ON s.id = sr.scan_id
-         WHERE s.user_id = $1 AND sr.has_email = 1 AND sr.email IS NOT NULL`,
+         WHERE s.user_id = $1 AND sr.has_email = 1`,
         [userId]
       );
       return res.json({ extracted: Number(result.rows?.[0]?.extracted || 0) });
@@ -87,7 +87,15 @@ scanRoutes.get('/analytics', requireAuth, async (req, res) => {
     for (const [scanId, scan] of memoryStore.scans.entries()) {
       if (scan?.user_id !== userId) continue;
       const rows = memoryStore.results.get(scanId) || [];
-      extracted += rows.filter((r) => r.has_email === 1 && r.email).length;
+      extracted += rows.filter(
+        (r) =>
+          r.has_email === 1 ||
+          r.email ||
+          r.phone ||
+          r.whatsapp ||
+          r.instagram ||
+          r.tiktok
+      ).length;
     }
     return res.json({ extracted });
   } catch (e) {
@@ -214,6 +222,7 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       userId: userId || undefined,
       rawInput: limitedUrls.join('\n'),
       emailFilters: emailFilters || {},
+      extractOptions: body.extractOptions ?? body.extract_options ?? { email: true },
       forceRefresh: body.forceRefresh ?? body.force_refresh ?? true,
       useCache: body.useCache ?? body.use_cache ?? false,
       stealthMode: !!(body.stealthMode ?? body.stealth_mode),
@@ -313,9 +322,23 @@ function buildStoresFromRows(rows) {
   const byStore = new Map();
   for (const r of rows) {
     if (!byStore.has(r.store_url)) {
-      byStore.set(r.store_url, { storeUrl: r.store_url, emails: [], sourcePages: new Set(), hasEmail: false, status: null });
+      byStore.set(r.store_url, {
+        storeUrl: r.store_url,
+        emails: [],
+        sourcePages: new Set(),
+        hasEmail: false,
+        status: null,
+        phone: r.phone || null,
+        whatsapp: r.whatsapp || null,
+        instagram: r.instagram || null,
+        tiktok: r.tiktok || null,
+      });
     }
     const rec = byStore.get(r.store_url);
+    if (r.phone && !rec.phone) rec.phone = r.phone;
+    if (r.whatsapp && !rec.whatsapp) rec.whatsapp = r.whatsapp;
+    if (r.instagram && !rec.instagram) rec.instagram = r.instagram;
+    if (r.tiktok && !rec.tiktok) rec.tiktok = r.tiktok;
     if (r.email) {
       rec.emails.push({ email: r.email, sourcePage: r.source_page });
       rec.hasEmail = true;
@@ -331,6 +354,10 @@ function buildStoresFromRows(rows) {
       sourcePages: [...rec.sourcePages],
       hasEmail: rec.hasEmail,
       status: rec.status,
+      phone: rec.phone,
+      whatsapp: rec.whatsapp,
+      instagram: rec.instagram,
+      tiktok: rec.tiktok,
     });
   }
   return stores;
@@ -342,7 +369,8 @@ scanRoutes.get('/results/:scanId', requireAuth, async (req, res) => {
     if (db) {
       try {
         const result = await db.query(
-          `SELECT sr.store_url, sr.email, sr.source_page, sr.has_email FROM scan_results sr
+          `SELECT sr.store_url, sr.email, sr.source_page, sr.has_email, sr.phone, sr.whatsapp, sr.instagram, sr.tiktok
+           FROM scan_results sr
            JOIN scans s ON s.id = sr.scan_id WHERE sr.scan_id = $1 AND s.user_id = $2
            ORDER BY sr.has_email DESC, sr.store_url`,
           [req.params.scanId, req.user.id]

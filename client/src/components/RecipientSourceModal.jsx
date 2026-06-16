@@ -1,6 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
+import { Upload } from 'react-feather';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const TILE_BASE =
+  'group relative flex flex-col items-center justify-center aspect-square w-[148px] sm:w-[156px] rounded-2xl border bg-white shadow-sm hover:shadow-md hover:border-blaster-accent/35 hover:-translate-y-0.5 transition-all duration-300 p-4';
 
 function parseCsv(text) {
   const rows = [];
@@ -19,6 +23,61 @@ function parseCsv(text) {
     }
   }
   return rows;
+}
+
+function SavedListTile({ list, selected, onClick }) {
+  const count = list.recipients?.length ?? 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${TILE_BASE} ${
+        selected
+          ? 'border-blaster-accent ring-2 ring-blaster-accent/30'
+          : 'border-blaster-border'
+      }`}
+    >
+      <span className="absolute top-2.5 right-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
+        {count}
+      </span>
+      <span className="text-sm font-semibold text-blaster-fg text-center line-clamp-3 leading-snug px-1">
+        {list.name}
+      </span>
+      <span className="text-[10px] text-blaster-muted mt-1">contacts</span>
+    </button>
+  );
+}
+
+function CsvUploadTile({ onFileChange, count }) {
+  const fileRef = useRef(null);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        className={`${TILE_BASE} border-dashed border-blaster-border cursor-pointer`}
+      >
+        {count > 0 && (
+          <span className="absolute top-2.5 right-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
+            {count}
+          </span>
+        )}
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blaster-accent/15 to-blaster-orange/25 border border-blaster-accent/20 group-hover:from-blaster-accent/25 group-hover:to-blaster-orange/35 transition">
+          <Upload className="w-6 h-6 text-blaster-accent" strokeWidth={1.75} />
+        </span>
+        <span className="text-sm font-semibold text-blaster-fg text-center mt-2">Upload CSV</span>
+        <span className="text-[10px] text-blaster-muted mt-1">{count > 0 ? 'contacts' : 'Import a file'}</span>
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={onFileChange}
+        className="hidden"
+      />
+    </>
+  );
 }
 
 export function RecipientSourceModal({ onClose, onContinueScanned, onContinueCsv, onContinueSavedLists, scannedCount, emailLists = [] }) {
@@ -65,6 +124,7 @@ export function RecipientSourceModal({ onClose, onContinueScanned, onContinueCsv
       }
     };
     reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
   }, []);
 
   return (
@@ -82,82 +142,52 @@ export function RecipientSourceModal({ onClose, onContinueScanned, onContinueCsv
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
           <p className="text-sm text-blaster-muted">Select one or more saved lists to run the campaign for.</p>
 
-          {emailLists.length > 0 && onContinueSavedLists ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                {emailLists.map((list) => {
-                  const count = list.recipients?.length ?? 0;
-                  const selected = selectedListIds.has(list.id);
-                  return (
-                    <button
-                      key={list.id}
-                      type="button"
-                      onClick={() => toggleSavedList(list.id)}
-                      className={`rounded-xl border p-4 text-left transition min-h-[80px] flex flex-col justify-between ${
-                        selected
-                          ? 'border-blaster-accent bg-blaster-accent/10 text-blaster-fg ring-2 ring-blaster-accent/30'
-                          : 'border-blaster-border bg-blaster-bg hover:bg-blaster-bg-app text-blaster-fg'
-                      }`}
-                    >
-                      <span className="font-medium text-sm truncate block" title={list.name}>{list.name}</span>
-                      <span className="text-lg font-semibold text-blaster-accent">{count}</span>
-                      <span className="text-xs text-blaster-muted">emails</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedListIds.size > 0 && (
-                <div className="flex items-center justify-between gap-3 pt-2">
-                  <span className="text-sm text-blaster-muted">{savedListsRecipients.length} email{savedListsRecipients.length !== 1 ? 's' : ''} selected</span>
-                  <button
-                    type="button"
-                    onClick={() => onContinueSavedLists(savedListsRecipients)}
-                    className="btn-blaster-accent text-sm"
-                  >
-                    Continue with {savedListsRecipients.length} emails
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-blaster-muted">No saved lists yet. Save a list from the Email lists section above, or use an option below.</p>
+          <div className="flex flex-wrap gap-4">
+            {emailLists.length > 0 && onContinueSavedLists
+              ? emailLists.map((list) => (
+                  <SavedListTile
+                    key={list.id}
+                    list={list}
+                    selected={selectedListIds.has(list.id)}
+                    onClick={() => toggleSavedList(list.id)}
+                  />
+                ))
+              : null}
+            {onContinueCsv ? (
+              <CsvUploadTile onFileChange={onFileChange} count={csvRecipients.length} />
+            ) : null}
+          </div>
+
+          {emailLists.length === 0 && onContinueSavedLists && (
+            <p className="text-sm text-blaster-muted">No saved lists yet. Upload a CSV or save a list from the Scanner page.</p>
           )}
 
-          <div className="border-t border-blaster-border pt-4 space-y-3">
-            <p className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Other options</p>
-            <button
-              type="button"
-              onClick={onContinueScanned}
-              disabled={scannedCount === 0}
-              className="w-full flex items-center justify-between rounded-xl border border-blaster-border bg-blaster-bg p-3 text-left hover:bg-blaster-bg-app transition disabled:opacity-60 disabled:cursor-not-allowed text-sm"
-            >
-              <span className="font-medium text-blaster-fg">From scanned stores</span>
-              <span className="text-blaster-muted">
-                {scannedCount > 0 ? `${scannedCount} emails` : 'Run a scan first'}
-              </span>
-            </button>
-            <div className="rounded-xl border border-blaster-border bg-blaster-bg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-blaster-fg text-sm">Upload CSV</span>
-                {csvRecipients.length > 0 && <span className="text-xs text-blaster-muted">{csvRecipients.length} emails</span>}
-              </div>
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={onFileChange}
-                className="block w-full text-xs text-blaster-muted file:mr-2 file:py-1.5 file:px-2 file:rounded file:border-0 file:bg-blaster-accent file:text-white"
-              />
-              {csvError && <p className="text-xs text-red-600">{csvError}</p>}
+          {csvError && <p className="text-xs text-red-600">{csvError}</p>}
+
+          {selectedListIds.size > 0 && (
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <span className="text-sm text-blaster-muted">{savedListsRecipients.length} email{savedListsRecipients.length !== 1 ? 's' : ''} selected</span>
+              <button
+                type="button"
+                onClick={() => onContinueSavedLists(savedListsRecipients)}
+                className="btn-blaster-accent text-sm"
+              >
+                Continue with {savedListsRecipients.length} emails
+              </button>
+            </div>
+          )}
+
+          {csvRecipients.length > 0 && onContinueCsv && (
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => onContinueCsv(csvRecipients)}
-                disabled={csvRecipients.length === 0}
-                className="btn-blaster-accent text-sm w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-blaster-accent text-sm"
               >
-                Continue with {csvRecipients.length || 0} emails
+                Continue with {csvRecipients.length} email{csvRecipients.length !== 1 ? 's' : ''}
               </button>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { logActivity } from './activity.js';
+import { recordEmailSent } from '../services/streakService.js';
 import { getDomainLimitForUser, getSenderLimitForUser } from '../services/planLimits.js';
 import {
   createOrLocateProviderDomain,
@@ -636,6 +637,7 @@ domainEmailRoutes.post('/campaigns/start', requireAuth, async (req, res) => {
           [uuidv4(), threadId, req.user.id, campaignId, sender.from_email, toEmail, subject, body, providerMessageId]
         );
         sent += 1;
+        recordEmailSent(req.user.id, 1);
       } catch (e) {
         status = 'failed';
         error = e?.message || 'Send failed';

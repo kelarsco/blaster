@@ -91,7 +91,7 @@ export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
           to="/app/dashboard"
           className="flex md:hidden items-center gap-1.5 text-blaster-fg font-semibold text-base sm:text-lg shrink-0"
         >
-          <Logo />
+          <Logo className="!w-[100px]" />
         </Link>
         
         {/* Spacer */}

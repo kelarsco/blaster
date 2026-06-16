@@ -19,6 +19,23 @@ function isLocalUrl(url) {
   );
 }
 
+function isLocalHost(host) {
+  if (!host) return true;
+  const h = String(host).toLowerCase();
+  return h.includes('localhost') || h.startsWith('127.0.0.1');
+}
+
+function getPublicHost(req) {
+  if (!req) return '';
+  const forwarded = (req.get('x-forwarded-host') || '').split(',')[0].trim();
+  return forwarded || req.get('host') || '';
+}
+
+function getPublicProto(req) {
+  if (!req) return 'https';
+  return (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+}
+
 export function getRailwayHost() {
   const raw = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_STATIC_URL || '';
   return String(raw).trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
@@ -34,7 +51,15 @@ export function isRailwayDeploy() {
 }
 
 /** Public site URL (where users land after OAuth). */
-export function resolveFrontendUrl() {
+export function resolveFrontendUrl(req) {
+  if (req) {
+    const host = getPublicHost(req);
+    const proto = getPublicProto(req);
+    if (host && !isLocalHost(host)) {
+      return normalizeUrl(`${proto}://${host}`);
+    }
+  }
+
   const explicit = (process.env.FRONTEND_URL || process.env.BASE_URL || '').trim();
   const railwayHost = getRailwayHost();
   if (railwayHost && (!explicit || isLocalUrl(explicit))) {
@@ -46,9 +71,9 @@ export function resolveFrontendUrl() {
 /** Google OAuth redirect URI — must match Google Cloud Console exactly. */
 export function resolveGoogleCallbackURL(req) {
   if (req) {
-    const host = req.get('host');
-    const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
-    if (host && !host.includes('localhost') && !host.startsWith('127.0.0.1')) {
+    const host = getPublicHost(req);
+    const proto = getPublicProto(req);
+    if (host && !isLocalHost(host)) {
       return normalizeUrl(`${proto}://${host}/api/auth/google/callback`);
     }
   }
@@ -70,7 +95,7 @@ export function resolveGoogleCallbackURL(req) {
 
 export function getOAuthSetupInfo(req) {
   const callbackUrl = resolveGoogleCallbackURL(req);
-  const frontendUrl = resolveFrontendUrl();
+  const frontendUrl = resolveFrontendUrl(req);
   return {
     configured: Boolean(
       process.env.GOOGLE_CLIENT_ID &&

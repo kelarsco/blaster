@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { AppHeader } from '../components/AppHeader';
-import { ActivityLog } from '../components/ActivityLog';
 import { HelpPanel } from '../components/HelpPanel';
 import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
@@ -13,7 +12,6 @@ const SCROLL_THRESHOLD = 10;
 
 export function AppLayout() {
   const location = useLocation();
-  const [showActivity, setShowActivity] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [layoutLoading, setLayoutLoading] = useState(true);
@@ -71,16 +69,15 @@ export function AppLayout() {
     <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
       <Sidebar
         loading={layoutLoading}
-        onOpenActivity={() => setShowActivity(true)}
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
       />
-      {/* Mobile nav toggle: bottom-left, black bg, white hamburger; hides on scroll down, shows on scroll up */}
+      {/* Mobile nav toggle: slides in from left; hides off-screen left on scroll up */}
       <button
         type="button"
         onClick={() => setSidebarOpen((o) => !o)}
-        className={`md:hidden fixed bottom-6 left-6 z-30 flex items-center justify-center w-12 h-12 rounded-full bg-black text-white shadow-lg hover:bg-gray-900 active:scale-95 transition-transform duration-300 ease-out ${
-          navToggleVisible ? 'translate-y-0' : 'translate-y-40'
+        className={`md:hidden fixed bottom-[124px] left-6 z-30 flex items-center justify-center w-12 h-12 rounded-full bg-black text-white shadow-lg hover:bg-gray-900 active:scale-95 transition-transform duration-300 ease-out ${
+          navToggleVisible ? 'translate-x-0' : '-translate-x-[calc(100%+1.5rem)]'
         }`}
         style={{ willChange: 'transform' }}
         aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
@@ -100,7 +97,6 @@ export function AppLayout() {
           </div>
         </main>
       </div>
-      {showActivity && <ActivityLog onClose={() => setShowActivity(false)} />}
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showSupport && <SupportChatPanel onClose={() => setShowSupport(false)} />}
     </div>

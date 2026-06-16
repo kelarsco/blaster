@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { getDb } from '../db.js';
+import { getDb, memoryStore } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { revokeRefreshTokensForUser } from '../services/tokenAuth.js';
+import { getYoutubeVideoId } from '../utils/youtube.js';
 
 export const adminRoutes = Router();
 adminRoutes.use(requireAdmin);
@@ -475,5 +476,100 @@ adminRoutes.post('/messages/threads/:threadId', async (req, res) => {
   } catch (e) {
     console.error('[admin support message]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed' });
+  }
+});
+
+function mapResourceRow(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    url: row.url,
+    createdAt: row.created_at,
+  };
+}
+
+/** GET /api/bl-admin/resources?type=video|document */
+adminRoutes.get('/resources', async (req, res) => {
+  const type = (req.query.type || '').trim();
+  if (type !== 'video' && type !== 'document') {
+    return res.status(400).json({ error: 'type must be video or document' });
+  }
+  try {
+    const db = getDb();
+    if (!db) {
+      const items = (memoryStore.resources || [])
+        .filter((r) => r.type === type)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .map(mapResourceRow);
+      return res.json({ resources: items });
+    }
+    const result = await db.query(
+      'SELECT id, type, title, url, created_at FROM resources WHERE type = $1 ORDER BY created_at DESC',
+      [type]
+    );
+    res.json({ resources: result.rows.map(mapResourceRow) });
+  } catch (e) {
+    console.error('[admin resources list]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load resources' });
+  }
+});
+
+/** POST /api/bl-admin/resources */
+adminRoutes.post('/resources', async (req, res) => {
+  const type = (req.body?.type || '').trim();
+  const title = (req.body?.title || '').trim();
+  const url = (req.body?.url || '').trim();
+  if (type !== 'video' && type !== 'document') {
+    return res.status(400).json({ error: 'type must be video or document' });
+  }
+  if (!title || !url) {
+    return res.status(400).json({ error: 'title and url are required' });
+  }
+  if (type === 'video' && !getYoutubeVideoId(url)) {
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
+  }
+  if (type === 'document') {
+    try {
+      new URL(url);
+    } catch (_) {
+      return res.status(400).json({ error: 'Invalid PDF URL' });
+    }
+  }
+  try {
+    const db = getDb();
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    if (!db) {
+      const row = { id, type, title, url, created_at: now };
+      memoryStore.resources = [...(memoryStore.resources || []), row];
+      return res.status(201).json({ resource: mapResourceRow(row) });
+    }
+    const result = await db.query(
+      'INSERT INTO resources (id, type, title, url) VALUES ($1, $2, $3, $4) RETURNING id, type, title, url, created_at',
+      [id, type, title, url]
+    );
+    res.status(201).json({ resource: mapResourceRow(result.rows[0]) });
+  } catch (e) {
+    console.error('[admin resources create]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to add resource' });
+  }
+});
+
+/** DELETE /api/bl-admin/resources/:id */
+adminRoutes.delete('/resources/:id', async (req, res) => {
+  const id = (req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id required' });
+  try {
+    const db = getDb();
+    if (!db) {
+      memoryStore.resources = (memoryStore.resources || []).filter((r) => r.id !== id);
+      return res.json({ ok: true });
+    }
+    await db.query('DELETE FROM resources WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin resources delete]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to delete resource' });
   }
 });

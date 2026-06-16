@@ -92,18 +92,8 @@ export function UrlInput({
     setIsScanning(true);
     
     try {
-      let maxConcurrentCrawlers = 5;
-      let maxUrlsPerScan = 1000;
-
-      // Try to get settings from localStorage for scan configuration
-      try {
-        const rawSettings = localStorage.getItem('blaster-settings');
-        if (rawSettings) {
-          const parsed = JSON.parse(rawSettings);
-          if (typeof parsed.maxConcurrentCrawlers === 'number') maxConcurrentCrawlers = parsed.maxConcurrentCrawlers;
-          if (typeof parsed.maxUrlsPerScan === 'number') maxUrlsPerScan = parsed.maxUrlsPerScan;
-        }
-      } catch (_) {}
+      const maxConcurrentCrawlers = 5;
+      const maxUrlsPerScan = 1000;
 
       const urls = parseUrls(rawUrls);
 

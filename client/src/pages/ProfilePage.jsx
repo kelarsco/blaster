@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Image } from 'react-feather';
+import { Image, Edit2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
 
@@ -54,6 +54,7 @@ export function ProfilePage() {
       } catch (_) {}
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const save = () => {
@@ -118,34 +119,28 @@ export function ProfilePage() {
           {/* Profile photo */}
           <section>
             <h2 className="font-semibold text-blaster-fg mb-3">Profile photo</h2>
-            <div className="flex flex-col sm:flex-row items-start gap-6">
-              <div className="w-24 h-24 rounded-full bg-blaster-border overflow-hidden flex items-center justify-center shrink-0">
-                {profileImage ? (
-                  <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <Image className="w-12 h-12 text-blaster-muted" strokeWidth={1.5} />
-                )}
-              </div>
-              <div>
-                <p className="text-sm text-blaster-muted">
-                  Upload your photo ... Photo should be at least 300px × 300px
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-3 btn-blaster-accent text-sm"
-                >
-                  Upload Photo
-                </button>
-              </div>
-            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="group relative w-24 h-24 rounded-full bg-blaster-border overflow-hidden flex items-center justify-center shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blaster-accent/40"
+              aria-label="Change profile photo"
+            >
+              {profileImage ? (
+                <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <Image className="w-12 h-12 text-blaster-muted" strokeWidth={1.5} />
+              )}
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                <Edit2 className="w-6 h-6 text-white" strokeWidth={2} />
+              </span>
+            </button>
           </section>
 
           {/* Basic information */}

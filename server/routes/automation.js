@@ -4,6 +4,8 @@ import { getDb } from '../db.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { getSenderLimitForUser } from '../services/planLimits.js';
+import { verifyEmailAddress } from '../services/emailVerifier.js';
+import { senderGoogleRoutes } from './senderGoogleAuth.js';
 
 export const MAX_SENDERS_PER_GROUP = 10;
 const GMAIL_SMTP_HOSTS = new Set(['smtp.gmail.com', 'smtp-relay.gmail.com']);
@@ -27,6 +29,96 @@ function normalizeSenderConfig(rawConfig = {}) {
 }
 
 export const automationRoutes = Router();
+
+automationRoutes.use('/senders/google', senderGoogleRoutes);
+
+automationRoutes.post('/senders/verify-email', requireAuth, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const result = await verifyEmailAddress(email);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ valid: false, reason: e.message });
+  }
+});
+
+automationRoutes.post('/senders/groups/:groupId/emails', requireAuth, async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const groupId = req.params.groupId;
+    const userId = req.user.id;
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database required.' });
+
+    const verification = await verifyEmailAddress(email);
+    if (!verification.valid) {
+      return res.status(400).json({
+        error: 'This email could not be verified. Please check the address or try a different one.',
+        code: 'VERIFICATION_FAILED',
+      });
+    }
+
+    const own = await db.query('SELECT 1 FROM sender_groups WHERE id = $1 AND user_id = $2', [groupId, userId]);
+    if (!own.rows?.length) return res.status(404).json({ error: 'Group not found' });
+
+    const countInGroup = await db.query('SELECT COUNT(*) AS c FROM sender_group_members WHERE group_id = $1', [groupId]);
+    if (parseInt(countInGroup.rows[0]?.c, 10) >= MAX_SENDERS_PER_GROUP) {
+      return res.status(400).json({ error: `Maximum ${MAX_SENDERS_PER_GROUP} emails per group.` });
+    }
+
+    const normalized = verification.email;
+    let senderId;
+    const existing = await db.query(
+      'SELECT id, verification_status FROM senders WHERE user_id = $1 AND LOWER(email) = $2 AND is_active = 1',
+      [userId, normalized]
+    );
+    if (existing.rows[0]) {
+      senderId = existing.rows[0].id;
+      await db.query(
+        `UPDATE senders SET verification_status = 'verified', provider = COALESCE(NULLIF(provider, ''), 'manual') WHERE id = $1`,
+        [senderId]
+      );
+    } else {
+      const countResult = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
+      const count = parseInt(countResult.rows[0]?.c, 10) || 0;
+      const { limit } = await getSenderLimitForUser(userId);
+      if (count >= limit) {
+        return res.status(403).json({ error: 'Sender limit reached for your plan.', code: 'SENDER_LIMIT_REACHED' });
+      }
+      senderId = uuidv4();
+      await db.query(
+        `INSERT INTO senders (id, user_id, email, config, max_per_minute, provider, verification_status)
+         VALUES ($1, $2, $3, '{}', 10, 'manual', 'verified')`,
+        [senderId, userId, normalized]
+      );
+      logActivity('sender_add', { id: senderId, email: normalized, provider: 'manual' }, userId);
+    }
+
+    await db.query(
+      'INSERT INTO sender_group_members (group_id, sender_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [groupId, senderId]
+    );
+
+    res.json({ id: senderId, email: normalized, verificationStatus: 'verified' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+automationRoutes.delete('/senders/groups/:groupId/emails/:senderId', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database not ready' });
+    const { groupId, senderId } = req.params;
+    const userId = req.user.id;
+    const own = await db.query('SELECT 1 FROM sender_groups WHERE id = $1 AND user_id = $2', [groupId, userId]);
+    if (!own.rows?.length) return res.status(404).json({ error: 'Group not found' });
+    await db.query('DELETE FROM sender_group_members WHERE group_id = $1 AND sender_id = $2', [groupId, senderId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 automationRoutes.get('/senders', requireAuth, async (req, res) => {
   const db = getDb();
@@ -121,7 +213,11 @@ automationRoutes.get('/senders/groups', requireAuth, async (req, res) => {
   const result = await db.query(`
     SELECT sg.id, sg.name, sg.created_at,
       COALESCE(
-        (SELECT json_agg(json_build_object('id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute, 'provider', COALESCE(s.provider, 'smtp')))
+        (SELECT json_agg(json_build_object(
+          'id', s.id, 'email', s.email, 'maxPerMinute', s.max_per_minute,
+          'provider', COALESCE(s.provider, 'smtp'),
+          'verificationStatus', COALESCE(s.verification_status, CASE WHEN COALESCE(s.provider, 'smtp') = 'google' THEN 'verified' WHEN s.config IS NOT NULL AND s.config != '{}' THEN 'verified' ELSE 'pending' END)
+        ))
          FROM senders s
          JOIN sender_group_members sgm ON sgm.sender_id = s.id
          WHERE sgm.group_id = sg.id AND s.is_active = 1),

@@ -21,6 +21,7 @@ import { exportRoutes } from './routes/export.js';
 import { automationRoutes } from './routes/automation.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { activityRoutes } from './routes/activity.js';
+import { streakRoutes } from './routes/streaks.js';
 import { notesRoutes } from './routes/notes.js';
 import { authRoutes } from './routes/auth.js';
 import { inviteRoutes } from './routes/invites.js';
@@ -28,8 +29,10 @@ import { billingRoutes, handlePaystackWebhook } from './routes/billing.js';
 import { supportRoutes } from './routes/support.js';
 import { adminAuthRoutes } from './routes/adminAuth.js';
 import { adminRoutes } from './routes/admin.js';
+import { resourceRoutes } from './routes/resources.js';
 import { emailListRoutes } from './routes/emailLists.js';
-import { domainEmailRoutes } from './routes/domainEmail.js';
+import { manualCampaignRoutes } from './routes/manualCampaigns.js';
+import { trackRoutes } from './routes/track.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './services/cookiePolicy.js';
 
@@ -126,18 +129,21 @@ async function start() {
       });
     }
   });
+  app.use('/api/track', trackRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/invites', inviteRoutes);
   app.use('/api/scan', scanRoutes);
   app.use('/api/export', exportRoutes);
   app.use('/api/automation', automationRoutes);
   app.use('/api/campaigns', campaignRoutes);
+  app.use('/api/manual-campaigns', manualCampaignRoutes);
   app.use('/api/activity', activityRoutes);
+  app.use('/api/streaks', streakRoutes);
   app.use('/api/notes', notesRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/support', supportRoutes);
   app.use('/api/email-lists', emailListRoutes);
-  app.use('/api/domain-email', domainEmailRoutes);
+  app.use('/api/resources', resourceRoutes);
   app.use('/api/bl-admin', adminAuthRoutes);
   app.use('/api/bl-admin', adminRoutes);
 
@@ -159,7 +165,7 @@ async function start() {
   syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
   const basePort = Number(process.env.PORT) || 4000;
   const isDev = process.env.NODE_ENV !== 'production';
-  const maxTries = isDev ? 1 : 10;
+  const maxTries = isDev ? 5 : 10;
   let server = null;
   let boundPort = basePort;
   for (let tryPort = basePort; tryPort < basePort + maxTries; tryPort++) {
@@ -173,6 +179,9 @@ async function start() {
       if (!isDev && tryPort !== basePort) {
         console.log(`(Port ${basePort} was in use. If using Vite dev, set VITE_API_PORT=${tryPort} in client .env and restart.)`);
       }
+      if (isDev && tryPort !== basePort) {
+        console.log(`(Port ${basePort} was in use; using ${tryPort}. Vite reads server/.dev-server-port automatically.)`);
+      }
       if (isDev) {
         try {
           fs.writeFileSync(path.join(__dirname, '.dev-server-port'), String(tryPort));
@@ -182,10 +191,13 @@ async function start() {
     } catch (err) {
       if (err.code === 'EADDRINUSE') {
         if (isDev) {
-          console.error(`\nPort ${tryPort} is already in use. Stop the other server process, then restart:`);
-          console.error('  netstat -ano | findstr :4000');
-          console.error('  taskkill /PID <number_from_above> /F\n');
-          throw err;
+          if (tryPort === basePort + maxTries - 1) {
+            console.error(`\nCould not bind to ports ${basePort}–${tryPort}. Free a port, then restart:`);
+            console.error('  netstat -ano | findstr :4000');
+            console.error('  taskkill /PID <number_from_above> /F\n');
+            throw err;
+          }
+          continue;
         }
         if (tryPort === basePort + maxTries - 1) {
           console.error(`\nCould not bind to port ${tryPort}. To free a port, run:`);

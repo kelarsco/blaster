@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
 import { sendEmailViaProvider } from './domainEmailProviders.js';
+import { recordEmailSent } from './streakService.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -361,11 +362,12 @@ async function safeInsertCampaignSend(db, campaignId, storeUrl, email, senderEma
 }
 
 async function updateCampaignCounts(db, campaignId, type) {
-  const result = await db.query('SELECT sent, failed, total_queued FROM campaigns WHERE id = $1', [campaignId]);
+  const result = await db.query('SELECT sent, failed, total_queued, user_id FROM campaigns WHERE id = $1', [campaignId]);
   const row = result.rows[0];
   if (!row) return;
   if (type === 'sent') {
     await db.query('UPDATE campaigns SET sent = sent + 1, updated_at = NOW() WHERE id = $1', [campaignId]);
+    if (row.user_id) recordEmailSent(row.user_id, 1);
   } else {
     await db.query('UPDATE campaigns SET failed = failed + 1, updated_at = NOW() WHERE id = $1', [campaignId]);
   }
