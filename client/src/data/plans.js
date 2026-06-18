@@ -1,88 +1,118 @@
 /**
  * Shared pricing plans for public pricing page and in-app PricingPlansPage.
- * Plan IDs for API: free | essentials_monthly | essentials_annual | standard_monthly | standard_annual | premium_monthly | premium_annual
+ * Client ids map to API plan ids: essentials_monthly | essentials_annual | standard_* | premium_*
  */
 export const PLANS = [
   {
-    id: 'trial_weekly',
-    name: 'Starter Trial',
-    tag: 'Popular',
+    id: 'free',
+    name: 'Trial (Free)',
+    tag: null,
     description:
-      '7-day trial with full access. Perfect for testing wiblaster with up to 500 store scans daily. Automatically $1/week after trial ends.',
-    price: 1,
+      'Explore Wiblaster at no cost. Scan or upload up to 100 stores and send your first campaign — everything you need to see it in action.',
+    price: 0,
     originalPrice: null,
-    period: 'week',
+    period: 'trial',
     current: false,
-    isTrial: true,
+    isFreeTrial: true,
+    noCard: true,
+    highlights: [
+      'Up to 100 stores (scan or upload)',
+      'Send your first campaign',
+      'No credit card required',
+    ],
     features: {
-      emails: '2,000',
-      users: '1 seat',
-      audiences: '1 audience',
-      scans: '500 daily',
-      support: 'Email support',
-      onboarding: false,
-      ai: false,
+      stores: '100',
+      campaigns: 'First campaign',
+      senders: '1',
+      scans: '100',
     },
   },
   {
     id: 'essentials',
-    name: 'Essentials',
+    name: 'Basic',
     tag: null,
     description:
-      'Reliable outreach for early-stage growth. Designed for solo operators and agencies beginning consistent outreach.',
-    price: 39,
-    originalPrice: 75,
+      'For operators getting consistent. Run unlimited campaigns, reach referrals, and build your streak — with no scan limits and up to 5 sender emails.',
+    price: 3.99,
+    originalPrice: null,
     period: 'month',
     current: false,
+    highlights: [
+      'Unlimited campaigns',
+      'Referral program access',
+      'Streaks & badges',
+      'No scan limits',
+      'Up to 5 sender emails',
+    ],
     features: {
-      emails: '5,000',
-      users: '3 seats',
-      audiences: '3 audiences',
-      support: '24/7 email & chat support',
-      onboarding: false,
-      ai: false,
+      emails: 'Unlimited campaigns',
+      senders: '5',
+      scans: 'Unlimited',
+      campaigns: 'Unlimited',
     },
   },
   {
     id: 'standard',
-    name: 'Standard',
-    tag: 'Best value',
+    name: 'Growth',
+    tag: 'Most popular',
     description:
-      'Scale outreach with control, personalization, and automation. Built for serious outreach workflows that need stability and performance.',
-    price: 79,
-    originalPrice: 250,
+      'Full platform access with analytics, stores, and advanced filters. Use up to 500 filters per month — and unlock pay-as-you-go if you need more.',
+    price: 29.9,
+    originalPrice: null,
     period: 'month',
     current: false,
+    highlights: [
+      'Analytics & stores',
+      'Advanced filters (500/month)',
+      'Pay-as-you-go filter packs',
+      'Everything in Basic',
+    ],
     features: {
-      emails: '50,000',
-      users: '5 seats',
-      audiences: '5 audiences',
-      support: '24/7 email & chat support',
-      onboarding: '1 session',
-      ai: true,
+      filters: '500/month',
+      analytics: true,
+      stores: 'Full access',
+      scans: 'Unlimited',
     },
   },
   {
     id: 'premium',
-    name: 'Custom',
+    name: 'Pro',
     tag: null,
     description:
-      'Custom package for enterprise and high-volume teams. Contact support for custom pricing and dedicated setup.',
-    price: 0,
+      'No restrictions, no caps. Unlimited everything — filters, exports, senders, groups, and every feature on the platform.',
+    price: 75,
     originalPrice: null,
     period: 'month',
     current: false,
-    customContact: true,
+    highlights: [
+      'Unlimited filters & exports',
+      'Unlimited senders & groups',
+      'Every platform feature',
+      'No caps or restrictions',
+    ],
     features: {
-      emails: 'Contact for custom',
-      users: 'Custom seats',
-      audiences: 'Custom',
-      support: 'Priority onboarding & support',
-      onboarding: 'Dedicated setup',
-      ai: true,
+      filters: 'Unlimited',
+      senders: 'Unlimited',
+      exports: 'Unlimited',
+      scans: 'Unlimited',
     },
   },
 ];
+
+export const PLAN_COMPARISON = {
+  columns: ['Trial (Free)', 'Basic', 'Growth', 'Pro'],
+  rows: [
+    { label: 'Price', values: ['Free / 24 hours', '$3.99/month', '$29.90/month', '$75/month'] },
+    { label: 'Store scans / uploads', values: ['Up to 100', 'Unlimited', 'Unlimited', 'Unlimited'] },
+    { label: 'Campaigns', values: ['First campaign', 'Unlimited', 'Unlimited', 'Unlimited'] },
+    { label: 'Sender emails', values: ['1', 'Up to 5', 'Up to 5', 'Unlimited'] },
+    { label: 'Referrals & streaks', values: [false, true, true, true] },
+    { label: 'Analytics & stores', values: [false, false, true, true] },
+    { label: 'Advanced filters', values: [false, false, '500/month + pay-as-you-go', 'Unlimited'] },
+    { label: 'Exports', values: [false, 'Standard', 'Advanced', 'Unlimited'] },
+    { label: 'Credit card required', values: ['No', 'Yes', 'Yes', 'Yes'] },
+  ],
+};
 
 export const MONTHS_BILLED_ANNUALLY = 10; // pay 10 months, get 12
 
@@ -91,8 +121,38 @@ export function formatPriceNum(n) {
   return Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
 }
 
+export function getBillingPlanId(plan, isAnnually) {
+  if (plan.id === 'free' || plan.isFreeTrial) return 'free';
+  return isAnnually ? `${plan.id}_annual` : `${plan.id}_monthly`;
+}
+
+/** Map API subscription plan_id to client plan card id (free | essentials | standard | premium). */
+export function subscriptionPlanIdToTier(planId) {
+  if (!planId || planId === 'free') return 'free';
+  if (planId.startsWith('essentials')) return 'essentials';
+  if (planId.startsWith('standard')) return 'standard';
+  if (planId.startsWith('premium')) return 'premium';
+  if (planId === 'trial_weekly') return 'free';
+  return null;
+}
+
+export function isPlanCurrentForUser(plan, subscriptionPlanId) {
+  const tier = subscriptionPlanIdToTier(subscriptionPlanId);
+  if (plan.isFreeTrial || plan.id === 'free') return tier === 'free';
+  return plan.id === tier;
+}
+
 export function getDisplayPrice(monthlyPrice, isAnnually, period) {
-  // Handle weekly pricing
+  if (period === 'trial') {
+    return {
+      primary: 0,
+      primaryLabel: '24 hours',
+      pricePrefix: 'Free',
+      secondary: null,
+      secondaryLabel: null,
+    };
+  }
+
   if (period === 'week') {
     return {
       primary: monthlyPrice,
@@ -101,8 +161,7 @@ export function getDisplayPrice(monthlyPrice, isAnnually, period) {
       secondaryLabel: null,
     };
   }
-  
-  // Handle annual pricing
+
   if (isAnnually && monthlyPrice > 0) {
     const totalAnnual = monthlyPrice * MONTHS_BILLED_ANNUALLY;
     const effectivePerMonth = totalAnnual / 12;
@@ -113,8 +172,7 @@ export function getDisplayPrice(monthlyPrice, isAnnually, period) {
       secondaryLabel: 'mo',
     };
   }
-  
-  // Handle monthly pricing
+
   return {
     primary: monthlyPrice,
     primaryLabel: 'month',

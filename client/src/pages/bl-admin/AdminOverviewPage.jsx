@@ -146,10 +146,12 @@ export function AdminOverviewPage() {
     return (
       <div>
         <h1 className="text-2xl font-bold text-blaster-fg mb-6">Overview</h1>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 rounded-xl bg-blaster-border/40 animate-pulse" />
-          ))}
+        <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 bg-blaster-border/30 animate-pulse" />
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -276,13 +278,15 @@ export function AdminOverviewPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {cards.map(({ label, value }) => (
-          <div key={label} className="rounded-xl border border-blaster-border bg-blaster-bg-card p-6">
-            <p className="text-sm text-blaster-muted">{label}</p>
-            <p className="text-2xl font-bold text-blaster-fg mt-1">{value}</p>
-          </div>
-        ))}
+      <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
+          {cards.map(({ label, value }) => (
+            <div key={label} className="px-5 sm:px-6 py-5 sm:py-6">
+              <p className="text-sm text-blaster-muted">{label}</p>
+              <p className="text-2xl font-bold text-blaster-fg mt-1 tracking-tight">{value}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

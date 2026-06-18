@@ -1,9 +1,29 @@
 import { Router } from 'express';
-import { getDb, memoryStore } from '../db.js';
+import { getDb, memoryStore, logDbErrorThrottled } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { revokeRefreshTokensForUser } from '../services/tokenAuth.js';
 import { getYoutubeVideoId } from '../utils/youtube.js';
+import {
+  getLeadStoreStats,
+  listLeadStores,
+  enqueueLeadStores,
+  requeueRejectedLeadStores,
+  createScrapeJob,
+  completeScrapeJob,
+  getLatestScrapeJob,
+  countQualifiedStoresNeedingTagRefresh,
+  clearTagClassificationForAllQualified,
+} from '../services/leadStoreRepository.js';
+import { runScrapeDiscoveryJob } from '../services/leadScraper.js';
+import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
+import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
+import { isBackfillEnabled } from '../services/backfillGate.js';
+import { getAdminReferralOverview } from '../services/referralService.js';
+import {
+  applyAdminUserPlanChange,
+  listAdminAssignablePlans,
+} from '../services/adminPlanChange.js';
 
 export const adminRoutes = Router();
 adminRoutes.use(requireAdmin);
@@ -78,7 +98,7 @@ adminRoutes.get('/sidebar-counts', async (req, res) => {
       messages: parseInt(threadsRes.rows?.[0]?.c ?? '0', 10),
     });
   } catch (e) {
-    console.error('[admin sidebar-counts]', e?.message || e);
+    logDbErrorThrottled('admin sidebar-counts', e);
     res.status(500).json({ users: 0, subscriptions: 0, messages: 0 });
   }
 });
@@ -192,29 +212,9 @@ adminRoutes.patch('/users/:id', async (req, res) => {
       await db.query(`UPDATE users SET updated_at = NOW(), ${updates.join(', ')} WHERE id = $${i}`, values);
     }
     if (planId !== undefined) {
-      const sub = await db.query(
-        'SELECT id FROM subscriptions WHERE user_id = $1 AND status IN (\'active\',\'trialing\') ORDER BY current_period_end DESC LIMIT 1',
-        [req.params.id]
-      );
-      if (planId === 'free' || !planId) {
-        if (sub.rows?.[0]) {
-          await db.query('UPDATE subscriptions SET status = \'cancelled\', updated_at = NOW() WHERE user_id = $1', [req.params.id]);
-        }
-      } else {
-        const planRow = await db.query('SELECT id FROM plans WHERE id = $1', [planId]);
-        if (!planRow.rows?.[0]) return res.status(400).json({ error: 'Invalid plan ID' });
-        if (sub.rows?.[0]) {
-          await db.query('UPDATE subscriptions SET plan_id = $1, updated_at = NOW() WHERE user_id = $2', [planId, req.params.id]);
-        } else {
-          const periodStart = new Date();
-          const periodEnd = new Date(periodStart);
-          periodEnd.setMonth(periodEnd.getMonth() + 1);
-          await db.query(
-            `INSERT INTO subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end)
-             VALUES ($1, $2, $3, 'active', $4, $5)`,
-            [uuidv4(), req.params.id, planId, periodStart, periodEnd]
-          );
-        }
+      const result = await applyAdminUserPlanChange(db, req.params.id, planId === '' ? 'free' : planId);
+      if (!result.ok) {
+        return res.status(400).json({ error: result.error || 'Failed to update plan' });
       }
     }
     res.json({ ok: true });
@@ -387,13 +387,13 @@ adminRoutes.get('/subscriptions', async (req, res) => {
   }
 });
 
-/** GET /api/bl-admin/plans - List plans for dropdown */
+/** GET /api/bl-admin/plans - List assignable plans for admin dropdown */
 adminRoutes.get('/plans', async (req, res) => {
   try {
     const db = getDb();
     if (!db) return res.json({ plans: [] });
-    const r = await db.query('SELECT id, name, amount, interval FROM plans ORDER BY amount ASC');
-    res.json({ plans: (r.rows || []).map((p) => ({ id: p.id, name: p.name, amount: p.amount, interval: p.interval })) });
+    const rows = await listAdminAssignablePlans(db);
+    res.json({ plans: rows.map((p) => ({ id: p.id, name: p.name, amount: p.amount, interval: p.interval })) });
   } catch (e) {
     res.status(500).json({ error: e?.message || 'Failed' });
   }
@@ -571,5 +571,138 @@ adminRoutes.delete('/resources/:id', async (req, res) => {
   } catch (e) {
     console.error('[admin resources delete]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to delete resource' });
+  }
+});
+
+/** Lead Engine — store qualification pipeline */
+adminRoutes.get('/lead-engine/stats', async (req, res) => {
+  try {
+    const stats = await getLeadStoreStats();
+    const scrapeJob = await getLatestScrapeJob();
+    res.json({ stats, scrapeJob });
+  } catch (e) {
+    logDbErrorThrottled('lead-engine stats', e);
+    res.status(500).json({ error: e?.message || 'Failed to load stats' });
+  }
+});
+
+adminRoutes.get('/lead-engine/stores', async (req, res) => {
+  try {
+    const stores = await listLeadStores({ limit: 500 });
+    res.json({ stores });
+  } catch (e) {
+    logDbErrorThrottled('lead-engine stores', e);
+    res.status(500).json({ error: e?.message || 'Failed to load stores' });
+  }
+});
+
+adminRoutes.post('/lead-engine/stores/manual', async (req, res) => {
+  try {
+    const raw = req.body?.urls;
+    const urls = Array.isArray(raw)
+      ? raw
+      : String(raw || '')
+          .split(/[\n,]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+    if (!urls.length) return res.status(400).json({ error: 'No URLs provided' });
+    const { added, skipped } = await enqueueLeadStores(urls, 'manual');
+    kickLeadEngineWorker();
+    res.json({ added: added.length, skipped: skipped.length, urls: added });
+  } catch (e) {
+    console.error('[lead-engine manual]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to add stores' });
+  }
+});
+
+adminRoutes.post('/lead-engine/stores/requeue-rejected', async (req, res) => {
+  try {
+    const { requeued } = await requeueRejectedLeadStores();
+    if (requeued > 0) kickLeadEngineWorker();
+    res.json({ requeued });
+  } catch (e) {
+    console.error('[lead-engine requeue-rejected]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to requeue rejected stores' });
+  }
+});
+
+/** Re-run tag classifier on all qualified stores (for Store Leads filter tags). */
+adminRoutes.post('/lead-engine/stores/reclassify-tags', async (req, res) => {
+  try {
+    const force = req.body?.force === true;
+    const pending = await countQualifiedStoresNeedingTagRefresh();
+    if (force || pending > 0) {
+      if (!isBackfillEnabled()) {
+        return res.status(503).json({
+          error: 'Backfill workers disabled. Set ENABLE_BACKFILL_WORKERS=1 in server .env and restart.',
+        });
+      }
+      if (force) await clearTagClassificationForAllQualified();
+      kickTagBackfillWorker();
+    }
+    res.json({
+      ok: true,
+      pending: force ? await countQualifiedStoresNeedingTagRefresh() : pending,
+      running: isTagBackfillRunning(),
+      message: force
+        ? 'Reclassifying tags for all qualified stores in the background.'
+        : pending > 0
+          ? `Refreshing tags for ${pending} store(s) in the background.`
+          : 'All qualified stores already have up-to-date tags.',
+    });
+  } catch (e) {
+    console.error('[lead-engine reclassify-tags]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to start tag refresh' });
+  }
+});
+
+adminRoutes.get('/lead-engine/stores/tag-refresh-status', async (req, res) => {
+  try {
+    const pending = await countQualifiedStoresNeedingTagRefresh();
+    res.json({ pending, running: isTagBackfillRunning() });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed to load tag refresh status' });
+  }
+});
+
+adminRoutes.get('/referrals', async (req, res) => {
+  try {
+    const data = await getAdminReferralOverview();
+    res.json(data || { stats: {}, topReferrers: [], recentReferrals: [] });
+  } catch (e) {
+    console.error('[admin referrals]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load referrals' });
+  }
+});
+
+adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
+  try {
+    const jobId = await createScrapeJob();
+    runScrapeDiscoveryJob()
+      .then(async ({ urlsFound, storesAdded }) => {
+        await completeScrapeJob(jobId, { urlsFound, storesAdded });
+        kickLeadEngineWorker();
+      })
+      .catch(async (e) => {
+        await completeScrapeJob(jobId, {
+          urlsFound: 0,
+          storesAdded: 0,
+          errorMessage: e?.message || 'Scrape failed',
+          status: 'failed',
+        });
+      });
+    res.json({ ok: true, jobId, message: 'Scrape job started' });
+  } catch (e) {
+    console.error('[lead-engine scrape]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to start scrape' });
+  }
+});
+
+adminRoutes.get('/lead-engine/scrape/status', async (req, res) => {
+  try {
+    const scrapeJob = await getLatestScrapeJob();
+    res.json({ scrapeJob });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed to load scrape status' });
   }
 });

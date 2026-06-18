@@ -8,7 +8,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import { getDb } from '../db.js';
+import { getDb, getDbUnavailableMessage } from '../db.js';
 import { sendVerificationCode, isVerificationEmailConfigured } from '../services/verificationEmail.js';
 import { sendDeactivationConfirmation } from '../services/transactionalEmail.js';
 import { sendPasswordResetEmail, isPasswordResetEmailConfigured } from '../services/passwordResetEmail.js';
@@ -30,6 +30,13 @@ import {
   resolveGoogleCallbackURL,
   getOAuthSetupInfo,
 } from '../services/oauthUrls.js';
+import {
+  attachReferralOnSignup,
+  ensureUserReferralCode,
+  getReferralCodeFromRequest,
+  setReferralRefCookie,
+  clearReferralRefCookie,
+} from '../services/referralService.js';
 
 const hasGoogleConfig =
   process.env.GOOGLE_CLIENT_ID &&
@@ -65,7 +72,7 @@ if (hasGoogleConfig) {
         const name = profile.displayName || profile.emails?.[0]?.value || 'User';
         const picture = (profile.photos?.[0]?.value || '').trim() || null;
         if (!db) {
-          return done(null, null, { code: 'NO_DB', message: 'Sign-in is temporarily unavailable. Please try again later.' });
+          return done(null, null, { code: 'NO_DB', message: getDbUnavailableMessage() });
         }
         if (!email) {
           return done(null, null, { code: 'NO_EMAIL', message: 'We could not get your email from Google. Please use an account with email access.' });
@@ -97,7 +104,8 @@ if (hasGoogleConfig) {
              VALUES ($1, $2, $3, 'google', 1, NOW(), $4, NOW())`,
             [id, email, name, picture]
           );
-          return done(null, { id, email, name, picture });
+          await ensureUserReferralCode(id);
+          return done(null, { id, email, name, picture, isNew: true });
         } catch (e) {
           return done(e);
         }
@@ -132,6 +140,7 @@ authRoutes.get('/me', async (req, res) => {
         if (row.picture_url) picture = row.picture_url;
         if (row.auth_provider) auth_provider = row.auth_provider;
       }
+      ensureUserReferralCode(req.user.id).catch(() => {});
     } catch (_) { /* ignore */ }
   }
   return res.json({
@@ -152,9 +161,9 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
   try {
     const db = getDb();
     if (!db) {
-      return res.status(503).json({ 
-        error: 'Database temporarily unavailable. Please try again later.',
-        retry_after: '1 hour' // Neon quota typically resets hourly
+      return res.status(503).json({
+        error: getDbUnavailableMessage(),
+        retry_after: '1 hour',
       });
     }
     if (!isVerificationEmailConfigured()) {
@@ -183,6 +192,12 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
        VALUES ($1, $2, $3, $4, 'credentials', 0, $5, $6, NOW())`,
       [id, emailNorm, hash, displayName, code, expiresAt]
     );
+    await ensureUserReferralCode(id);
+    const refCode = getReferralCodeFromRequest(req);
+    if (refCode) {
+      await attachReferralOnSignup(id, emailNorm, refCode);
+      clearReferralRefCookie(res);
+    }
     try {
       await sendVerificationCode(emailNorm, code);
     } catch (emailErr) {
@@ -280,7 +295,7 @@ authRoutes.post('/verify-email', authRateLimit, async (req, res) => {
 authRoutes.post('/login', authRateLimit, async (req, res) => {
   try {
     const db = getDb();
-    if (!db) return res.status(503).json({ error: 'Login is not available. Please try again later.' });
+    if (!db) return res.status(503).json({ error: getDbUnavailableMessage() });
     const { email, password } = req.body || {};
     const emailNorm = typeof email === 'string' ? email.trim().toLowerCase() : '';
     if (!emailNorm || !password) return res.status(400).json({ error: 'Email and password are required' });
@@ -505,6 +520,8 @@ authRoutes.get('/google/setup', (req, res) => {
 
 authRoutes.get('/google', (req, res, next) => {
   if (!hasGoogleConfig) return res.redirect(302, loginRedirect('error=google_not_configured', req));
+  const refCode = getReferralCodeFromRequest(req);
+  if (refCode) setReferralRefCookie(res, refCode);
   const callbackURL = resolveGoogleCallbackURL(req);
   passport.authenticate('google', { scope: ['profile', 'email'], callbackURL })(req, res, next);
 });
@@ -541,6 +558,23 @@ authRoutes.get('/google/callback', (req, res, next) => {
       return res.redirect(302, loginRedirect('error=google_failed&message=Sign-in%20was%20cancelled%20or%20denied.', req));
     }
     try {
+      const refCode = getReferralCodeFromRequest(req);
+      if (refCode) {
+        if (user.isNew) {
+          await attachReferralOnSignup(user.id, user.email, refCode);
+          clearReferralRefCookie(res);
+        } else {
+          const db = getDb();
+          if (db) {
+            const existingRef = await db.query('SELECT id FROM user_referrals WHERE referred_user_id = $1', [user.id]);
+            const userRef = await db.query('SELECT referred_by_user_id FROM users WHERE id = $1', [user.id]);
+            if (!existingRef.rows?.[0] && !userRef.rows?.[0]?.referred_by_user_id) {
+              const attached = await attachReferralOnSignup(user.id, user.email, refCode);
+              if (attached?.ok) clearReferralRefCookie(res);
+            }
+          }
+        }
+      }
       const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
       const accessToken = createAccessToken(userForToken);
       const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);

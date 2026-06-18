@@ -4,6 +4,7 @@ import { getDb } from '../db.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { getSenderLimitForUser } from '../services/planLimits.js';
+import { checkGroupLimit } from '../services/planAccess.js';
 import { verifyEmailAddress } from '../services/emailVerifier.js';
 import { senderGoogleRoutes } from './senderGoogleAuth.js';
 
@@ -244,6 +245,15 @@ automationRoutes.post('/senders/groups', requireAuth, async (req, res) => {
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'Group name required' });
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database required.' });
+    const groupLimit = await checkGroupLimit(req.user.id);
+    if (!groupLimit.ok) {
+      return res.status(403).json({
+        error: 'Upgrade to add more sender groups.',
+        upgradeRequired: true,
+        reason: groupLimit.reason,
+        planStatus: groupLimit.status,
+      });
+    }
     const id = uuidv4();
     await db.query('INSERT INTO sender_groups (id, user_id, name) VALUES ($1, $2, $3)', [id, req.user.id, String(name).trim()]);
     logActivity('sender_group_add', { id, name: String(name).trim() }, req.user.id);

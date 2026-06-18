@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { Download, Clipboard } from 'react-feather';
 import { useToolState } from '../context/ToolStateContext';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { AutomationModal } from '../components/AutomationModal';
 import { RecipientSourceModal } from '../components/RecipientSourceModal';
 import { ExecutionDashboard } from '../components/ExecutionDashboard';
@@ -314,6 +315,7 @@ export function CampaignsPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
   const location = useLocation();
+  const { status, openUpgradeModal } = usePlanAccess();
   const { setAutomationOpen, activeCampaignId, setActiveCampaignId } = useToolState();
   const [campaigns, setCampaigns] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -448,6 +450,19 @@ export function CampaignsPage() {
 
   const isMessaged = (email) => messagedEmails.has(String(email || '').toLowerCase());
 
+  const tryNewCampaign = () => {
+    if ((status?.campaignsActive ?? 0) >= (status?.campaignsActiveMax ?? 999999)) {
+      openUpgradeModal({
+        title: 'Campaign limit reached',
+        message: 'Upgrade to run more active campaigns.',
+        tierName: 'Basic',
+        tierPrice: '$3.99/month',
+      });
+      return;
+    }
+    setRecipientSourceOpen(true);
+  };
+
   return (
     <div className="min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 md:gap-4 mb-6 md:mb-8">
@@ -457,7 +472,7 @@ export function CampaignsPage() {
         </div>
         <button
           type="button"
-          onClick={() => setRecipientSourceOpen(true)}
+          onClick={tryNewCampaign}
           className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition shrink-0"
         >
           + New Campaign

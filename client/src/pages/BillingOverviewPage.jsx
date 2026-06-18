@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 
 function formatPrice(amountCents, interval) {
@@ -12,6 +13,7 @@ function formatPrice(amountCents, interval) {
 
 export function BillingOverviewPage() {
   const { authFetch } = useAuth();
+  const { status: planStatus, refresh: refreshPlanStatus } = usePlanAccess();
   const [searchParams, setSearchParams] = useSearchParams();
   const [overview, setOverview] = useState(null);
   const [cards, setCards] = useState([]);
@@ -61,6 +63,7 @@ export function BillingOverviewPage() {
         .then((data) => {
           if (data.ok) {
             setSearchParams({}, { replace: true });
+            refreshPlanStatus();
           }
         })
         .finally(() => {});
@@ -82,6 +85,7 @@ export function BillingOverviewPage() {
       .then(([overviewData, paymentData]) => {
         setOverview(overviewData);
         setCards(paymentData.cards || []);
+        refreshPlanStatus();
       })
       .catch((e) => {
         setError(e?.message || 'Failed to load billing');
@@ -119,6 +123,17 @@ export function BillingOverviewPage() {
   const emailsPct = usage && usage.emailsLimit > 0 && usage.emailsLimit < 999999 ? (usage.emailsUsed / usage.emailsLimit) * 100 : 0;
   const extraPct = extraCredit.nextThreshold > 0 ? Math.min(100, (extraCredit.owed / extraCredit.nextThreshold) * 100) : 0;
 
+  const filterUses = planStatus?.filterUses ?? 0;
+  const filterLimit = planStatus?.filterLimit ?? 0;
+  const filterPct =
+    filterLimit > 0 && filterLimit < 999999 ? Math.min(100, (filterUses / filterLimit) * 100) : 0;
+  const paygChargesCents = planStatus?.paygChargesCents ?? 0;
+  const paygCapCents = planStatus?.paygCapCents ?? 1000;
+  const paygPct = paygCapCents > 0 ? Math.min(100, (paygChargesCents / paygCapCents) * 100) : 0;
+  const showFilterUsage = planStatus?.tier === 2;
+  const showPaygUsage = planStatus?.paygActive || paygChargesCents > 0;
+  const paygInvoiceCents = planStatus?.paygPendingInvoiceCents ?? paygChargesCents;
+
   return (
     <div className="p-4 sm:p-6 md:p-8">
       <div className="mb-6 md:mb-8">
@@ -146,6 +161,18 @@ export function BillingOverviewPage() {
             <p className="text-xl md:text-2xl font-bold text-blaster-fg mb-3 md:mb-4">
               {showInitialLoading ? '...' : formatPrice(plan?.amount || 0, plan?.interval || 'monthly')}
             </p>
+            {planStatus?.tierName && !showInitialLoading && (
+              <p className="text-sm text-blaster-muted mb-3">
+                Access tier: <span className="text-blaster-fg font-medium">{planStatus.tierName}</span>
+                {planStatus.trialActive && planStatus.trialHoursRemaining > 0 && (
+                  <span>
+                    {' '}
+                    · Trial ends in {Math.floor(planStatus.trialHoursRemaining)}h
+                    {Math.floor((planStatus.trialHoursRemaining % 1) * 60)}m
+                  </span>
+                )}
+              </p>
+            )}
             {showInitialLoading ? (
               <div className="space-y-4">
                 <div className="h-2 rounded-full bg-blaster-bg-app animate-pulse" />
@@ -188,6 +215,39 @@ export function BillingOverviewPage() {
                     <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, sendersPct)}%` }} />
                   </div>
                 </div>
+                {showFilterUsage && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-blaster-muted">Store filter uses</span>
+                      <span className="text-blaster-fg">
+                        {filterUses} of {filterLimit} used this period
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
+                      <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${filterPct}%` }} />
+                    </div>
+                    <p className="text-xs text-blaster-muted mt-1">
+                      Filter, copy, and export actions on the Stores page share this monthly limit.
+                    </p>
+                  </div>
+                )}
+                {showPaygUsage && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-blaster-muted">Pay-as-you-go filtering</span>
+                      <span className="text-blaster-fg">
+                        ${(paygChargesCents / 100).toFixed(2)} of ${(paygCapCents / 100).toFixed(2)} used
+                        {planStatus?.paygActive ? ' · Active' : ''}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
+                      <div className="h-full bg-indigo-500/50 rounded-full transition-[width]" style={{ width: `${paygPct}%` }} />
+                    </div>
+                    <p className="text-xs text-blaster-muted mt-1">
+                      $0.05 per filter use beyond {filterLimit}. Charges are added to your next subscription invoice.
+                    </p>
+                  </div>
+                )}
                 {!isFree && (
                   <div>
                     <div className="flex justify-between text-sm mb-1">
@@ -258,9 +318,17 @@ export function BillingOverviewPage() {
                     <span className="text-blaster-muted">Tax</span>
                     <span className="text-blaster-fg">—</span>
                   </div>
+                  {paygInvoiceCents > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-blaster-muted">PAYG filtering (pending)</span>
+                      <span className="text-blaster-fg">${(paygInvoiceCents / 100).toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-medium pt-2 border-t border-blaster-border">
                     <span className="text-blaster-fg">Estimated total</span>
-                    <span className="text-blaster-fg">${(plan.amount / 100).toFixed(2)}</span>
+                    <span className="text-blaster-fg">
+                      ${((plan.amount + paygInvoiceCents) / 100).toFixed(2)}
+                    </span>
                   </div>
                 </div>
               </>

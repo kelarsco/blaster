@@ -28,7 +28,7 @@ function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function fetchHtml(url, options = {}) {
+export function fetchHtml(url, options = {}) {
   const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? 3;
   return new Promise((resolve) => {

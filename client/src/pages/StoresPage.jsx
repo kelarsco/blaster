@@ -1,62 +1,90 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { useToolState } from '../context/ToolStateContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext.jsx';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
-import { exportScanResultsCsv } from '../utils/scannerUrls.js';
+import {
+  emptyFilters,
+  filterLeadStores,
+  exportLeadStoresCsv,
+  filtersEqual,
+  buildFilterTags,
+} from '../utils/storeLeadFilters.js';
+import { StoresFilterPanel } from '../components/stores/StoresFilterPanel.jsx';
 import { StoreCard } from '../components/stores/StoreCard.jsx';
 import { StoresBulkActions } from '../components/stores/StoresBulkActions.jsx';
 import { StoresPagination } from '../components/stores/StoresPagination.jsx';
+import { StoresPageSkeleton } from '../components/stores/StoresPageSkeleton.jsx';
+import {
+  FeatureLockOverlay,
+  FeatureLockWrap,
+  PaygConfirmModal,
+} from '../components/access/PlanAccessUI.jsx';
 
 const DEFAULT_ITEMS_PER_PAGE = 50;
 
 export function StoresPage() {
-  const { scanId, results, setResults } = useToolState();
   const { authFetch } = useAuth();
-  const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState('grid');
+  const {
+    status,
+    loading: planLoading,
+    access,
+    recordFilterUse,
+    activatePayg,
+    showToast,
+  } = usePlanAccess();
+
+  const [allStores, setAllStores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(emptyFilters());
+  const [appliedFilters, setAppliedFilters] = useState(emptyFilters());
+  const [viewMode, setViewMode] = useState('list');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_ITEMS_PER_PAGE);
-  const [loading, setLoading] = useState(false);
   const [copying, setCopying] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [paygModalOpen, setPaygModalOpen] = useState(false);
+  const [paygActivating, setPaygActivating] = useState(false);
+  const [showPaygHint, setShowPaygHint] = useState(false);
+
+  const storesAccess = access?.storesPage;
+  const trialPartialLock = storesAccess === 'partial';
+  const basicPageBlocked = storesAccess === 'blocked';
+  const filtersBlocked = status?.filtersBlocked ?? false;
+  const exportCopyBlocked = status?.exportCopyBlocked ?? false;
+  const paygActive = status?.paygActive ?? false;
+  const filterUses = status?.filterUses ?? 0;
+  const filterLimit = status?.filterLimit ?? 500;
+  const paygChargesCents = status?.paygChargesCents ?? 0;
+  const paygCapCents = status?.paygCapCents ?? 1000;
+  const showPaygOffer =
+    status?.tier === 2 &&
+    filterUses >= filterLimit &&
+    !paygActive &&
+    access?.paygAvailable;
+
+  const loadStores = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API}/leads/stores`);
+      if (res.ok) {
+        const data = await res.json();
+        setAllStores(Array.isArray(data.stores) ? data.stores : []);
+      }
+    } catch (_) {}
+    setLoading(false);
+  }, [authFetch]);
+
+  useEffect(() => {
+    loadStores();
+  }, [loadStores]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [scanId, search, itemsPerPage]);
+  }, [appliedFilters, itemsPerPage]);
 
-  useEffect(() => {
-    if (!scanId || !authFetch) return;
-    let cancelled = false;
-    setLoading(true);
-    authFetch(`${API}/scan/results/${scanId}`)
-      .then(async (res) => {
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (!cancelled) setResults(data.results || []);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [scanId, authFetch, setResults]);
-
-  const filtered = useMemo(() => {
-    const list = results || [];
-    if (!search.trim()) return list;
-    const q = search.toLowerCase();
-    return list.filter(
-      (store) =>
-        (store.storeUrl && store.storeUrl.toLowerCase().includes(q)) ||
-        (store.emails || []).some(
-          (e) => e.email?.toLowerCase().includes(q) || e.sourcePage?.toLowerCase().includes(q)
-        ) ||
-        (store.phone && store.phone.toLowerCase().includes(q))
-    );
-  }, [results, search]);
+  const filtered = useMemo(
+    () => filterLeadStores(allStores, appliedFilters),
+    [allStores, appliedFilters]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const pageStores = useMemo(() => {
@@ -64,110 +92,210 @@ export function StoresPage() {
     return filtered.slice(start, start + itemsPerPage);
   }, [filtered, currentPage, itemsPerPage]);
 
-  const withEmailCount = filtered.filter((s) => s.hasEmail || (s.emails && s.emails.length > 0)).length;
-  const canExport = filtered.some((s) => s.hasEmail || (s.emails && s.emails.length > 0));
-
   const handlePageChange = (page) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleFilterChange = (next) => {
+    if (filtersBlocked) {
+      if (showPaygOffer) setShowPaygHint(true);
+      return;
+    }
+    setFilters(next);
+    if (buildFilterTags(next).length === 0) {
+      setAppliedFilters(next);
+      setCurrentPage(1);
+    }
+  };
+
+  const handleApplyFilters = async () => {
+    if (filtersBlocked) {
+      if (showPaygOffer) setShowPaygHint(true);
+      return;
+    }
+    const tags = buildFilterTags(filters);
+    if (tags.length > 0 && status?.tier === 2) {
+      const result = await recordFilterUse();
+      if (!result.ok) {
+        if (showPaygOffer) setShowPaygHint(true);
+        return;
+      }
+    }
+    setAppliedFilters(filters);
+    setCurrentPage(1);
+  };
+
+  const handleClearFilters = () => {
+    if (filtersBlocked && trialPartialLock) return;
+    const cleared = emptyFilters();
+    setFilters(cleared);
+    setAppliedFilters(cleared);
+    setCurrentPage(1);
+  };
+
+  const hasPendingFilters = !filtersEqual(filters, appliedFilters);
+
+  const trackExportOrCopy = useCallback(async () => {
+    if (status?.tier !== 2) return { ok: true };
+    return recordFilterUse();
+  }, [status?.tier, recordFilterUse]);
+
   const handleCopyLinks = useCallback(async () => {
+    if (exportCopyBlocked) {
+      if (showPaygOffer) setShowPaygHint(true);
+      showToast("You've reached your 500-filter limit for this month.");
+      return;
+    }
     const urls = filtered.map((s) => s.storeUrl).filter(Boolean);
     if (!urls.length) return;
     setCopying(true);
     try {
+      const tracked = await trackExportOrCopy();
+      if (!tracked.ok) return;
       await navigator.clipboard.writeText(urls.join('\n'));
     } catch (_) {}
     setCopying(false);
-  }, [filtered]);
+  }, [filtered, exportCopyBlocked, showPaygOffer, showToast, trackExportOrCopy]);
 
-  const handleExportCsv = useCallback(() => {
-    if (!canExport) return;
+  const handleExportCsv = useCallback(async () => {
+    if (exportCopyBlocked) {
+      if (showPaygOffer) setShowPaygHint(true);
+      showToast("You've reached your 500-filter limit for this month.");
+      return;
+    }
+    if (!filtered.length) return;
     setExporting(true);
     try {
-      exportScanResultsCsv(
-        filtered,
-        { storeUrl: true, email: true, phone: true, whatsapp: true, instagram: true, tiktok: true },
-        { email: true, phone: true, whatsapp: true, instagram: true, tiktok: true }
-      );
+      const tracked = await trackExportOrCopy();
+      if (!tracked.ok) return;
+      exportLeadStoresCsv(filtered);
     } finally {
       setExporting(false);
     }
-  }, [filtered, canExport]);
+  }, [filtered, exportCopyBlocked, showPaygOffer, showToast, trackExportOrCopy]);
+
+  const handlePaygConfirm = async () => {
+    setPaygActivating(true);
+    const result = await activatePayg();
+    setPaygActivating(false);
+    if (result.ok) {
+      setPaygModalOpen(false);
+      setShowPaygHint(false);
+    }
+  };
+
+  if (loading || planLoading) {
+    return (
+      <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
+        <StoresPageSkeleton />
+      </div>
+    );
+  }
+
+  if (basicPageBlocked) {
+    return (
+      <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
+        <FeatureLockOverlay
+          message="Upgrade to Growth to access the Stores page."
+          minHeight="min(70vh, 32rem)"
+          className="stores-glass"
+        />
+      </div>
+    );
+  }
+
+  const resultsSection = (
+    <>
+      <StoresBulkActions
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={setItemsPerPage}
+        onCopyLinks={handleCopyLinks}
+        onExportCsv={handleExportCsv}
+        copying={copying}
+        exporting={exporting}
+        canExport={filtered.length > 0 && !exportCopyBlocked}
+        hasStores={filtered.length > 0}
+      />
+
+      {filtered.length === 0 ? (
+        <div className="stores-glass text-center p-10">
+          <p className="text-sm font-medium text-blaster-fg">
+            {allStores.length === 0 ? 'No qualified stores yet' : 'No stores match your filters'}
+          </p>
+          <p className="text-sm text-blaster-muted mt-1">
+            {allStores.length === 0
+              ? 'Stores appear here after passing the lead engine qualification pipeline.'
+              : 'Try adjusting your filters or clear them to see all stores.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className={viewMode === 'grid' ? 'stores-grid' : 'stores-list'}>
+            {pageStores.map((store) => (
+              <StoreCard key={store.id} store={store} viewMode={viewMode} />
+            ))}
+          </div>
+          <StoresPagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
-      <div className="mb-6 md:mb-8">
-        <h1 className="page-title-mobile">Stores</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">
-          Browse store links and contact details from your scans
-        </p>
-        {scanId && !loading ? (
-          <p className="text-xs text-blaster-muted mt-1">
-            {filtered.length} stores · {withEmailCount} with email
-          </p>
-        ) : null}
-      </div>
+      <PaygConfirmModal
+        open={paygModalOpen}
+        onConfirm={handlePaygConfirm}
+        onCancel={() => setPaygModalOpen(false)}
+        loading={paygActivating}
+      />
 
-      {!scanId ? (
-        <div className="stores-glass text-center p-8 md:p-12">
-          <p className="text-blaster-muted mb-4">No scan in progress. Run a scan to collect store contacts.</p>
-          <Link
-            to="/app/scanner"
-            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition"
-          >
-            Go to Scanner
-          </Link>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          <StoresBulkActions
-            visibleCount={pageStores.length}
-            totalCount={filtered.length}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            itemsPerPage={itemsPerPage}
-            onItemsPerPageChange={setItemsPerPage}
-            search={search}
-            onSearchChange={setSearch}
-            onCopyLinks={handleCopyLinks}
-            onExportCsv={handleExportCsv}
-            copying={copying}
-            exporting={exporting}
-            canExport={canExport}
+      <div className="flex flex-col gap-5">
+        <FeatureLockWrap
+          locked={trialPartialLock}
+          message="Upgrade to access store filters and results."
+        >
+          <StoresFilterPanel
+            filters={filters}
+            onChange={handleFilterChange}
+            onApply={handleApplyFilters}
+            onClear={handleClearFilters}
+            hasPendingFilters={hasPendingFilters}
+            resultCount={filtered.length}
+            totalCount={allStores.length}
+            disabled={filtersBlocked && !trialPartialLock}
           />
+        </FeatureLockWrap>
 
-          {loading ? (
-            <div className="stores-loading">
-              <div className="stores-spinner" aria-hidden />
-              <span>Loading stores…</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="stores-glass text-center p-10">
-              <p className="text-sm font-medium text-blaster-fg">
-                {search.trim() ? 'No stores match your search' : 'No stores scanned yet'}
-              </p>
-              <p className="text-sm text-blaster-muted mt-1">
-                {search.trim() ? 'Try a different search term.' : 'Results appear after your scan completes.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className={viewMode === 'grid' ? 'stores-grid' : 'stores-list'}>
-                {pageStores.map((store) => (
-                  <StoreCard key={store.storeUrl} store={store} viewMode={viewMode} />
-                ))}
-              </div>
-              <StoresPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={handlePageChange}
-              />
-            </>
-          )}
-        </div>
-      )}
+        {(showPaygHint || showPaygOffer) && !trialPartialLock && (
+          <div className="plan-payg-hint">
+            <span>Want more? Activate pay-as-you-go filtering.</span>
+            <button type="button" onClick={() => setPaygModalOpen(true)}>
+              Activate PAYG
+            </button>
+          </div>
+        )}
+
+        {paygActive && !trialPartialLock && (
+          <p className="plan-payg-balance">
+            PAYG used: ${(paygChargesCents / 100).toFixed(2)} / ${(paygCapCents / 100).toFixed(2)}
+          </p>
+        )}
+
+        <FeatureLockWrap
+          locked={trialPartialLock}
+          message="Upgrade to access store filters and results."
+        >
+          {resultsSection}
+        </FeatureLockWrap>
+      </div>
     </div>
   );
 }

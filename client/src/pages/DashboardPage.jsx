@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { useDashboardData } from '../hooks/useDashboardData.js';
 import { formatTimeOfDayGreeting } from '../utils/dateUtils.js';
 import {
@@ -16,9 +17,11 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { access } = usePlanAccess();
   const [range, setRange] = useState('7d');
   const { loading, metrics, onboarding, streaksAndBadges, recentFeed, setDailyTarget, settingTarget } = useDashboardData(range);
   const displayName = user?.name || user?.email?.split('@')[0];
+  const streakLocked = access?.streak ?? false;
 
   return (
     <div className="min-h-full bg-white p-4 sm:p-6 md:p-8">
@@ -68,6 +71,7 @@ export default function DashboardPage() {
               embedded
               onSetTarget={setDailyTarget}
               settingTarget={settingTarget}
+              streakLocked={streakLocked}
             />
           </>
         )}

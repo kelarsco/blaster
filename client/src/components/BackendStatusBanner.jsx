@@ -5,21 +5,31 @@ export function BackendStatusBanner() {
 
   useEffect(() => {
     let cancelled = false;
+    let timeoutId;
+
+    const schedule = (ms) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(check, ms);
+    };
 
     const check = async () => {
       try {
         const res = await fetch('/api/health', { credentials: 'include' });
-        if (!cancelled) setOffline(!res.ok);
+        if (cancelled) return;
+        // Server responded — API is up (DB issues are reported in JSON, not as connection failure).
+        setOffline(false);
+        schedule(60000);
       } catch (_) {
-        if (!cancelled) setOffline(true);
+        if (cancelled) return;
+        setOffline(true);
+        schedule(60000);
       }
     };
 
     check();
-    const interval = setInterval(check, 10000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTimeout(timeoutId);
     };
   }, []);
 

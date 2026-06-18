@@ -12,9 +12,10 @@ import session from 'express-session';
 import passport from 'passport';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { initDb, getDb } from './db.js';
+import { initDb, getDb, isDbQuotaError, getDbUnavailableMessage } from './db.js';
 import { resumePendingCampaignsOnStartup } from './services/campaignResume.js';
 import { resumePendingScansOnStartup } from './services/scanResume.js';
+import { resumeLeadEngineOnStartup } from './services/leadEngineWorker.js';
 import { syncPaystackPlans } from './services/paystackSync.js';
 import { scanRoutes } from './routes/scan.js';
 import { exportRoutes } from './routes/export.js';
@@ -33,6 +34,9 @@ import { resourceRoutes } from './routes/resources.js';
 import { emailListRoutes } from './routes/emailLists.js';
 import { manualCampaignRoutes } from './routes/manualCampaigns.js';
 import { trackRoutes } from './routes/track.js';
+import { leadsRoutes } from './routes/leads.js';
+import { referralRoutes } from './routes/referral.js';
+import { planStatusRoutes } from './routes/planStatus.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './services/cookiePolicy.js';
 
@@ -100,33 +104,31 @@ async function start() {
   app.use((req, res, next) => resolveAuth(req, res, next).catch(next));
 
   app.get('/api/health', async (req, res) => {
+    const body = { ok: true, server: 'up' };
+    const db = getDb();
+    if (!db) {
+      body.db = 'unavailable';
+      body.db_error = getDbUnavailableMessage();
+      return res.json(body);
+    }
     try {
-      const db = getDb();
-      if (!db) {
-        return res.status(503).json({ 
-          ok: false, 
-          error: 'Database unavailable - Neon compute quota exceeded',
-          suggestion: 'Upgrade Neon plan or wait for quota reset',
-          db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
-        });
-      }
       await db.query('SELECT 1');
-      res.json({ 
-        ok: true, 
-        db: 'connected',
-        db_url: process.env.DATABASE_URL?.split('@')[1] || 'HIDDEN'
-      });
+      body.db = 'connected';
+      return res.json(body);
     } catch (e) {
-      console.error('[health]', e?.message || e);
       const errorMsg = e?.message || String(e);
-      const isNeonQuota = errorMsg.includes('compute time quota') || errorMsg.includes('exceeded');
-      res.status(503).json({ 
-        ok: false, 
-        error: errorMsg,
-        is_neon_quota: isNeonQuota,
-        suggestion: isNeonQuota ? 'Upgrade Neon plan or wait for quota reset' : 'Check database configuration',
-        db_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET'
-      });
+      const isQuota = isDbQuotaError(e);
+      body.db = 'error';
+      body.db_error = errorMsg;
+      body.is_neon_quota = isQuota;
+      if (isQuota) {
+        body.suggestion = 'Upgrade Neon plan or wait for quota reset';
+      }
+      if (!isQuota || !app.locals.healthQuotaLoggedAt || Date.now() - app.locals.healthQuotaLoggedAt > 120000) {
+        console.error('[health]', errorMsg);
+        if (isQuota) app.locals.healthQuotaLoggedAt = Date.now();
+      }
+      return res.json(body);
     }
   });
   app.use('/api/track', trackRoutes);
@@ -140,10 +142,13 @@ async function start() {
   app.use('/api/activity', activityRoutes);
   app.use('/api/streaks', streakRoutes);
   app.use('/api/notes', notesRoutes);
+  app.use('/api/user', planStatusRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/support', supportRoutes);
   app.use('/api/email-lists', emailListRoutes);
   app.use('/api/resources', resourceRoutes);
+  app.use('/api/leads', leadsRoutes);
+  app.use('/api/referral', referralRoutes);
   app.use('/api/bl-admin', adminAuthRoutes);
   app.use('/api/bl-admin', adminRoutes);
 
@@ -162,6 +167,7 @@ async function start() {
 
   await resumePendingCampaignsOnStartup();
   await resumePendingScansOnStartup();
+  await resumeLeadEngineOnStartup();
   syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
   const basePort = Number(process.env.PORT) || 4000;
   const isDev = process.env.NODE_ENV !== 'production';

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, ExternalLink, Mail, Phone } from 'react-feather';
+import { Copy, ExternalLink } from 'react-feather';
 import { storeDisplayName, storeFaviconUrl } from '../../utils/storeDisplay.js';
 
 function copyToClipboard(text) {
@@ -11,8 +11,10 @@ export function StoreCard({ store, viewMode }) {
   const [logoError, setLogoError] = useState(false);
   const displayName = storeDisplayName(store.storeUrl);
   const favicon = storeFaviconUrl(store.storeUrl);
-  const emailCount = store.emails?.length || 0;
-  const primaryEmail = store.emails?.[0]?.email;
+  const countryCode = store.countryCode && store.countryCode !== 'XX' ? store.countryCode : '—';
+  const currency = store.currency || 'USD';
+  const productLabel = `${store.productCount ?? 0}P`;
+  const listProductLabel = `${store.productCount ?? 0} PRD`;
 
   const visitStore = () => {
     if (store.storeUrl) window.open(store.storeUrl, '_blank', 'noopener,noreferrer');
@@ -21,28 +23,25 @@ export function StoreCard({ store, viewMode }) {
   if (viewMode === 'list') {
     return (
       <article className="stores-glass stores-list-row">
-        <div className="stores-logo">
+        <div className="stores-logo stores-logo-sm">
           {favicon && !logoError ? (
             <img src={favicon} alt="" onError={() => setLogoError(true)} />
           ) : (
             displayName.charAt(0).toUpperCase()
           )}
         </div>
-        <a href={store.storeUrl} target="_blank" rel="noopener noreferrer" className="stores-list-url">
+        <a
+          href={store.storeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="stores-list-url stores-list-url-flex"
+        >
           {store.storeUrl}
         </a>
-        <div className="stores-list-badges">
-          {emailCount > 0 ? (
-            <span className="stores-badge">{emailCount} email{emailCount !== 1 ? 's' : ''}</span>
-          ) : (
-            <span className="stores-badge stores-badge-muted">No email</span>
-          )}
-          <button type="button" className="stores-icon-btn" onClick={() => copyToClipboard(store.storeUrl)} aria-label="Copy">
-            <Copy className="w-3.5 h-3.5" strokeWidth={2} />
-          </button>
-          <button type="button" className="stores-icon-btn" onClick={visitStore} aria-label="Open">
-            <ExternalLink className="w-3.5 h-3.5" strokeWidth={2} />
-          </button>
+        <div className="stores-list-right">
+          <span className="stores-stat-pill stores-stat-pill-muted">{listProductLabel}</span>
+          <span className="stores-stat-pill stores-stat-pill-muted">{currency}</span>
+          <span className="stores-stat-pill">{countryCode}</span>
         </div>
       </article>
     );
@@ -51,7 +50,7 @@ export function StoreCard({ store, viewMode }) {
   return (
     <article className="stores-glass stores-grid-card">
       <div className="flex items-start gap-3">
-        <div className="stores-logo">
+        <div className="stores-logo stores-logo-sm">
           {favicon && !logoError ? (
             <img src={favicon} alt="" onError={() => setLogoError(true)} />
           ) : (
@@ -60,12 +59,14 @@ export function StoreCard({ store, viewMode }) {
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-blaster-fg truncate">{displayName}</h3>
-          <a href={store.storeUrl} target="_blank" rel="noopener noreferrer" className="stores-list-url block mt-0.5">
+          <a
+            href={store.storeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="stores-list-url block mt-0.5 truncate"
+          >
             {store.storeUrl}
           </a>
-          {primaryEmail ? (
-            <p className="text-xs text-blaster-muted mt-1 truncate">{primaryEmail}</p>
-          ) : null}
         </div>
         <div className="flex gap-1 shrink-0">
           <button type="button" className="stores-icon-btn" onClick={() => copyToClipboard(store.storeUrl)} aria-label="Copy">
@@ -77,16 +78,9 @@ export function StoreCard({ store, viewMode }) {
         </div>
       </div>
       <div className="stores-meta-row">
-        <span className="stores-meta-item">
-          <Mail className="w-3.5 h-3.5" strokeWidth={1.75} />
-          {emailCount > 0 ? `${emailCount} email${emailCount !== 1 ? 's' : ''}` : 'No email'}
-        </span>
-        {store.phone ? (
-          <span className="stores-meta-item">
-            <Phone className="w-3.5 h-3.5" strokeWidth={1.75} />
-            {store.phone}
-          </span>
-        ) : null}
+        <span className="stores-stat-pill">{countryCode}</span>
+        <span className="stores-stat-pill stores-stat-pill-muted">{productLabel}</span>
+        <span className="stores-stat-pill stores-stat-pill-muted">{currency}</span>
       </div>
     </article>
   );

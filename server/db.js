@@ -5,16 +5,56 @@ import pg from 'pg';
 
 const { Pool } = pg;
 let pool = null;
+let dbUnavailableReason = null;
 
 /** In-memory store when DATABASE_URL is not set (scan-only, no persistence). */
 export const memoryStore = {
   scans: new Map(),
   results: new Map(),
   resources: [],
+  leadStores: [],
+  leadScrapeJobs: [],
 };
 
 export function getDb() {
   return pool;
+}
+
+/** User-facing message when auth/signup needs DB but pool is null. */
+export function getDbUnavailableMessage() {
+  if (pool) return null;
+  if (dbUnavailableReason && isDbQuotaError({ message: dbUnavailableReason })) {
+    return 'Sign-in is unavailable because your Neon database quota is exceeded. Upgrade your Neon plan or wait for the quota to reset, then restart the server.';
+  }
+  if (!process.env.DATABASE_URL?.trim()) {
+    return 'Sign-in is unavailable — DATABASE_URL is not configured on the server.';
+  }
+  return 'Sign-in is temporarily unavailable. Please try again later.';
+}
+
+/** Neon / hosted Postgres quota errors — stop hammering the DB when hit. */
+export function isDbQuotaError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('data transfer quota') ||
+    msg.includes('compute time quota') ||
+    msg.includes('exceeded the data transfer') ||
+    msg.includes('quota exceeded')
+  );
+}
+
+const quotaLogLast = new Map();
+
+/** Log DB errors once per label every 2 minutes when Neon quota is exceeded. */
+export function logDbErrorThrottled(label, err) {
+  const msg = err?.message || String(err);
+  if (isDbQuotaError(err)) {
+    const now = Date.now();
+    const last = quotaLogLast.get(label) || 0;
+    if (now - last < 120000) return;
+    quotaLogLast.set(label, now);
+  }
+  console.error(`[${label}]`, msg);
 }
 
 export async function initDb() {
@@ -34,7 +74,7 @@ export async function initDb() {
     ssl: url.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
     max: 8,
     idleTimeoutMillis: 60000,
-    connectionTimeoutMillis: 30000,
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 10000,
     keepAlive: true,
   });
 
@@ -61,6 +101,7 @@ export async function initDb() {
   console.error('DB schema failed after ' + maxAttempts + ' attempts. Server will continue in read-only mode - upgrade Neon plan or wait for quota reset.');
   // Don't exit - continue in read-only mode for basic functionality
   if (process.env.DB_INIT_EXIT === '1') process.exit(1);
+  dbUnavailableReason = lastErr?.message || 'connection failed';
   pool = null;
   return null;
 }
@@ -264,35 +305,20 @@ async function runSchema(p) {
         ('premium_annual', 'Premium', 295000, 'annually', '{"emails":"50000","users":"Unlimited","support":"Phone + priority"}'::jsonb)
       ON CONFLICT (id) DO NOTHING;
 
-      -- Update existing plans to new pricing
-      UPDATE plans SET amount = 3900, features = '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb WHERE id = 'essentials_monthly';
-      UPDATE plans SET amount = 39000, features = '{"emails":"5000","users":"3 seats","support":"24/7 email & chat"}'::jsonb WHERE id = 'essentials_annual';
-      UPDATE plans SET amount = 7900, features = '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb WHERE id = 'standard_monthly';
-      UPDATE plans SET amount = 79000, features = '{"emails":"50000","users":"5 seats","support":"24/7","onboarding":"1 session"}'::jsonb WHERE id = 'standard_annual';
-
-      -- Update existing plans to new pricing plans
+      UPDATE plans SET name = 'Trial (Free)', features = '{"scans":"100","stores":"100","campaigns":"1","senders":"1"}'::jsonb WHERE id = 'free';
+      UPDATE plans SET name = 'Basic', amount = 399, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET name = 'Basic', amount = 3990, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET name = 'Growth', amount = 2990, paystack_plan_code = NULL WHERE id = 'standard_monthly';
+      UPDATE plans SET name = 'Growth', amount = 29900, paystack_plan_code = NULL WHERE id = 'standard_annual';
+      UPDATE plans SET name = 'Pro', amount = 7500, paystack_plan_code = NULL WHERE id = 'premium_monthly';
+      UPDATE plans SET name = 'Pro', amount = 75000, paystack_plan_code = NULL WHERE id = 'premium_annual';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"5"') WHERE id LIKE 'essentials%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"10"') WHERE id LIKE 'standard%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'premium%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"2"') WHERE id LIKE 'essentials%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"3"') WHERE id LIKE 'standard%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"5"') WHERE id LIKE 'premium%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"5000"') WHERE id LIKE 'essentials%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'standard%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'premium%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"2000"') WHERE id = 'trial_weekly';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"500 daily"') WHERE id = 'trial_weekly';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"20000"') WHERE id LIKE 'essentials%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"100000"') WHERE id LIKE 'standard%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'trial_weekly';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('trial_weekly');
-      UPDATE plans SET amount = 3900, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
-      UPDATE plans SET amount = 39000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
-      UPDATE plans SET amount = 7900, paystack_plan_code = NULL WHERE id = 'standard_monthly';
-      UPDATE plans SET amount = 79000, paystack_plan_code = NULL WHERE id = 'standard_annual';
-      UPDATE plans SET amount = 29500, paystack_plan_code = NULL WHERE id = 'premium_monthly';
-      UPDATE plans SET amount = 295000, paystack_plan_code = NULL WHERE id = 'premium_annual';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"500/month"') WHERE id LIKE 'standard%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free', 'trial_weekly');
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_input TEXT;
@@ -307,7 +333,43 @@ async function runSchema(p) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS picture_url TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
-      ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_link_clicks INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_referral_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_referral_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_1_claimed SMALLINT NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_1_claimed_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_2_claimed SMALLINT NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_2_claimed_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_3_claimed SMALLINT NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS tier_3_claimed_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_expires_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_source TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code) WHERE referral_code IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS user_referrals (
+        id TEXT PRIMARY KEY,
+        referred_user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        referrer_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        signed_up_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        upgraded_at TIMESTAMPTZ,
+        plan_upgraded_to TEXT,
+        counts_toward_reward SMALLINT NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_referrals_referrer ON user_referrals(referrer_user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_referrals_signed_up ON user_referrals(signed_up_at DESC);
+
+      CREATE TABLE IF NOT EXISTS user_plan_usage (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        filter_uses INTEGER NOT NULL DEFAULT 0,
+        period_start TIMESTAMPTZ,
+        period_end TIMESTAMPTZ,
+        payg_filters_active SMALLINT NOT NULL DEFAULT 0,
+        payg_filter_charges_cents INTEGER NOT NULL DEFAULT 0,
+        payg_pending_invoice_cents INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_provider_id TEXT;
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_status TEXT NOT NULL DEFAULT 'pending';
       ALTER TABLE sending_domains ADD COLUMN IF NOT EXISTS inbound_webhook_error TEXT;
@@ -513,6 +575,53 @@ async function runSchema(p) {
       CREATE INDEX IF NOT EXISTS idx_resources_type ON resources(type);
       CREATE INDEX IF NOT EXISTS idx_resources_created ON resources(created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS lead_stores (
+        id TEXT PRIMARY KEY,
+        store_url TEXT NOT NULL UNIQUE,
+        source TEXT NOT NULL DEFAULT 'manual',
+        status TEXT NOT NULL DEFAULT 'pending',
+        current_phase INTEGER DEFAULT 0,
+        platform TEXT,
+        country_code TEXT,
+        currency TEXT,
+        product_count INTEGER,
+        product_count_range TEXT,
+        shopify_plus BOOLEAN DEFAULT false,
+        shopify_plus_confidence INTEGER,
+        facebook_ads BOOLEAN DEFAULT false,
+        google_ads BOOLEAN DEFAULT false,
+        tiktok_ads BOOLEAN DEFAULT false,
+        pinterest_ads BOOLEAN DEFAULT false,
+        dropshipping_score INTEGER,
+        pod_score INTEGER,
+        active_score INTEGER,
+        active_tier TEXT,
+        email_provider TEXT,
+        sms_provider TEXT,
+        review_app TEXT,
+        chat_provider TEXT,
+        phase_data JSONB DEFAULT '{}',
+        error_message TEXT,
+        qualified BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        last_scraped_at TIMESTAMPTZ,
+        qualified_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_lead_stores_status ON lead_stores(status);
+      CREATE INDEX IF NOT EXISTS idx_lead_stores_qualified ON lead_stores(qualified);
+
+      CREATE TABLE IF NOT EXISTS lead_scrape_jobs (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'running',
+        urls_found INTEGER DEFAULT 0,
+        stores_added INTEGER DEFAULT 0,
+        error_message TEXT,
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       UPDATE users SET email_verified = 1, email_verified_at = COALESCE(updated_at, created_at) WHERE auth_provider = 'google' AND (email_verified IS NULL OR email_verified = 0);
       UPDATE users SET email_verified = 1 WHERE password_hash IS NOT NULL AND (email_verified IS NULL OR email_verified = 0);
     `);
@@ -522,6 +631,7 @@ async function runSchema(p) {
     await migrateCampaignChildCascade(p);
     await migrateSendersGmailOAuth(p);
     await migrateManualCampaigns(p);
+    await migrateReferralCodes(p);
   } finally {
     client.release();
   }
@@ -654,5 +764,37 @@ async function migrateStoreNotesPK(pool) {
       await pool.query('ALTER TABLE store_notes ADD PRIMARY KEY (user_id, store_url)');
     }
   } catch (_) {
+  }
+}
+
+const REFERRAL_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomReferralCode() {
+  let s = '';
+  for (let i = 0; i < 8; i++) {
+    s += REFERRAL_CODE_CHARS[Math.floor(Math.random() * REFERRAL_CODE_CHARS.length)];
+  }
+  return s;
+}
+
+/** Backfill referral_code for existing users. */
+async function migrateReferralCodes(pool) {
+  try {
+    const missing = await pool.query(
+      `SELECT id FROM users WHERE referral_code IS NULL OR referral_code = '' LIMIT 500`
+    );
+    for (const row of missing.rows || []) {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const code = randomReferralCode();
+        try {
+          await pool.query('UPDATE users SET referral_code = $1, updated_at = NOW() WHERE id = $2', [code, row.id]);
+          break;
+        } catch (e) {
+          if (e?.code !== '23505') throw e;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[migrateReferralCodes]', e?.message || e);
   }
 }

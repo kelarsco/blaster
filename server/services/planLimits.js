@@ -1,4 +1,5 @@
 import { getDb } from '../db.js';
+import { getPeriodForUser } from './planLimitsPeriod.js';
 
 /** Default sender limit when user has no subscription (free). */
 const DEFAULT_SENDER_LIMIT = 1;
@@ -7,8 +8,8 @@ const TRIAL_WEEKLY_SCANS_LIMIT = 500;
 const TRIAL_WEEKLY_EMAILS_LIMIT = 2000;
 
 /** Free trial limits (legacy constants for compatibility) */
-const FREE_TRIAL_EMAILS_LIMIT = 200;
-const FREE_TRIAL_SCANS_LIMIT = 200;
+const FREE_TRIAL_EMAILS_LIMIT = 100;
+const FREE_TRIAL_SCANS_LIMIT = 100;
 const FREE_TRIAL_HOURS = 24;
 
 /** Cap for "unlimited" plans. */
@@ -27,21 +28,8 @@ function parseFeatureNum(features, key, defaultVal) {
 /**
  * Get period boundaries for usage: subscribed users use subscription period; free use current calendar month.
  */
-async function getPeriodForUser(db, userId) {
-  const sub = await db.query(
-    `SELECT current_period_start, current_period_end FROM subscriptions
-     WHERE user_id = $1 AND status IN ('active', 'trialing')
-     ORDER BY current_period_end DESC NULLS LAST LIMIT 1`,
-    [userId]
-  );
-  const row = sub.rows?.[0];
-  if (row?.current_period_start != null && row?.current_period_end != null) {
-    return { start: new Date(row.current_period_start), end: new Date(row.current_period_end) };
-  }
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-  return { start, end };
+async function getPeriodForUserLocal(db, userId) {
+  return getPeriodForUser(db, userId);
 }
 
 async function getFreeTrialState(db, userId) {
@@ -90,7 +78,7 @@ export async function getPlanLimitsForUser(userId) {
   const features = row?.features || {};
   const planId = row?.plan_id ?? 'free';
 
-  const period = await getPeriodForUser(db, userId);
+  const period = await getPeriodForUserLocal(db, userId);
   defaults.periodStart = period.start;
   defaults.periodEnd = period.end;
 

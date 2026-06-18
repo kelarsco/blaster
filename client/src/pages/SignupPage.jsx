@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getStoredPlanId } from '../data/plans';
+import { API } from '../api.js';
 import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
 
 function getPostSignupPath(search) {
@@ -27,6 +28,44 @@ export function SignupPage() {
     if (loading) return;
     if (user) navigate(getPostSignupPath(), { replace: true });
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ref = params.get('ref');
+    const refError = params.get('ref_error');
+    if (refError === 'invalid') {
+      setError('This referral link is invalid.');
+      return;
+    }
+    if (refError === 'unavailable') {
+      setError('Referral tracking is temporarily unavailable. You can still create your account.');
+      return;
+    }
+    if (ref && ref.trim()) {
+      const code = ref.trim().toUpperCase();
+      try {
+        localStorage.setItem('referral_ref', code);
+      } catch (_) {}
+      fetch(`${API}/referral/validate?code=${encodeURIComponent(code)}`)
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (data.reason === 'service_unavailable' || r.status === 503) {
+            setError('Referral tracking is temporarily unavailable. You can still create your account.');
+            return;
+          }
+          if (!data.valid) setError('This referral link is invalid.');
+        })
+        .catch(() => {
+          setError('Referral tracking is temporarily unavailable. You can still create your account.');
+        });
+      fetch(`${API}/referral/click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code }),
+      }).catch(() => {});
+    }
+  }, [location.search]);
 
   const handleSignup = async (e) => {
     e.preventDefault();

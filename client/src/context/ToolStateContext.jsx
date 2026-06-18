@@ -99,9 +99,8 @@ export function ToolStateProvider({ children }) {
         const currentScan = mapScanStatus(data);
         setScanStatus(currentScan);
 
-        await fetchScanResults(scanId);
-
         if (currentScan.status === 'completed' || currentScan.status === 'failed') {
+          await fetchScanResults(scanId);
           stopped = true;
           if (intervalId) clearInterval(intervalId);
         }
@@ -113,7 +112,7 @@ export function ToolStateProvider({ children }) {
     poll();
     intervalId = setInterval(() => {
       if (!stopped) poll();
-    }, 3000);
+    }, 5000);
 
     return () => {
       stopped = true;

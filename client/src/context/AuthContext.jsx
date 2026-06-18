@@ -132,7 +132,14 @@ export function AuthProvider({ children }) {
       alert('Google OAuth is not configured yet. Set VITE_API_URL to your backend URL.');
       return;
     }
-    window.location.href = `${API}/auth/google`;
+    let ref = '';
+    try {
+      ref = localStorage.getItem('referral_ref') || '';
+    } catch (_) {}
+    const params = new URLSearchParams();
+    if (ref.trim()) params.set('ref', ref.trim().toUpperCase());
+    const qs = params.toString();
+    window.location.href = `${API}/auth/google${qs ? `?${qs}` : ''}`;
   }, []);
 
   const logout = () => {
@@ -177,15 +184,22 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const signUp = async (email, password, name) => {
+  const signUp = async (email, password, name, referralCode) => {
     if (!hasConfiguredBackend) {
       throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
+    }
+
+    let ref = referralCode;
+    if (!ref) {
+      try {
+        ref = localStorage.getItem('referral_ref') || '';
+      } catch (_) {}
     }
 
     const res = await fetch(`${API}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, referralCode: ref || undefined }),
       credentials: 'include',
     });
 

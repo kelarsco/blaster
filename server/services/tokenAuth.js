@@ -25,6 +25,7 @@ export function createAccessToken(user) {
     {
       sub: user.id,
       email: user.email,
+      name: user.name || user.email?.split('@')[0] || 'User',
       type: 'access',
     },
     ACCESS_SECRET,

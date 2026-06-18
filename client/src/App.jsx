@@ -16,6 +16,7 @@ import { ManualSendPage } from './pages/ManualSendPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { SendersPage } from './pages/SendersPage';
 import { ResourcesPage } from './pages/ResourcesPage';
+import { ReferralPage } from './pages/ReferralPage';
 import { StoresPage } from './pages/StoresPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { OverviewPage } from './pages/OverviewPage';
@@ -42,7 +43,11 @@ import { AdminUsersPage } from './pages/bl-admin/AdminUsersPage';
 import { AdminSubscriptionsPage } from './pages/bl-admin/AdminSubscriptionsPage';
 import { AdminMessagesPage } from './pages/bl-admin/AdminMessagesPage';
 import { AdminResourcesPage } from './pages/bl-admin/AdminResourcesPage';
+import { AdminLeadEnginePage } from './pages/bl-admin/AdminLeadEnginePage';
+import { AdminAddLeadsPage } from './pages/bl-admin/AdminAddLeadsPage';
+import { AdminReferralsPage } from './pages/bl-admin/AdminReferralsPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
+import { PlanAccessProvider } from './context/PlanAccessContext.jsx';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -102,9 +107,12 @@ function AppRoutes() {
           <Route element={<AdminProtectedLayout />}>
             <Route path="overview" element={<AdminOverviewPage />} />
             <Route path="users" element={<AdminUsersPage />} />
+            <Route path="referrals" element={<AdminReferralsPage />} />
             <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
             <Route path="messages" element={<AdminMessagesPage />} />
             <Route path="resources" element={<AdminResourcesPage />} />
+            <Route path="lead-engine" element={<AdminLeadEnginePage />} />
+            <Route path="lead-engine/add" element={<AdminAddLeadsPage />} />
           </Route>
         </Route>
         <Route
@@ -112,7 +120,9 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
             <ToolStateProvider>
-              <AppLayout />
+              <PlanAccessProvider>
+                <AppLayout />
+              </PlanAccessProvider>
             </ToolStateProvider>
           </ProtectedRoute>
           }
@@ -128,6 +138,7 @@ function AppRoutes() {
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="senders" element={<SendersPage />} />
           <Route path="resources" element={<ResourcesPage />} />
+          <Route path="referral" element={<ReferralPage />} />
           <Route path="account" element={<AccountLayout />}>
             <Route index element={<ProfilePage />} />
             <Route path="settings" element={<Navigate to="/app/account/settings/usage" replace />} />

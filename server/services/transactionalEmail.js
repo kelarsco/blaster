@@ -86,6 +86,74 @@ export async function sendInviteAcceptedNotification(toInviterEmail, inviteeEmai
   return { ok: true, id: data?.id };
 }
 
+export async function sendReferralSignupNotification(toEmail, inviteeEmail) {
+  if (!resendClient) return { skipped: true };
+  const subject = 'Someone just joined using your referral link! 🎉';
+  const html = `
+    <p>Hi,</p>
+    <p>Great news — someone signed up using your referral link (${inviteeEmail ? maskReferralEmail(inviteeEmail) : 'a new user'}).</p>
+    <p>When they upgrade to a paid plan, it counts toward your Premium rewards.</p>
+    <p>— wiblaster</p>
+  `;
+  const { data, error } = await resendClient.emails.send({ from: getFrom(), to: toEmail, subject, html });
+  if (error) throw new Error(error.message || 'Failed to send email');
+  return { ok: true, id: data?.id };
+}
+
+export async function sendReferralUpgradeNotification(toEmail, userName = '') {
+  if (!resendClient) return { skipped: true };
+  const name = userName || toEmail?.split('@')[0] || 'there';
+  const subject = 'Your referral upgraded — you\'re getting closer to Premium!';
+  const html = `
+    <p>Hi ${name},</p>
+    <p>One of your referrals upgraded to a paid plan. You're closer to unlocking free Premium days.</p>
+    <p>— wiblaster</p>
+  `;
+  const { data, error } = await resendClient.emails.send({ from: getFrom(), to: toEmail, subject, html });
+  if (error) throw new Error(error.message || 'Failed to send email');
+  return { ok: true, id: data?.id };
+}
+
+export async function sendReferralTierUnlocked(toEmail, userName, tier, days) {
+  if (!resendClient) return { skipped: true };
+  const name = userName || toEmail?.split('@')[0] || 'there';
+  const subjects = {
+    1: '🏆 You\'ve earned 14 days of Premium for free!',
+    2: '🔥 30 days of free Premium — you\'re on fire!',
+    3: '👑 60 days of Premium. You\'ve mastered referrals.',
+  };
+  const subject = subjects[tier] || `You've unlocked ${days} days of Premium!`;
+  const html = `
+    <p>Hi ${name},</p>
+    <p>Congratulations! You've unlocked Tier ${tier} and earned <strong>${days} days</strong> of Premium access.</p>
+    <p>Your reward is now active on your account.</p>
+    <p>— wiblaster</p>
+  `;
+  const { data, error } = await resendClient.emails.send({ from: getFrom(), to: toEmail, subject, html });
+  if (error) throw new Error(error.message || 'Failed to send email');
+  return { ok: true, id: data?.id };
+}
+
+export async function sendReferralPremiumExpiring(toEmail, userName = '') {
+  if (!resendClient) return { skipped: true };
+  const name = userName || toEmail?.split('@')[0] || 'there';
+  const subject = 'Your referral Premium expires in 3 days — keep referring!';
+  const html = `
+    <p>Hi ${name},</p>
+    <p>Your referral Premium reward expires in 3 days. Share your link to earn more free Premium time.</p>
+    <p>— wiblaster</p>
+  `;
+  const { data, error } = await resendClient.emails.send({ from: getFrom(), to: toEmail, subject, html });
+  if (error) throw new Error(error.message || 'Failed to send email');
+  return { ok: true, id: data?.id };
+}
+
+function maskReferralEmail(email) {
+  const [local, domain] = String(email).split('@');
+  if (!domain) return '****';
+  return `${local.slice(0, 2)}****@${domain}`;
+}
+
 export function isTransactionalEmailConfigured() {
   return hasResend;
 }

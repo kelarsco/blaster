@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { syncPaystackPlans, getUsdToNgnRate, amountForPaystack } from '../services/paystackSync.js';
 import { sendSubscriptionConfirmation } from '../services/transactionalEmail.js';
+import { handleReferralUpgrade } from '../services/referralService.js';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_BASE = 'https://api.paystack.co';
@@ -21,7 +22,7 @@ async function getPlanIdByPaystackCode(paystackPlanCode) {
 }
 
 export const billingRoutes = Router();
-const FREE_TRIAL_HOURS = 48;
+const FREE_TRIAL_HOURS = 24;
 
 /** List all plans (from DB; Paystack plan codes are created automatically when PAYSTACK_SECRET_KEY is set). */
 billingRoutes.get('/plans', async (_req, res) => {
@@ -96,11 +97,11 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
             interval: free.interval,
             features: {
               ...(free.features || {}),
-              emails: trialActive ? '200' : '0',
-              scans: trialActive ? '200' : '0',
+              emails: trialActive ? '100' : '0',
+              scans: trialActive ? '100' : '0',
             },
           }
-        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '200' : '0', users: '1 seat', senders: '1', scans: trialActive ? '200' : '0' } };
+        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '100' : '0', users: '1 seat', senders: '1', scans: trialActive ? '100' : '0' } };
     }
 
     const periodStart = row?.current_period_start ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -551,6 +552,7 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
       const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';
       sendSubscriptionConfirmation(toEmail, plan.name || planId, amountFormatted, plan.interval || 'monthly').catch((e) => console.warn('[transactional subscription email]', e?.message || e));
     }
+    handleReferralUpgrade(userId, planId).catch((e) => console.warn('[referral upgrade]', e?.message || e));
     return res.json({ ok: true, planId });
   } catch (e) {
     console.error('[billing verify-payment]', e?.message || e);
@@ -607,12 +609,19 @@ export async function handlePaystackWebhook(req, res) {
         const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';
         sendSubscriptionConfirmation(email, plan.name || planId, amountFormatted, plan.interval || 'monthly').catch((e) => console.warn('[transactional subscription email webhook]', e?.message || e));
       }
+      handleReferralUpgrade(userId, planId).catch((e) => console.warn('[referral upgrade webhook]', e?.message || e));
     }
     if (event === 'subscription.disable' && data?.subscription_code) {
       await db.query(
         `UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE paystack_subscription_code = $1`,
         [data.subscription_code]
       );
+      const subRow = await db.query('SELECT user_id FROM subscriptions WHERE paystack_subscription_code = $1 LIMIT 1', [data.subscription_code]);
+      const uid = subRow.rows?.[0]?.user_id;
+      if (uid) {
+        const { activateQueuedReferralPremium } = await import('../services/referralService.js');
+        activateQueuedReferralPremium(uid).catch((e) => console.warn('[referral premium activate]', e?.message || e));
+      }
     }
   } catch (e) {
     console.error('[billing webhook]', e?.message || e);

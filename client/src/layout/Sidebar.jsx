@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
+import { X } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
+import { getTrialRemainingMs } from '../utils/trialCountdown.js';
+import { TrialCountdown } from '../components/access/TrialCountdown.jsx';
 import { Logo } from '../components/Logo.jsx';
 
 const navItems = [
@@ -14,6 +18,7 @@ const navItems = [
   { to: '/app/templates', label: 'Templates', icon: TemplatesIcon },
   { to: '/app/senders', label: 'Senders', icon: SendersIcon },
   { to: '/app/resources', label: 'Resources', icon: ResourcesIcon },
+  { to: '/app/referral', label: 'Referral', icon: ReferralIcon },
 ];
 
 function DashboardIcon() {
@@ -72,6 +77,13 @@ function StoresIcon() {
     </svg>
   );
 }
+function ReferralIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  );
+}
 
 function ClockIcon() {
   return (
@@ -124,10 +136,26 @@ function daysUntilDate(endDate) {
 
 export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
   const { user, authFetch } = useAuth();
+  const { status: planStatus } = usePlanAccess();
   const [subscription, setSubscription] = useState(null);
   const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
   const [now, setNow] = useState(() => Date.now());
+  const [trialRemainingMs, setTrialRemainingMs] = useState(0);
+
+  const trialEndsAt = planStatus?.trialEndsAt;
+  const trialActive = planStatus?.trialActive;
+
+  useEffect(() => {
+    if (!trialEndsAt || !trialActive) {
+      setTrialRemainingMs(0);
+      return undefined;
+    }
+    const tick = () => setTrialRemainingMs(getTrialRemainingMs(trialEndsAt));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [trialEndsAt, trialActive]);
   const fetchSubscription = useCallback(() => {
     if (!user) {
       setSubscription(null);
@@ -181,6 +209,18 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
   const showRenewalCountdown = hasPaidPlan && daysUntilRenewal !== null && daysUntilRenewal <= RENEWAL_WARNING_DAYS && daysUntilRenewal >= 0;
   const renewalDueDate = periodEnd ? formatUTCDateOnly(periodEnd) : null;
 
+  const freePlanTitle = trialActive ? 'Free trial' : 'Free';
+  const showTrialCountdown = trialActive && trialEndsAt && trialRemainingMs > 0;
+  const freePlanSubtitle = (() => {
+    if (planStatus?.trialExpired) {
+      return 'Trial ended · upgrade to continue';
+    }
+    if (promoDaysLeft > 0) {
+      return `${promoDaysLeft} days left for 50% off`;
+    }
+    return 'Plans from $3.99/month';
+  })();
+
   return (
     <>
       {/* Backdrop when sidebar is open on mobile */}
@@ -190,22 +230,34 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
           tabIndex={0}
           onClick={onMobileClose}
           onKeyDown={(e) => e.key === 'Escape' && onMobileClose()}
-          className="md:hidden fixed inset-0 z-20 bg-black/50 transition-opacity"
+          className="md:hidden fixed inset-0 z-[60] bg-black/50 transition-opacity"
           aria-label="Close menu"
         />
       )}
       <aside
         className={`
-          fixed left-0 top-0 z-20 h-screen w-64 bg-blaster-sidebar border-r border-blaster-border flex flex-col overflow-y-auto
+          fixed left-0 top-0 z-[70] h-screen w-64 bg-blaster-sidebar border-r border-blaster-border flex flex-col overflow-y-auto
           transform transition-transform duration-300 ease-out
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
           md:translate-x-0
         `}
       >
-      <div className="p-4 border-b border-blaster-border">
-        <NavLink to="/app/dashboard" onClick={onMobileClose} className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
+      <div className="relative p-4 border-b border-blaster-border flex items-center justify-between min-h-[3.5rem]">
+        <NavLink
+          to="/app/dashboard"
+          onClick={onMobileClose}
+          className="hidden md:flex items-center gap-2 text-blaster-fg font-semibold text-lg"
+        >
           <Logo />
         </NavLink>
+        <button
+          type="button"
+          onClick={onMobileClose}
+          className="md:hidden absolute right-3 top-3 flex items-center justify-center w-9 h-9 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-sidebar-hover transition-colors"
+          aria-label="Close menu"
+        >
+          <X className="w-5 h-5" strokeWidth={2} />
+        </button>
       </div>
       <nav className="flex-1 p-3 space-y-0.5">
         {loading ? (
@@ -249,7 +301,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
           </>
         )}
       </nav>
-      <div className="shrink-0 p-3 border-t border-blaster-border">
+      <div className="sidebar-plan-panel shrink-0 p-3 border-t border-blaster-border">
         {loading || !subscriptionLoaded ? (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
             <Skeleton className="h-3 w-20 mb-3" />
@@ -305,9 +357,18 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
         ) : (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-sm font-semibold text-blaster-fg">Free</p>
+              <p className="text-sm font-semibold text-blaster-fg">{freePlanTitle}</p>
             </div>
-            <p className="text-xs text-blaster-muted mb-2">{promoDaysLeft} days left for 50% off</p>
+            {showTrialCountdown ? (
+              <TrialCountdown
+                ms={trialRemainingMs}
+                trialEndsAt={trialEndsAt}
+                size="sidebar"
+                className="mb-2 block"
+              />
+            ) : (
+              <p className="text-xs text-blaster-muted mb-2">{freePlanSubtitle}</p>
+            )}
             <NavLink
               to="/app/account/pricing"
               onClick={onMobileClose}

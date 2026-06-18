@@ -5,6 +5,7 @@ import { addSendJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
+import { checkCampaignLimit } from '../services/planAccess.js';
 
 export const campaignRoutes = Router();
 
@@ -151,6 +152,16 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
   if (!db) return res.status(503).json({ error: 'Database required for campaigns. Set DATABASE_URL in server/.env' });
 
   try {
+    const campaignLimit = await checkCampaignLimit(userId);
+    if (!campaignLimit.ok) {
+      return res.status(403).json({
+        error: 'Upgrade to run more active campaigns.',
+        upgradeRequired: true,
+        reason: campaignLimit.reason,
+        planStatus: campaignLimit.status,
+      });
+    }
+
     const {
       scanId,
       recipients,

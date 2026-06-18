@@ -3,6 +3,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { MoreVertical, Edit2, UserX, AlertCircle, Trash2 } from 'react-feather';
 import { AdminConfirmModal } from '../../components/AdminConfirmModal';
 import { AdminMessage } from '../../components/AdminMessage';
+import { ADMIN_PLAN_OPTIONS, normalizeAdminPlanId } from '../../data/adminPlanOptions.js';
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -21,7 +22,6 @@ export function AdminUsersPage() {
   const [otherActionUser, setOtherActionUser] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
-  const [plans, setPlans] = useState([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null); // { type: 'error'|'success', text }
   const [confirmDelete, setConfirmDelete] = useState(null); // { kind: 'single'|'bulk', id?: string, count?: number }
@@ -42,15 +42,6 @@ export function AdminUsersPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  useEffect(() => {
-    if (editUser || detailUser) {
-      adminFetch('/plans')
-        .then((r) => (r.ok ? r.json() : {}))
-        .then((d) => setPlans(d.plans || []))
-        .catch(() => setPlans([]));
-    }
-  }, [adminFetch, editUser, detailUser]);
 
   const fetchUserDetail = useCallback((id) => {
     adminFetch(`/users/${id}`)
@@ -336,7 +327,6 @@ export function AdminUsersPage() {
       {editUser && (
         <EditUserModal
           user={editUser}
-          plans={plans}
           onClose={() => setEditUser(null)}
           onSave={handleSaveEdit}
           saving={saving}
@@ -420,10 +410,10 @@ export function AdminUsersPage() {
   );
 }
 
-function EditUserModal({ user, plans, onClose, onSave, saving }) {
+function EditUserModal({ user, onClose, onSave, saving }) {
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
-  const [planId, setPlanId] = useState(user.planId || 'free');
+  const [planId, setPlanId] = useState(() => normalizeAdminPlanId(user.planId));
 
   const submit = (e) => {
     e.preventDefault();
@@ -446,11 +436,13 @@ function EditUserModal({ user, plans, onClose, onSave, saving }) {
           <div>
             <label className="block text-sm font-medium text-blaster-fg mb-1">Plan</label>
             <select value={planId} onChange={(e) => setPlanId(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-blaster-border bg-blaster-input-bg text-blaster-fg">
-              <option value="free">Free</option>
-              {(plans || []).filter((p) => p.id !== 'free').map((p) => (
-                <option key={p.id} value={p.id}>{p.name} (${(p.amount / 100).toFixed(0)}/{p.interval})</option>
+              {ADMIN_PLAN_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </select>
+            <p className="text-xs text-blaster-muted mt-1.5">
+              Saves immediately to subscription quotas (campaign limits, filters, analytics access, etc.).
+            </p>
           </div>
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-blaster-border text-sm">Cancel</button>

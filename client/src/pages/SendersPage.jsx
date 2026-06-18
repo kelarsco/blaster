@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Mail } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 
 function VerifiedBadge() {
   return (
@@ -29,6 +30,7 @@ function statusBadge(sender) {
 export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const { status, openUpgradeModal, refresh } = usePlanAccess();
 
   const [groups, setGroups] = useState([]);
   const [maxPerGroup, setMaxPerGroup] = useState(10);
@@ -58,6 +60,15 @@ export function SendersPage() {
 
   const createGroup = async () => {
     if (!newGroupName.trim() || !authFetch) return;
+    if ((status?.groupsUsed ?? 0) >= (status?.groupsMax ?? 999999)) {
+      openUpgradeModal({
+        title: 'Group limit reached',
+        message: 'Upgrade to add more sender groups.',
+        tierName: 'Basic',
+        tierPrice: '$3.99/month',
+      });
+      return;
+    }
     setError('');
     try {
       const res = await authFetch(`${API}/automation/senders/groups`, {
@@ -71,6 +82,7 @@ export function SendersPage() {
       setShowNewGroup(false);
       setExpandedGroupId(data.id);
       fetchGroups();
+      refresh();
     } catch (e) {
       setError(e.message);
     }
@@ -101,6 +113,15 @@ export function SendersPage() {
   const addManualEmail = async (groupId) => {
     const email = (manualEmail[groupId] || '').trim();
     if (!email || !authFetch) return;
+    if ((status?.sendersUsed ?? 0) >= (status?.sendersMax ?? 999999)) {
+      openUpgradeModal({
+        title: 'Sender limit reached',
+        message: 'Upgrade to add more senders.',
+        tierName: 'Basic',
+        tierPrice: '$3.99/month',
+      });
+      return;
+    }
     setManualError((prev) => ({ ...prev, [groupId]: '' }));
     setAddingGroupId(groupId);
     try {
@@ -119,11 +140,26 @@ export function SendersPage() {
       }
       setManualEmail((prev) => ({ ...prev, [groupId]: '' }));
       fetchGroups();
+      refresh();
     } catch (e) {
       setManualError((prev) => ({ ...prev, [groupId]: e.message }));
     } finally {
       setAddingGroupId(null);
     }
+  };
+
+  const tryOpenNewGroup = () => {
+    if ((status?.groupsUsed ?? 0) >= (status?.groupsMax ?? 999999)) {
+      openUpgradeModal({
+        title: 'Group limit reached',
+        message: 'Upgrade to add more sender groups.',
+        tierName: 'Basic',
+        tierPrice: '$3.99/month',
+      });
+      return;
+    }
+    setShowNewGroup(true);
+    setError('');
   };
 
   const inputClass =
@@ -140,7 +176,7 @@ export function SendersPage() {
         </div>
         <button
           type="button"
-          onClick={() => { setShowNewGroup(true); setError(''); }}
+          onClick={tryOpenNewGroup}
           className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition shrink-0"
         >
           + Add Group
@@ -191,7 +227,7 @@ export function SendersPage() {
           </p>
           <button
             type="button"
-            onClick={() => { setShowNewGroup(true); setError(''); }}
+            onClick={tryOpenNewGroup}
             className="relative mt-6 inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition"
           >
             + Add Group

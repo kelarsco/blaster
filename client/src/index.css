@@ -286,6 +286,13 @@ button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
   opacity: 0;
 }
 
+/* Mobile: lift plan panel above bottom edge */
+@media (max-width: 767px) {
+  .sidebar-plan-panel {
+    transform: translateY(-35px);
+  }
+}
+
 /* Landing: button hover pop scale */
 .btn-landing-pop {
   transition: transform 0.2s ease;

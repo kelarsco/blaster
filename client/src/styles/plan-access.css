@@ -1,0 +1,298 @@
+/* Plan access control overlays */
+
+.plan-lock-overlay {
+  position: relative;
+  border-radius: 1rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-lock-blur {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.72);
+  z-index: 1;
+}
+
+.plan-lock-card {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 1.5rem 1.25rem;
+  max-width: 22rem;
+}
+
+.plan-lock-icon-wrap {
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(252, 176, 76, 0.28));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: #6366f1;
+}
+
+.plan-lock-message {
+  font-size: 0.875rem;
+  color: #374151;
+  line-height: 1.45;
+  margin-bottom: 1rem;
+}
+
+.plan-lock-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: #1a1a1a;
+  border: 1px solid #fcb04c;
+  color: #faf8f5;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.plan-lock-cta:hover {
+  opacity: 0.9;
+}
+
+.plan-mini-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6366f1;
+  cursor: help;
+}
+
+.plan-upgrade-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.plan-upgrade-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 15, 20, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.plan-upgrade-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 24rem;
+  background: #fff;
+  border-radius: 1rem;
+  border: 1px solid #e5e5e5;
+  padding: 1.5rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+}
+
+.plan-upgrade-secondary {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  color: #374151;
+}
+
+.plan-upgrade-secondary:hover {
+  background: #f5f5f7;
+}
+
+.plan-trial-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(252, 176, 76, 0.18));
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+  font-size: 0.8125rem;
+  color: #374151;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  flex-shrink: 0;
+}
+
+.plan-trial-banner-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 55;
+}
+
+@media (min-width: 768px) {
+  .plan-trial-banner-fixed {
+    left: 16rem; /* w-64 sidebar */
+  }
+}
+
+.app-content-with-trial-banner {
+  padding-top: 2.375rem; /* matches banner height */
+}
+
+.plan-payg-hint {
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.625rem;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  font-size: 0.8125rem;
+  color: #374151;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plan-payg-hint button {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #6366f1;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.plan-payg-hint button:hover {
+  color: #4f46e5;
+}
+
+.plan-payg-balance {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.plan-trial-banner-link {
+  font-weight: 600;
+  color: #1a1a1a;
+  text-decoration: underline;
+}
+
+.plan-trial-banner-link:hover {
+  color: #000;
+}
+
+.plan-trial-countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.trial-countdown {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0.02em;
+}
+
+.trial-countdown--banner {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.trial-countdown--sidebar {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.plan-trial-wall {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.plan-trial-wall-card {
+  text-align: center;
+  max-width: 28rem;
+}
+
+.plan-toast-stack {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 250;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 22rem;
+}
+
+.plan-toast {
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: #1a1a1a;
+  color: #faf8f5;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: plan-toast-in 0.25s ease;
+}
+
+@keyframes plan-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.plan-payg-hint {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+}
+
+.plan-payg-hint button {
+  color: #6366f1;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.plan-payg-indicator {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.35rem;
+}
+
+.plan-locked-section {
+  position: relative;
+  min-height: 10rem;
+}
+
+.plan-locked-section > .plan-lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
