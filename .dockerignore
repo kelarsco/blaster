@@ -1,0 +1,27 @@
+# Dependencies (reinstalled in image)
+**/node_modules
+node_modules
+
+# Local env / secrets — set via fly secrets
+**/.env
+**/.env.*
+server/.dev-server-port
+
+# Git / IDE
+.git
+.gitignore
+.vscode
+.cursor
+**/*.md
+!README.md
+
+# Dev artifacts
+client/dist
+dist
+coverage
+**/*.log
+terminals
+
+# OS
+Thumbs.db
+.DS_Store
