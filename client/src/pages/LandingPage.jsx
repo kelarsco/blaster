@@ -163,12 +163,12 @@ export function LandingPage() {
 
       {/* Stats + integrations */}
       <section className="bg-white py-12 md:py-16 px-4 sm:px-8 border-y border-blaster-border/40">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
-          <div>
-            <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl text-black leading-snug max-w-xl">
+        <div className="max-w-7xl mx-auto flex flex-col items-center lg:flex-row lg:items-center lg:justify-between gap-12 lg:gap-8">
+          <div className="text-center lg:text-left">
+            <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl text-black leading-snug max-w-xl mx-auto lg:mx-0">
               Built for solopreneurs and fast growing ecommerce teams
             </h2>
-            <div className="mt-10 flex flex-wrap gap-8 sm:gap-12">
+            <div className="mt-10 flex flex-wrap justify-center lg:justify-start gap-8 sm:gap-12">
               {STATS.map((s) => (
                 <div key={s.label} className="text-center min-w-[120px]">
                   <p className="font-sans text-2xl tracking-tight">
@@ -180,9 +180,9 @@ export function LandingPage() {
               ))}
             </div>
           </div>
-          <div className="text-center lg:text-left">
+          <div className="text-center lg:text-right w-full lg:w-auto lg:ml-auto">
             <p className="font-rubik font-light text-base text-blaster-ink mb-8">Works with tools you already use</p>
-            <div className="flex flex-wrap justify-center lg:justify-start gap-4 sm:gap-6">
+            <div className="flex flex-wrap justify-center lg:justify-end gap-4 sm:gap-6">
               {LANDING_ICONS.integrations.map((src, i) => (
                 <img
                   key={src}
