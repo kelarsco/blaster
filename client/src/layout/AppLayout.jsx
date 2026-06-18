@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { AppHeader } from '../components/AppHeader';
@@ -10,150 +10,26 @@ import { TrialBanner, TrialExpiredWall, isPlanUpgradeRoute } from '../components
 
 const LAYOUT_SKELETON_MS = 1500;
 const SCROLL_THRESHOLD = 10;
-const NAV_TOGGLE_SIZE = 48;
-const NAV_TOGGLE_EDGE = 10;
 const NAV_TOGGLE_DEFAULT_LEFT = 24;
-const NAV_TOGGLE_DEFAULT_BOTTOM = 154; // 124px + 30px higher
-const NAV_TOGGLE_LONG_PRESS_MS = 500;
-const NAV_TOGGLE_MOVE_THRESHOLD = 10;
-
-function clampNavTogglePosition(x, y) {
-  const maxX = window.innerWidth - NAV_TOGGLE_SIZE - NAV_TOGGLE_EDGE;
-  const maxY = window.innerHeight - NAV_TOGGLE_SIZE - NAV_TOGGLE_EDGE;
-  return {
-    x: Math.max(NAV_TOGGLE_EDGE, Math.min(x, maxX)),
-    y: Math.max(NAV_TOGGLE_EDGE, Math.min(y, maxY)),
-  };
-}
+const NAV_TOGGLE_DEFAULT_BOTTOM = 154;
 
 function MobileNavToggle({ open, visible, onToggle }) {
-  const [pos, setPos] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({
-    pointerId: null,
-    startX: 0,
-    startY: 0,
-    originX: 0,
-    originY: 0,
-    dragEnabled: false,
-    longPressTimer: null,
-  });
-
-  const clearLongPressTimer = useCallback(() => {
-    if (dragRef.current.longPressTimer != null) {
-      clearTimeout(dragRef.current.longPressTimer);
-      dragRef.current.longPressTimer = null;
-    }
-  }, []);
-
-  const defaultPosition = useCallback(() => {
-    return clampNavTogglePosition(
-      NAV_TOGGLE_DEFAULT_LEFT,
-      window.innerHeight - NAV_TOGGLE_DEFAULT_BOTTOM - NAV_TOGGLE_SIZE
-    );
-  }, []);
-
-  useLayoutEffect(() => {
-    setPos(defaultPosition());
-    const onResize = () => {
-      setPos((current) => (current ? clampNavTogglePosition(current.x, current.y) : defaultPosition()));
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [defaultPosition]);
-
-  useEffect(() => () => clearLongPressTimer(), [clearLongPressTimer]);
-
-  const onPointerDown = (e) => {
-    if (!pos) return;
-    clearLongPressTimer();
-    const target = e.currentTarget;
-    const pointerId = e.pointerId;
-    dragRef.current = {
-      pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      originX: pos.x,
-      originY: pos.y,
-      dragEnabled: false,
-      longPressTimer: null,
-    };
-
-    dragRef.current.longPressTimer = window.setTimeout(() => {
-      if (dragRef.current.pointerId !== pointerId) return;
-      dragRef.current.dragEnabled = true;
-      dragRef.current.longPressTimer = null;
-      setIsDragging(true);
-      try {
-        target.setPointerCapture(pointerId);
-      } catch (_) {}
-    }, NAV_TOGGLE_LONG_PRESS_MS);
-  };
-
-  const onPointerMove = (e) => {
-    if (dragRef.current.pointerId !== e.pointerId) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-
-    if (!dragRef.current.dragEnabled) {
-      if (Math.abs(dx) > NAV_TOGGLE_MOVE_THRESHOLD || Math.abs(dy) > NAV_TOGGLE_MOVE_THRESHOLD) {
-        clearLongPressTimer();
-      }
-      return;
-    }
-
-    setPos(clampNavTogglePosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
-  };
-
-  const finishPointer = (e, toggleOnTap) => {
-    if (dragRef.current.pointerId !== e.pointerId) return;
-    clearLongPressTimer();
-    const wasDragging = dragRef.current.dragEnabled;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    const movedFar =
-      Math.abs(dx) > NAV_TOGGLE_MOVE_THRESHOLD || Math.abs(dy) > NAV_TOGGLE_MOVE_THRESHOLD;
-
-    dragRef.current.pointerId = null;
-    dragRef.current.dragEnabled = false;
-    setIsDragging(false);
-
-    if (wasDragging) {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch (_) {}
-      return;
-    }
-
-    if (toggleOnTap && !movedFar) onToggle();
-  };
-
-  const onPointerUp = (e) => finishPointer(e, true);
-  const onPointerCancel = (e) => finishPointer(e, false);
-
   return (
     <button
       type="button"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      className={`md:hidden fixed z-30 flex items-center justify-center w-12 h-12 rounded-full bg-black text-white shadow-lg hover:bg-gray-900 touch-manipulation select-none ${
-        isDragging ? 'cursor-grabbing active:scale-100' : 'cursor-pointer active:scale-95'
-      }`}
+      onClick={onToggle}
+      className="md:hidden fixed z-30 flex items-center justify-center w-[53px] h-[53px] rounded-full bg-black text-white shadow-lg hover:bg-gray-900 touch-manipulation cursor-pointer active:scale-95"
       style={{
-        left: pos?.x ?? NAV_TOGGLE_DEFAULT_LEFT,
-        top: pos?.y ?? 0,
+        left: NAV_TOGGLE_DEFAULT_LEFT,
+        bottom: NAV_TOGGLE_DEFAULT_BOTTOM,
         transform: visible ? 'scale(1)' : 'scale(0)',
         opacity: visible ? 1 : 0,
-        transition: isDragging ? 'none' : 'transform 300ms ease-out, opacity 300ms ease-out',
-        willChange: 'transform, opacity',
+        transition: 'transform 300ms ease-out, opacity 300ms ease-out',
         pointerEvents: visible ? 'auto' : 'none',
-        visibility: pos ? 'visible' : 'hidden',
       }}
       aria-label={open ? 'Close menu' : 'Open menu'}
     >
-      <svg className="w-6 h-6 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
       </svg>
     </button>
@@ -228,7 +104,7 @@ export function AppLayout() {
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
       />
-      {/* Mobile nav toggle: draggable; 10px from screen edges; tap toggles menu */}
+      {/* Mobile nav toggle: fixed bottom-left; tap opens menu */}
       <MobileNavToggle
         open={sidebarOpen}
         visible={navToggleVisible && !sidebarOpen}
