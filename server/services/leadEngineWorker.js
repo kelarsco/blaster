@@ -4,6 +4,7 @@ import {
   saveLeadStoreResult,
 } from './leadStoreRepository.js';
 import { runLeadStorePipeline } from './leadStorePipeline.js';
+import { isLeadEngineEnabled } from './leadEngineGate.js';
 
 let processing = false;
 let scheduled = false;
@@ -59,6 +60,7 @@ async function processOne() {
 }
 
 export function kickLeadEngineWorker() {
+  if (!isLeadEngineEnabled()) return;
   if (processing || scheduled) return;
   scheduled = true;
   setTimeout(() => {
@@ -68,5 +70,9 @@ export function kickLeadEngineWorker() {
 }
 
 export async function resumeLeadEngineOnStartup() {
+  if (!isLeadEngineEnabled()) {
+    console.log('[lead-engine] Disabled — set ENABLE_LEAD_ENGINE=1 to process pending stores');
+    return;
+  }
   kickLeadEngineWorker();
 }

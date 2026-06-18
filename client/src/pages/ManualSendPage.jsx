@@ -148,6 +148,29 @@ export function ManualSendPage() {
     }
   };
 
+  const handleSkip = async () => {
+    if (!authFetch || !card) return;
+    setError('');
+
+    try {
+      const res = await authFetch(`${API}/manual-campaigns/${runId}/skip`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to skip');
+
+      setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+      if (data.completed) {
+        setCompleted(true);
+        setCard(null);
+        setNextCard(null);
+      } else {
+        setCard(nextCardFromPayload(data.next));
+        setNextCard(nextCardFromPayload(data.prefetch));
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const handlePause = async () => {
     if (!authFetch) return;
     await authFetch(`${API}/manual-campaigns/${runId}/pause`, { method: 'POST' });
@@ -205,7 +228,14 @@ export function ManualSendPage() {
                 progress={progress}
               />
             </div>
-            <div className="bg-white rounded-2xl border border-blaster-border shadow-xl overflow-hidden">
+            <div className="relative bg-white rounded-2xl border border-blaster-border shadow-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={handleSkip}
+              className="absolute top-4 right-4 text-xs text-blaster-muted hover:text-blaster-fg transition"
+            >
+              skip
+            </button>
             <div className="p-6 space-y-6">
               {error && <p className="text-sm text-red-600">{error}</p>}
 

@@ -397,6 +397,67 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
   }
 });
 
+manualCampaignRoutes.post('/:runId/skip', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, userId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    if (row.status === 'completed') return res.status(400).json({ error: 'Campaign already completed' });
+
+    const queue = parseJson(row.recipient_queue, []);
+    const idx = row.current_index || 0;
+    if (idx >= queue.length) {
+      return res.status(400).json({ error: 'No more recipients' });
+    }
+
+    const nextIndex = idx + 1;
+    const completed = nextIndex >= queue.length;
+    await db.query(
+      `UPDATE manual_campaign_runs SET
+        current_index = $2,
+        status = $3,
+        updated_at = NOW()
+       WHERE id = $1`,
+      [row.id, nextIndex, completed ? 'completed' : row.status]
+    );
+
+    const updatedRow = {
+      ...row,
+      current_index: nextIndex,
+      status: completed ? 'completed' : row.status,
+    };
+
+    let next = null;
+    let prefetch = null;
+    if (!completed) {
+      next = await buildCardAtIndex(db, userId, updatedRow, nextIndex);
+      if (nextIndex + 1 < queue.length) {
+        prefetch = await buildCardAtIndex(db, userId, updatedRow, nextIndex + 1);
+      }
+    }
+
+    const tracking = await getRunTrackingStats(db, row.id, updatedRow);
+
+    res.json({
+      ok: true,
+      skipped: true,
+      completed,
+      ...tracking,
+      next,
+      prefetch,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 manualCampaignRoutes.post('/:runId/pause', requireAuth, async (req, res) => {
   try {
     const db = getDb();
