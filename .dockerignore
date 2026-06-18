@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.local
+*.db
+server/.dev-server-port
+.DS_Store
