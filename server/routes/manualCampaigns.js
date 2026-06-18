@@ -4,7 +4,6 @@ import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { shuffleArray, pickNextSender } from '../services/senderShuffle.js';
 import { recordEmailSent } from '../services/streakService.js';
-import { sendViaSenderRow } from '../services/sendProcessor.js';
 import { logActivity } from './activity.js';
 
 export const manualCampaignRoutes = Router();
@@ -327,15 +326,6 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
     const recipient = queue[idx];
     const eventId = uuidv4();
 
-    const senderResult = await db.query(
-      `SELECT * FROM senders WHERE user_id = $1 AND LOWER(email) = LOWER($2) AND is_active = 1 LIMIT 1`,
-      [userId, senderEmail]
-    );
-    const senderRow = senderResult.rows[0];
-    if (!senderRow) {
-      return res.status(400).json({ error: 'Sender not found or inactive' });
-    }
-
     await db.query(
       `INSERT INTO manual_send_events
         (id, run_id, recipient_email, recipient_store_url, sender_email, subject, tracking_token)
@@ -346,19 +336,6 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
         senderEmail, subject,
       ]
     );
-
-    try {
-      await sendViaSenderRow(senderRow, {
-        to: recipient.email,
-        subject,
-        text: body,
-      });
-    } catch (sendErr) {
-      await db.query('DELETE FROM manual_send_events WHERE id = $1', [eventId]);
-      return res.status(502).json({
-        error: sendErr.message || 'Failed to send email',
-      });
-    }
 
     const nextIndex = idx + 1;
     const completed = nextIndex >= queue.length;

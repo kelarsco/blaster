@@ -4,6 +4,7 @@ import { ChevronLeft } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { domainFromUrl } from '../utils/scannerUrls.js';
+import { buildMailtoUrl } from '../utils/campaignSend.js';
 
 function cardFromPayload(data) {
   if (!data || data.completed) return null;
@@ -106,6 +107,13 @@ export function ManualSendPage() {
     if (!authFetch || !card) return;
     setError('');
 
+    const sendingCard = card;
+    const mailto = buildMailtoUrl({
+      to: sendingCard.recipient.email,
+      subject: sendingCard.subject,
+      body: sendingCard.body,
+    });
+
     const queuedNext = nextCard;
     const willComplete = stats.totalSent + 1 >= stats.totalQueued;
 
@@ -123,15 +131,17 @@ export function ManualSendPage() {
       setNextCard(null);
     }
 
+    window.location.href = mailto;
+
     void authFetch(`${API}/manual-campaigns/${runId}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        senderEmail: card.senderEmail,
-        subject: card.subject,
-        body: card.body,
-        senderOrder: card.senderOrder,
-        senderPickIndex: card.senderPickIndex,
+        senderEmail: sendingCard.senderEmail,
+        subject: sendingCard.subject,
+        body: sendingCard.body,
+        senderOrder: sendingCard.senderOrder,
+        senderPickIndex: sendingCard.senderPickIndex,
       }),
     })
       .then(async (preRes) => {
@@ -147,10 +157,7 @@ export function ManualSendPage() {
           setNextCard(nextCardFromPayload(preData.prefetch));
         }
       })
-      .catch((e) => {
-        setError(e.message);
-        loadCurrent();
-      });
+      .catch((e) => setError(e.message));
   };
 
   const handlePause = async () => {
