@@ -14,6 +14,7 @@ import { StoreCard } from '../components/stores/StoreCard.jsx';
 import { StoresBulkActions } from '../components/stores/StoresBulkActions.jsx';
 import { StoresPagination } from '../components/stores/StoresPagination.jsx';
 import { StoresPageSkeleton } from '../components/stores/StoresPageSkeleton.jsx';
+import { StoresExportFieldsModal } from '../components/stores/StoresExportFieldsModal.jsx';
 import {
   FeatureLockOverlay,
   FeatureLockWrap,
@@ -42,6 +43,8 @@ export function StoresPage() {
   const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_ITEMS_PER_PAGE);
   const [copying, setCopying] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [applyingFilters, setApplyingFilters] = useState(false);
   const [paygModalOpen, setPaygModalOpen] = useState(false);
   const [paygActivating, setPaygActivating] = useState(false);
   const [showPaygHint, setShowPaygHint] = useState(false);
@@ -114,16 +117,27 @@ export function StoresPage() {
       if (showPaygOffer) setShowPaygHint(true);
       return;
     }
-    const tags = buildFilterTags(filters);
-    if (tags.length > 0 && status?.tier === 2) {
-      const result = await recordFilterUse();
-      if (!result.ok) {
-        if (showPaygOffer) setShowPaygHint(true);
-        return;
+    if (!hasPendingFilters) return;
+    setApplyingFilters(true);
+    const applyStarted = Date.now();
+    try {
+      const tags = buildFilterTags(filters);
+      if (tags.length > 0 && status?.tier === 2) {
+        const result = await recordFilterUse();
+        if (!result.ok) {
+          if (showPaygOffer) setShowPaygHint(true);
+          return;
+        }
       }
+      setAppliedFilters(filters);
+      setCurrentPage(1);
+    } finally {
+      const remaining = 280 - (Date.now() - applyStarted);
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+      setApplyingFilters(false);
     }
-    setAppliedFilters(filters);
-    setCurrentPage(1);
   };
 
   const handleClearFilters = () => {
@@ -158,22 +172,30 @@ export function StoresPage() {
     setCopying(false);
   }, [filtered, exportCopyBlocked, showPaygOffer, showToast, trackExportOrCopy]);
 
-  const handleExportCsv = useCallback(async () => {
+  const handleExportClick = useCallback(() => {
     if (exportCopyBlocked) {
       if (showPaygOffer) setShowPaygHint(true);
       showToast("You've reached your 500-filter limit for this month.");
       return;
     }
     if (!filtered.length) return;
-    setExporting(true);
-    try {
-      const tracked = await trackExportOrCopy();
-      if (!tracked.ok) return;
-      exportLeadStoresCsv(filtered);
-    } finally {
-      setExporting(false);
-    }
-  }, [filtered, exportCopyBlocked, showPaygOffer, showToast, trackExportOrCopy]);
+    setExportModalOpen(true);
+  }, [filtered.length, exportCopyBlocked, showPaygOffer, showToast]);
+
+  const handleExportConfirm = useCallback(
+    async (fields) => {
+      setExportModalOpen(false);
+      setExporting(true);
+      try {
+        const tracked = await trackExportOrCopy();
+        if (!tracked.ok) return;
+        exportLeadStoresCsv(filtered, fields);
+      } finally {
+        setExporting(false);
+      }
+    },
+    [filtered, trackExportOrCopy]
+  );
 
   const handlePaygConfirm = async () => {
     setPaygActivating(true);
@@ -213,7 +235,7 @@ export function StoresPage() {
         itemsPerPage={itemsPerPage}
         onItemsPerPageChange={setItemsPerPage}
         onCopyLinks={handleCopyLinks}
-        onExportCsv={handleExportCsv}
+        onExportCsv={handleExportClick}
         copying={copying}
         exporting={exporting}
         canExport={filtered.length > 0 && !exportCopyBlocked}
@@ -256,6 +278,12 @@ export function StoresPage() {
         onCancel={() => setPaygModalOpen(false)}
         loading={paygActivating}
       />
+      {exportModalOpen && (
+        <StoresExportFieldsModal
+          onClose={() => setExportModalOpen(false)}
+          onConfirm={handleExportConfirm}
+        />
+      )}
 
       <div className="flex flex-col gap-5">
         <FeatureLockWrap
@@ -268,8 +296,8 @@ export function StoresPage() {
             onApply={handleApplyFilters}
             onClear={handleClearFilters}
             hasPendingFilters={hasPendingFilters}
+            applying={applyingFilters}
             resultCount={filtered.length}
-            totalCount={allStores.length}
             disabled={filtersBlocked && !trialPartialLock}
           />
         </FeatureLockWrap>

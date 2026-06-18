@@ -1,7 +1,14 @@
 /**
- * Resolve OAuth / frontend URLs for local dev vs Railway production.
- * Ignores localhost env vars when deployed on Railway.
+ * Resolve OAuth / frontend URLs for local dev vs production (Fly, Railway, custom domain).
+ * Public site URLs (referrals, post-login redirects) prefer FRONTEND_URL / wiblaster.com
+ * over fly.dev — the API may be reached via wiblaster.fly.dev while the app lives on wiblaster.com.
  */
+
+const CANONICAL_SITE_URL = 'https://wiblaster.com';
+
+function isFlyDevHost(host) {
+  return String(host || '').toLowerCase().endsWith('.fly.dev');
+}
 
 function normalizeUrl(value, fallback = '') {
   const raw = (value || fallback || '').trim();
@@ -67,8 +74,40 @@ export function isRailwayDeploy() {
   );
 }
 
-/** Public site URL (where users land after OAuth). */
+/** Public site URL (referrals, post-OAuth redirects, invite links). */
 export function resolveFrontendUrl(req) {
+  const explicit = (
+    process.env.FRONTEND_URL ||
+    process.env.PUBLIC_APP_URL ||
+    process.env.CANONICAL_FRONTEND_URL ||
+    ''
+  ).trim();
+  if (explicit && !isLocalUrl(explicit)) {
+    return normalizeUrl(explicit);
+  }
+
+  if (req) {
+    const host = getPublicHost(req);
+    const proto = getPublicProto(req);
+    if (host && !isLocalHost(host) && !isFlyDevHost(host)) {
+      return normalizeUrl(`${proto}://${host}`);
+    }
+  }
+
+  if (isFlyDeploy() || isRailwayDeploy() || process.env.NODE_ENV === 'production') {
+    return normalizeUrl(CANONICAL_SITE_URL);
+  }
+
+  const flyHost = getFlyPublicHost();
+  if (flyHost && !isFlyDevHost(flyHost)) {
+    return normalizeUrl(`https://${flyHost}`);
+  }
+
+  const railwayHost = getRailwayHost();
+  if (railwayHost) {
+    return normalizeUrl(`https://${railwayHost}`);
+  }
+
   if (req) {
     const host = getPublicHost(req);
     const proto = getPublicProto(req);
@@ -77,20 +116,6 @@ export function resolveFrontendUrl(req) {
     }
   }
 
-  const explicit = (process.env.FRONTEND_URL || process.env.BASE_URL || '').trim();
-  if (explicit && !isLocalUrl(explicit)) {
-    return normalizeUrl(explicit);
-  }
-
-  const flyHost = getFlyPublicHost();
-  if (flyHost) {
-    return normalizeUrl(`https://${flyHost}`);
-  }
-
-  const railwayHost = getRailwayHost();
-  if (railwayHost) {
-    return normalizeUrl(`https://${railwayHost}`);
-  }
   return normalizeUrl(explicit || 'http://localhost:3000');
 }
 

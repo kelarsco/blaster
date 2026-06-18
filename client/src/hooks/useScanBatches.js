@@ -12,7 +12,7 @@ const ACTIVE_STATUSES = new Set(['pending', 'running', 'processing']);
 async function refreshBatchFromApi(authFetch, batch) {
   const statusRes = await authFetch(`${API}/scan/status/${batch.scanId}`);
   if (statusRes.status === 404) {
-    return { ...batch, status: 'failed' };
+    return { ...batch, status: 'failed', scanMissing: true };
   }
   if (!statusRes.ok) return batch;
 
@@ -79,7 +79,7 @@ export function useScanBatches(authFetch, userId) {
         stored.batches.map((batch) => refreshBatchFromApi(authFetch, batch).catch(() => batch))
       );
       if (!cancelled) {
-        setBatches(refreshed);
+        setBatches(refreshed.filter((b) => !b.scanMissing));
         setHydrated(true);
       }
     })();
@@ -132,6 +132,10 @@ export function useScanBatches(authFetch, userId) {
         active.map(async (batch) => {
           try {
             const updated = await refreshBatchFromApi(authFetch, batch);
+            if (updated.scanMissing) {
+              removeBatch(batch.id);
+              return;
+            }
             updateBatch(batch.id, {
               status: updated.status,
               processed: updated.processed,
@@ -153,7 +157,7 @@ export function useScanBatches(authFetch, userId) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [authFetch, updateBatch, hydrated, batches.length]);
+  }, [authFetch, updateBatch, removeBatch, hydrated, batches.length]);
 
   return {
     batches,

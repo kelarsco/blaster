@@ -84,8 +84,15 @@ export function SignupPage() {
     }
     setSubmitting(true);
     try {
-      await signUp(email.trim().toLowerCase(), password, name.trim());
-      navigate('/verify-email', { state: { email: email.trim().toLowerCase() }, replace: true });
+      const data = await signUp(email.trim().toLowerCase(), password, name.trim());
+      navigate('/verify-email', {
+        state: {
+          email: email.trim().toLowerCase(),
+          emailSendFailed: data.emailSendFailed,
+          message: data.message,
+        },
+        replace: true,
+      });
     } catch (err) {
       console.error('Signup error:', err);
       setError(err.message || 'Signup failed');

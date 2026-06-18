@@ -341,18 +341,54 @@ export function removeFilterTag(filters, tag) {
   return next;
 }
 
-export function exportLeadStoresCsv(stores) {
-  const rows = [['Store URL', 'Platform', 'Country', 'Currency', 'Products', 'Tags', 'Created']];
+export function exportLeadStoresCsv(stores, fields) {
+  const fieldDefs = [
+    { key: 'storeUrl', header: 'Store URL' },
+    { key: 'platform', header: 'Platform' },
+    { key: 'countryCode', header: 'Country' },
+    { key: 'currency', header: 'Currency' },
+    { key: 'productCount', header: 'Products' },
+    { key: 'tags', header: 'Tags' },
+    { key: 'createdAt', header: 'Created' },
+  ];
+
+  const defaultFields = {
+    storeUrl: true,
+    platform: true,
+    countryCode: true,
+    currency: true,
+    productCount: true,
+    tags: true,
+    createdAt: true,
+  };
+  const selected = fields || defaultFields;
+  const activeCols = fieldDefs.filter((col) => selected[col.key]);
+  const headers = activeCols.map((col) => col.header);
+
+  const getValue = (store, key) => {
+    switch (key) {
+      case 'storeUrl':
+        return store.storeUrl;
+      case 'platform':
+        return store.platform;
+      case 'countryCode':
+        return store.countryCode;
+      case 'currency':
+        return store.currency || '';
+      case 'productCount':
+        return String(store.productCount ?? '');
+      case 'tags':
+        return (store.tags || []).join('; ');
+      case 'createdAt':
+        return store.createdAt ? new Date(store.createdAt).toLocaleDateString() : '';
+      default:
+        return '';
+    }
+  };
+
+  const rows = [headers];
   stores.forEach((s) => {
-    rows.push([
-      s.storeUrl,
-      s.platform,
-      s.countryCode,
-      s.currency || '',
-      String(s.productCount),
-      (s.tags || []).join('; '),
-      s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '',
-    ]);
+    rows.push(activeCols.map((col) => getValue(s, col.key)));
   });
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = rows.map((row) => row.map(escape).join(',')).join('\n');

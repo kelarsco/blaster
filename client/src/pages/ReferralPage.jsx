@@ -192,7 +192,7 @@ export function ReferralPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold text-blaster-fg">Referral Program</h1>
             <p className="text-sm text-blaster-muted mt-1 max-w-2xl">
-              Invite stores to StoreLeads. Earn free Premium access when they upgrade.
+              Invite friends to wiblaster. Earn premium access when they upgrade.
             </p>
           </div>
           <div className="rounded-2xl border border-blaster-border bg-white p-5 text-center">
@@ -216,7 +216,7 @@ export function ReferralPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-blaster-fg">Referral Program</h1>
           <p className="text-sm text-blaster-muted mt-1 max-w-2xl">
-            Invite stores to StoreLeads. Earn free Premium access when they upgrade.
+            Invite friends to wiblaster. Earn premium access when they upgrade.
           </p>
         </div>
 

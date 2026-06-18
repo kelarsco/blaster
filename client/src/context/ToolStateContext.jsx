@@ -40,12 +40,12 @@ export function ToolStateProvider({ children }) {
     else localStorage.removeItem('storereach-scanId');
   }, [scanId]);
 
-  const clearStoredScan = () => {
+  const clearStoredScan = useCallback(() => {
     if (typeof window !== 'undefined') localStorage.removeItem('storereach-scanId');
     setScanId(null);
     setScanStatus(null);
     setResults([]);
-  };
+  }, []);
 
   const fetchScanResults = useCallback(
     async (id) => {
@@ -65,7 +65,7 @@ export function ToolStateProvider({ children }) {
       try {
         const res = await authFetch(`${API}/scan/status/${id}`);
         if (res.status === 404) {
-          setScanStatus({ scanId: id, status: 'not_found' });
+          clearStoredScan();
           return;
         }
         if (!res.ok) throw new Error('Failed to fetch scan status');
@@ -80,7 +80,7 @@ export function ToolStateProvider({ children }) {
         setScanStatus({ scanId: id, status: 'error', error: error.message });
       }
     },
-    [user, authFetch, fetchScanResults]
+    [user, authFetch, fetchScanResults, clearStoredScan]
   );
 
   useEffect(() => {
@@ -92,7 +92,12 @@ export function ToolStateProvider({ children }) {
     const poll = async () => {
       try {
         const res = await authFetch(`${API}/scan/status/${scanId}`);
-        if (res.status === 404) return;
+        if (res.status === 404) {
+          stopped = true;
+          if (intervalId) clearInterval(intervalId);
+          clearStoredScan();
+          return;
+        }
         if (!res.ok) throw new Error('Failed to fetch scan status');
 
         const data = await res.json();
@@ -118,7 +123,7 @@ export function ToolStateProvider({ children }) {
       stopped = true;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [scanId, user, authFetch, fetchScanResults]);
+  }, [scanId, user, authFetch, fetchScanResults, clearStoredScan]);
 
   const refreshScan = () => {
     if (scanId) fetchScanStatus(scanId);

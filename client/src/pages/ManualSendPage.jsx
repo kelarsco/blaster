@@ -1,9 +1,42 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { API, API_BASE } from '../api.js';
+import { ChevronLeft } from 'react-feather';
+import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { domainFromUrl } from '../utils/scannerUrls.js';
-import { buildMailtoUrl, appendTrackingPixel } from '../utils/campaignSend.js';
+
+function cardFromPayload(data) {
+  if (!data || data.completed) return null;
+  return {
+    recipient: data.recipient,
+    senderEmail: data.senderEmail,
+    subject: data.subject,
+    body: data.body,
+    senderOrder: data.senderOrder,
+    senderPickIndex: data.senderPickIndex,
+  };
+}
+
+function nextCardFromPayload(data) {
+  if (!data) return null;
+  return cardFromPayload({ ...data, completed: false });
+}
+
+function SendProgress({ totalSent, totalQueued, progress }) {
+  return (
+    <div className="mb-4">
+      <p className="text-[10px] font-semibold text-blaster-muted mb-1">
+        {totalSent}/{totalQueued || 0} sent
+      </p>
+      <div className="relative h-[6px] rounded-full bg-gray-100 overflow-hidden border border-blaster-border/60">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-blaster-accent to-blaster-orange transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export function ManualSendPage() {
   const { runId } = useParams();
@@ -11,18 +44,26 @@ export function ManualSendPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
 
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
   const [card, setCard] = useState(null);
-  const [subjectEdit, setSubjectEdit] = useState('');
-  const [bodyEdit, setBodyEdit] = useState('');
-  const [sending, setSending] = useState(false);
+  const [nextCard, setNextCard] = useState(null);
   const [completed, setCompleted] = useState(false);
   const [stats, setStats] = useState({ totalSent: 0, totalQueued: 0 });
 
+  const refreshStats = useCallback(async () => {
+    if (!authFetch || !runId) return;
+    try {
+      const res = await authFetch(`${API}/manual-campaigns/${runId}/stats`);
+      const data = await res.json();
+      if (res.ok) {
+        setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+      }
+    } catch (_) {}
+  }, [authFetch, runId]);
+
   const loadCurrent = useCallback(async () => {
     if (!authFetch || !runId) return;
-    setLoading(true);
     setError('');
     try {
       const res = await authFetch(`${API}/manual-campaigns/${runId}/current`);
@@ -34,14 +75,13 @@ export function ManualSendPage() {
         setCard(null);
         return;
       }
-      setCard(data);
-      setSubjectEdit(data.subject || '');
-      setBodyEdit(data.body || '');
+      setCard(cardFromPayload(data));
+      setNextCard(nextCardFromPayload(data.next));
       setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
     } catch (e) {
       setError(e.message);
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   }, [authFetch, runId]);
 
@@ -49,46 +89,68 @@ export function ManualSendPage() {
     loadCurrent();
   }, [loadCurrent]);
 
-  const handleSend = async () => {
-    if (!authFetch || !card || sending) return;
-    setSending(true);
+  useEffect(() => {
+    if (!authFetch || !runId) return;
+    const id = setInterval(refreshStats, 10000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshStats();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [authFetch, runId, refreshStats]);
+
+  const handleSend = () => {
+    if (!authFetch || !card) return;
     setError('');
-    try {
-      const preRes = await authFetch(`${API}/manual-campaigns/${runId}/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          senderEmail: card.senderEmail,
-          subject: subjectEdit,
-          body: bodyEdit,
-          senderOrder: card.senderOrder,
-          senderPickIndex: card.senderPickIndex,
-        }),
-      });
-      const preData = await preRes.json();
-      if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
 
-      const trackUrl = `${API_BASE}/api/track/open/${preData.trackingToken}`;
-      const bodyWithPixel = appendTrackingPixel(bodyEdit, trackUrl);
-      const mailto = buildMailtoUrl({
-        to: card.recipient.email,
-        subject: subjectEdit,
-        body: bodyWithPixel,
-      });
-      window.location.href = mailto;
+    const queuedNext = nextCard;
+    const willComplete = stats.totalSent + 1 >= stats.totalQueued;
 
-      setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
-      if (preData.completed) {
-        setCompleted(true);
-        setCard(null);
-      } else {
-        setTimeout(() => loadCurrent(), 300);
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSending(false);
+    setStats((s) => ({
+      totalSent: s.totalSent + 1,
+      totalQueued: s.totalQueued,
+    }));
+
+    if (willComplete) {
+      setCompleted(true);
+      setCard(null);
+      setNextCard(null);
+    } else if (queuedNext) {
+      setCard(queuedNext);
+      setNextCard(null);
     }
+
+    void authFetch(`${API}/manual-campaigns/${runId}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        senderEmail: card.senderEmail,
+        subject: card.subject,
+        body: card.body,
+        senderOrder: card.senderOrder,
+        senderPickIndex: card.senderPickIndex,
+      }),
+    })
+      .then(async (preRes) => {
+        const preData = await preRes.json();
+        if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
+        setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
+        if (preData.completed) {
+          setCompleted(true);
+          setCard(null);
+          setNextCard(null);
+        } else {
+          if (preData.next) setCard(nextCardFromPayload(preData.next));
+          setNextCard(nextCardFromPayload(preData.prefetch));
+        }
+      })
+      .catch((e) => {
+        setError(e.message);
+        loadCurrent();
+      });
   };
 
   const handlePause = async () => {
@@ -97,57 +159,59 @@ export function ManualSendPage() {
     navigate('/app/campaigns');
   };
 
-  const progress = stats.totalQueued > 0 ? Math.min(100, (stats.totalSent / stats.totalQueued) * 100) : 0;
+  const progress =
+    stats.totalQueued > 0 ? Math.min(100, (stats.totalSent / stats.totalQueued) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-[60] bg-blaster-sidebar flex flex-col">
-      <header className="shrink-0 px-4 sm:px-8 py-4 border-b border-blaster-border bg-white/80 backdrop-blur-sm">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <button
-              type="button"
-              onClick={handlePause}
-              className="text-sm text-blaster-muted hover:text-blaster-fg transition"
-            >
-              ← Exit session
-            </button>
-            <span className="text-sm font-medium text-blaster-fg">
-              Sent {stats.totalSent} of {stats.totalQueued}
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-blaster-border overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-blaster-accent to-blaster-orange transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      </header>
+      <div className="shrink-0 px-4 sm:px-8 pt-4">
+        <button
+          type="button"
+          onClick={handlePause}
+          className="inline-flex items-center gap-1 text-sm text-blaster-muted hover:text-blaster-fg transition"
+        >
+          <ChevronLeft className="w-4 h-4 shrink-0" strokeWidth={2} aria-hidden />
+          Back
+        </button>
+      </div>
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-auto">
-        {loading ? (
+        {initialLoading ? (
           <p className="text-blaster-muted animate-pulse">Loading…</p>
         ) : completed ? (
-          <div className="max-w-md w-full text-center bg-white rounded-2xl border border-blaster-border shadow-lg p-10">
-            <p className="text-2xl font-semibold text-blaster-fg mb-2">Campaign complete</p>
-            <p className="text-sm text-blaster-muted mb-6">
-              You sent {stats.totalSent} of {stats.totalQueued} emails.
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate('/app/campaigns')}
-              className="px-6 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition"
-            >
-              Back to Campaigns
-            </button>
+          <div className="max-w-lg w-full">
+            <div className="-translate-y-12 mb-4">
+              <SendProgress
+                totalSent={stats.totalSent}
+                totalQueued={stats.totalQueued}
+                progress={100}
+              />
+            </div>
+            <div className="text-center bg-white rounded-2xl border border-blaster-border shadow-lg p-10">
+              <p className="text-2xl font-semibold text-blaster-fg mb-2">Campaign complete</p>
+              <p className="text-sm text-blaster-muted mb-6">
+                You sent {stats.totalSent} of {stats.totalQueued} emails.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/app/campaigns')}
+                className="px-6 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition"
+              >
+                Back to Campaigns
+              </button>
+            </div>
           </div>
         ) : card ? (
-          <div className="max-w-lg w-full bg-white rounded-2xl border border-blaster-border shadow-xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-blaster-border bg-gradient-to-r from-blaster-accent/5 to-blaster-orange/10">
-              <p className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Manual send</p>
-              <p className="text-sm text-blaster-muted mt-1">One sender · one recipient</p>
+          <div className="max-w-lg w-full">
+            <div className="-translate-y-12 mb-4">
+              <SendProgress
+                totalSent={stats.totalSent}
+                totalQueued={stats.totalQueued}
+                progress={progress}
+              />
             </div>
-            <div className="p-6 space-y-5">
+            <div className="bg-white rounded-2xl border border-blaster-border shadow-xl overflow-hidden">
+            <div className="p-6 space-y-6">
               {error && <p className="text-sm text-red-600">{error}</p>}
 
               <div>
@@ -163,37 +227,14 @@ export function ManualSendPage() {
                 </p>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-blaster-muted uppercase">Subject</label>
-                <input
-                  type="text"
-                  value={subjectEdit}
-                  onChange={(e) => setSubjectEdit(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg text-sm focus:ring-2 focus:ring-blaster-accent/40"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-blaster-muted uppercase">Body</label>
-                <textarea
-                  value={bodyEdit}
-                  onChange={(e) => setBodyEdit(e.target.value)}
-                  rows={8}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-blaster-border bg-blaster-bg-card text-blaster-fg text-sm focus:ring-2 focus:ring-blaster-accent/40 resize-y"
-                />
-              </div>
-
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={sending}
-                className="w-full py-4 rounded-xl bg-black border-2 border-blaster-orange text-[#faf8f5] text-lg font-semibold shadow-blaster-cta hover:opacity-90 transition disabled:opacity-50"
+                className="w-full py-4 rounded-xl bg-black border-2 border-blaster-orange text-[#faf8f5] text-lg font-semibold shadow-blaster-cta hover:opacity-90 transition"
               >
-                {sending ? 'Opening email app…' : 'SEND'}
+                SEND
               </button>
-              <p className="text-[11px] text-center text-blaster-muted">
-                Opens your email app with fields pre-filled. Hit send there, then return here for the next contact.
-              </p>
+            </div>
             </div>
           </div>
         ) : (

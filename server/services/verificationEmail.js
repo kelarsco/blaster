@@ -32,6 +32,35 @@ if (hasSmtp) {
 const FROM_EMAIL = process.env.VERIFICATION_EMAIL_FROM || process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'no-reply@wiblaster.com';
 const FROM_NAME = process.env.VERIFICATION_EMAIL_FROM_NAME || 'wiblaster';
 
+export function getVerificationFromEmail() {
+  return FROM_EMAIL;
+}
+
+/** Map Resend/SMTP errors to actionable messages for signup and resend flows. */
+export function mapVerificationEmailError(message) {
+  const msg = String(message || '').trim();
+  const lower = msg.toLowerCase();
+  if (!msg) {
+    return 'We couldn\'t send the verification email. Please try again later or contact support.';
+  }
+  if (lower.includes('testing emails') || (lower.includes('only send') && lower.includes('your'))) {
+    return 'We couldn\'t send the verification email. In test mode you can only send to your verified email. Verify a domain at resend.com/domains to send to any address.';
+  }
+  if (lower.includes('domain') && (lower.includes('verify') || lower.includes('not verified'))) {
+    return `Email domain is not verified in Resend. Verify your domain at resend.com/domains, then set VERIFICATION_EMAIL_FROM to an address on that domain (current sender: ${FROM_EMAIL}).`;
+  }
+  if (lower.includes('invalid') && lower.includes('from')) {
+    return `Invalid sender address (${FROM_EMAIL}). Set VERIFICATION_EMAIL_FROM on the server to an email on your verified Resend domain.`;
+  }
+  if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('invalid key')) {
+    return 'Email service authentication failed. Check RESEND_API_KEY on the server.';
+  }
+  if (lower.includes('recipient')) {
+    return 'We couldn\'t send the verification email. In test mode you can only send to your verified email. Verify a domain at resend.com/domains to send to any address.';
+  }
+  return `We couldn't send the verification email: ${msg}`;
+}
+
 export async function sendVerificationCode(toEmail, code) {
   const subject = 'Your wiblaster sign-in code';
   const html = `

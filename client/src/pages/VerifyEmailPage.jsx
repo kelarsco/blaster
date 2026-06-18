@@ -9,6 +9,8 @@ export function VerifyEmailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const emailFromState = location.state?.email || '';
+  const emailSendFailedFromState = location.state?.emailSendFailed;
+  const messageFromState = location.state?.message || '';
   const [email, setEmail] = useState(emailFromState);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -83,6 +85,12 @@ export function VerifyEmailPage() {
       <p className="mt-1.5 text-sm text-blaster-muted">
         We sent a 6-digit code to your email. Enter it below to activate your account.
       </p>
+      {emailSendFailedFromState && messageFromState && (
+        <div className="mt-4 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-sm text-amber-800">
+          <p>{messageFromState}</p>
+          <p className="mt-1 text-xs">Use &quot;Resend code&quot; below once email is configured, or contact support.</p>
+        </div>
+      )}
 
       <form onSubmit={handleVerify} className="mt-6 space-y-4">
         <div>

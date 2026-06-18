@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { getDb, getDbUnavailableMessage } from '../db.js';
-import { sendVerificationCode, isVerificationEmailConfigured } from '../services/verificationEmail.js';
+import { sendVerificationCode, isVerificationEmailConfigured, getVerificationFromEmail, mapVerificationEmailError } from '../services/verificationEmail.js';
 import { sendDeactivationConfirmation } from '../services/transactionalEmail.js';
 import { sendPasswordResetEmail, isPasswordResetEmailConfigured } from '../services/passwordResetEmail.js';
 import { authRateLimit } from '../middleware/authRateLimit.js';
@@ -153,7 +153,11 @@ authRoutes.get('/me', async (req, res) => {
 });
 
 authRoutes.get('/code-config', (_req, res) => {
-  res.json({ emailConfigured: isVerificationEmailConfigured() });
+  res.json({
+    emailConfigured: isVerificationEmailConfigured(),
+    fromEmail: getVerificationFromEmail(),
+    fromExplicitlySet: Boolean(process.env.VERIFICATION_EMAIL_FROM || process.env.INVITE_EMAIL_FROM),
+  });
 });
 
 /** Sign up with email + password. Creates unverified user and sends OTP. No duplicate signups. */
@@ -201,13 +205,13 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
     try {
       await sendVerificationCode(emailNorm, code);
     } catch (emailErr) {
-      await db.query('DELETE FROM users WHERE id = $1', [id]);
       const msg = emailErr?.message || 'Failed to send verification email';
       console.error('[auth register] email send failed', msg);
-      return res.status(503).json({
-        error: msg.includes('testing emails') || msg.includes('recipient')
-          ? "We couldn't send the verification email. In test mode you can only send to your verified email. Verify a domain at resend.com/domains to send to any address."
-          : "We couldn't send the verification email. Please try again later or contact support.",
+      return res.status(201).json({
+        needsVerification: true,
+        email: emailNorm,
+        emailSendFailed: true,
+        message: mapVerificationEmailError(msg),
       });
     }
 
@@ -252,7 +256,7 @@ authRoutes.post('/resend-verification', authRateLimit, async (req, res) => {
     res.json({ ok: true, message: 'Verification code sent. Check your email.' });
   } catch (e) {
     console.error('[auth resend-verification]', e?.message || e);
-    res.status(500).json({ error: e?.message || 'Failed to send code' });
+    res.status(503).json({ error: mapVerificationEmailError(e?.message) });
   }
 });
 

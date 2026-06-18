@@ -378,3 +378,85 @@ async function updateCampaignCounts(db, campaignId, type) {
     await db.query("UPDATE campaigns SET status = 'completed', updated_at = NOW() WHERE id = $1", [campaignId]);
   }
 }
+
+/** Send one message through a configured sender (SMTP or domain provider). */
+export async function sendViaSenderRow(senderRow, { to, subject, text, html }) {
+  const db = getDb();
+  if (!db || !senderRow) throw new Error('Sender unavailable');
+
+  let config;
+  try {
+    config = JSON.parse(senderRow.config || '{}');
+  } catch {
+    config = {};
+  }
+
+  const auth = config.auth && (config.auth.user || config.auth.pass)
+    ? { user: config.auth.user, pass: config.auth.pass }
+    : undefined;
+
+  const mailOptions = {
+    from: senderRow.email,
+    to,
+    subject: subject || '',
+    text: text || '',
+    ...(html ? { html } : {}),
+  };
+
+  if ((senderRow.provider || '').toLowerCase() === 'domain') {
+    const domainSenderId = config?.domainSenderId || senderRow.id;
+    const domainSender = (
+      await db.query(
+        `SELECT s.id, s.domain_id, s.from_name, s.from_email, d.provider, d.provider_api_key
+         FROM domain_sender_identities s
+         JOIN sending_domains d ON d.id = s.domain_id
+         WHERE s.id = $1`,
+        [domainSenderId]
+      )
+    ).rows?.[0];
+    if (!domainSender) throw new Error('Domain sender identity not found');
+    await sendEmailViaProvider({
+      provider: domainSender.provider,
+      apiKey: domainSender.provider_api_key,
+      fromName: domainSender.from_name,
+      fromEmail: domainSender.from_email,
+      toEmail: to,
+      subject: mailOptions.subject,
+      textBody: mailOptions.text,
+      replyTo: domainSender.from_email,
+      metadata: { senderId: senderRow.id },
+    });
+    return;
+  }
+
+  if (!auth?.user || !auth?.pass) {
+    throw new Error('Sender missing SMTP user/password');
+  }
+
+  const senderId = senderRow.id;
+  const transporter = getTransporter(senderId, config, auth);
+  const maxAttempts = 3;
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      await transporter.sendMail(mailOptions);
+      return;
+    } catch (sendErr) {
+      const errMsg = String(sendErr?.message || sendErr || '');
+      const host = normalizedSmtpHost(config);
+      const port = normalizedSmtpPort(config);
+      const isTimeout = /ETIMEDOUT|timeout/i.test(errMsg);
+      const isGmail587 = (host === 'smtp.gmail.com' || host === 'smtp-relay.gmail.com') && port === 587;
+      if (isTimeout && isGmail587) {
+        clearTransporter(senderId);
+        await tryGmailSslFallbackSend(config, auth, mailOptions);
+        return;
+      }
+      const canRetry = attempt < maxAttempts && isTransientSmtpError(sendErr);
+      if (!canRetry) throw sendErr;
+      clearTransporter(senderId);
+      await sleep(1500 * attempt);
+    }
+  }
+}

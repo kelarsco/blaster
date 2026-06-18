@@ -56,16 +56,8 @@ function filterSendEventsBySentRange(events, rangeKey, now) {
   return events.filter((e) => inRange(e.sentAt, rangeKey, now));
 }
 
-function filterSendEventsByOpenedRange(events, rangeKey, now) {
-  return events.filter((e) => e.openedAt && inRange(e.openedAt, rangeKey, now));
-}
-
 function filterSendEventsBySentPreviousRange(events, rangeKey, now) {
   return events.filter((e) => previousRange(e.sentAt, rangeKey, now));
-}
-
-function filterSendEventsByOpenedPreviousRange(events, rangeKey, now) {
-  return events.filter((e) => e.openedAt && previousRange(e.openedAt, rangeKey, now));
 }
 
 function trendDelta(current, previous) {
@@ -303,22 +295,6 @@ export function useDashboardData(range = '7d') {
     const emailsSentPrevRange = filterSendEventsBySentPreviousRange(sendEvents, range, now).length;
     const totalEmailsSent = sendEvents.length;
 
-    const viewedInRange = filterSendEventsByOpenedRange(sendEvents, range, now);
-    const viewedPrevRange = filterSendEventsByOpenedPreviousRange(sendEvents, range, now);
-    const viewedCount = range === 'All'
-      ? sendEvents.filter((e) => e.openedAt).length
-      : viewedInRange.length;
-    const prevViewedCount = range === 'All' ? 0 : viewedPrevRange.length;
-
-    const viewedDetails = sendEvents
-      .filter((e) => e.openedAt)
-      .sort((a, b) => parseTime(b.openedAt) - parseTime(a.openedAt))
-      .map((e) => ({
-        email: e.email,
-        storeUrl: e.storeUrl || '',
-        openedAt: e.openedAt,
-      }));
-
     const sendersAddedInRange = senders.filter((s) => inRange(s.createdAt, range, now)).length;
     const sendersAddedPrevRange = senders.filter((s) => previousRange(s.createdAt, range, now)).length;
 
@@ -373,13 +349,6 @@ export function useDashboardData(range = '7d') {
           to: '/app/campaigns',
         },
         {
-          key: 'viewedMessages',
-          label: 'Viewed messages',
-          value: viewedCount.toLocaleString(),
-          trend: trendDelta(viewedCount, prevViewedCount),
-          action: 'viewedMessages',
-        },
-        {
           key: 'senders',
           label: 'Senders',
           value: senders.length.toLocaleString(),
@@ -394,7 +363,6 @@ export function useDashboardData(range = '7d') {
           to: '/app/templates',
         },
       ],
-      viewedDetails,
       dashboardStats: [
         {
           key: 'stores',

@@ -40,7 +40,7 @@ export function StoresFilterPanel({
   onClear,
   hasPendingFilters = false,
   resultCount = 0,
-  totalCount = 0,
+  applying = false,
   disabled = false,
 }) {
   const [openKey, setOpenKey] = useState(null);
@@ -232,21 +232,23 @@ export function StoresFilterPanel({
       )}
 
       <div className="stores-filter-result-count">
-        <span>
-          Found {resultCount.toLocaleString()} Stores
-          {hasPendingFilters && totalCount > 0 && (
-            <span className="stores-filter-pending-hint"> · click Apply to update results</span>
-          )}
-        </span>
+        <span>Found {resultCount.toLocaleString()} Stores</span>
         {(tags.length > 0 || hasPendingFilters) && (
           <div className="stores-filter-result-actions">
             <button
               type="button"
               className="stores-filter-apply"
               onClick={onApply}
-              disabled={!hasPendingFilters}
+              disabled={!hasPendingFilters || applying}
             >
-              Apply filter
+              {applying ? (
+                <>
+                  <span className="stores-filter-apply-spinner" aria-hidden />
+                  Applying…
+                </>
+              ) : (
+                'Apply filter'
+              )}
             </button>
             {tags.length > 0 && (
               <button type="button" className="stores-filter-clear" onClick={onClear}>

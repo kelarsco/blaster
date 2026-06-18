@@ -5,7 +5,6 @@ import { AppHeader } from '../components/AppHeader';
 import { HelpPanel } from '../components/HelpPanel';
 import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
-import { BackendStatusBanner } from '../components/BackendStatusBanner';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { TrialBanner, TrialExpiredWall, isPlanUpgradeRoute } from '../components/access/PlanAccessUI.jsx';
 
@@ -15,6 +14,8 @@ const NAV_TOGGLE_SIZE = 48;
 const NAV_TOGGLE_EDGE = 10;
 const NAV_TOGGLE_DEFAULT_LEFT = 24;
 const NAV_TOGGLE_DEFAULT_BOTTOM = 154; // 124px + 30px higher
+const NAV_TOGGLE_LONG_PRESS_MS = 500;
+const NAV_TOGGLE_MOVE_THRESHOLD = 10;
 
 function clampNavTogglePosition(x, y) {
   const maxX = window.innerWidth - NAV_TOGGLE_SIZE - NAV_TOGGLE_EDGE;
@@ -34,8 +35,16 @@ function MobileNavToggle({ open, visible, onToggle }) {
     startY: 0,
     originX: 0,
     originY: 0,
-    moved: false,
+    dragEnabled: false,
+    longPressTimer: null,
   });
+
+  const clearLongPressTimer = useCallback(() => {
+    if (dragRef.current.longPressTimer != null) {
+      clearTimeout(dragRef.current.longPressTimer);
+      dragRef.current.longPressTimer = null;
+    }
+  }, []);
 
   const defaultPosition = useCallback(() => {
     return clampNavTogglePosition(
@@ -53,38 +62,74 @@ function MobileNavToggle({ open, visible, onToggle }) {
     return () => window.removeEventListener('resize', onResize);
   }, [defaultPosition]);
 
+  useEffect(() => () => clearLongPressTimer(), [clearLongPressTimer]);
+
   const onPointerDown = (e) => {
     if (!pos) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    clearLongPressTimer();
+    const target = e.currentTarget;
+    const pointerId = e.pointerId;
     dragRef.current = {
-      pointerId: e.pointerId,
+      pointerId,
       startX: e.clientX,
       startY: e.clientY,
       originX: pos.x,
       originY: pos.y,
-      moved: false,
+      dragEnabled: false,
+      longPressTimer: null,
     };
+
+    dragRef.current.longPressTimer = window.setTimeout(() => {
+      if (dragRef.current.pointerId !== pointerId) return;
+      dragRef.current.dragEnabled = true;
+      dragRef.current.longPressTimer = null;
+      setIsDragging(true);
+      try {
+        target.setPointerCapture(pointerId);
+      } catch (_) {}
+    }, NAV_TOGGLE_LONG_PRESS_MS);
   };
 
   const onPointerMove = (e) => {
     if (dragRef.current.pointerId !== e.pointerId) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-      dragRef.current.moved = true;
-      setIsDragging(true);
+
+    if (!dragRef.current.dragEnabled) {
+      if (Math.abs(dx) > NAV_TOGGLE_MOVE_THRESHOLD || Math.abs(dy) > NAV_TOGGLE_MOVE_THRESHOLD) {
+        clearLongPressTimer();
+      }
+      return;
     }
+
     setPos(clampNavTogglePosition(dragRef.current.originX + dx, dragRef.current.originY + dy));
   };
 
-  const onPointerUp = (e) => {
+  const finishPointer = (e, toggleOnTap) => {
     if (dragRef.current.pointerId !== e.pointerId) return;
-    const wasMoved = dragRef.current.moved;
+    clearLongPressTimer();
+    const wasDragging = dragRef.current.dragEnabled;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const movedFar =
+      Math.abs(dx) > NAV_TOGGLE_MOVE_THRESHOLD || Math.abs(dy) > NAV_TOGGLE_MOVE_THRESHOLD;
+
     dragRef.current.pointerId = null;
+    dragRef.current.dragEnabled = false;
     setIsDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!wasMoved) onToggle();
+
+    if (wasDragging) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      return;
+    }
+
+    if (toggleOnTap && !movedFar) onToggle();
   };
+
+  const onPointerUp = (e) => finishPointer(e, true);
+  const onPointerCancel = (e) => finishPointer(e, false);
 
   return (
     <button
@@ -92,9 +137,9 @@ function MobileNavToggle({ open, visible, onToggle }) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      className={`md:hidden fixed z-30 flex items-center justify-center w-12 h-12 rounded-full bg-black text-white shadow-lg hover:bg-gray-900 touch-none select-none ${
-        isDragging ? 'cursor-grabbing active:scale-100' : 'cursor-grab active:scale-95'
+      onPointerCancel={onPointerCancel}
+      className={`md:hidden fixed z-30 flex items-center justify-center w-12 h-12 rounded-full bg-black text-white shadow-lg hover:bg-gray-900 touch-manipulation select-none ${
+        isDragging ? 'cursor-grabbing active:scale-100' : 'cursor-pointer active:scale-95'
       }`}
       style={{
         left: pos?.x ?? NAV_TOGGLE_DEFAULT_LEFT,
@@ -199,7 +244,6 @@ export function AppLayout() {
             <TrialBanner trialEndsAt={status.trialEndsAt} />
           </div>
         )}
-        <BackendStatusBanner />
         <AppHeader loading={layoutLoading} onOpenHelp={() => setShowHelp(true)} onOpenSupport={() => setShowSupport(true)} />
         <main ref={mainRef} className="flex-1 overflow-auto relative z-0 isolate">
           <div key={location.pathname} className="relative min-h-full">

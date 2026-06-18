@@ -219,7 +219,7 @@ export function SendersPage() {
             className="relative inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blaster-accent/15 to-blaster-orange/25 border border-blaster-accent/20 mb-4 mx-auto shadow-sm"
             aria-hidden
           >
-            <Mail className="w-7 h-7 text-blaster-accent" strokeWidth={1.75} />
+            <Mail className="w-7 h-7 text-blaster-muted" strokeWidth={1.75} />
           </span>
           <p className="relative text-base font-semibold text-blaster-fg">No sender groups yet</p>
           <p className="relative text-sm text-blaster-muted mt-2 max-w-xs mx-auto leading-relaxed">

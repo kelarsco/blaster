@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Copy, ExternalLink } from 'react-feather';
-import { storeDisplayName, storeFaviconUrl } from '../../utils/storeDisplay.js';
+import { storeDisplayName } from '../../utils/storeDisplay.js';
+import { StoreSiteLogo } from './StoreSiteLogo.jsx';
 
 function copyToClipboard(text) {
   if (!text) return;
@@ -8,9 +9,7 @@ function copyToClipboard(text) {
 }
 
 export function StoreCard({ store, viewMode }) {
-  const [logoError, setLogoError] = useState(false);
   const displayName = storeDisplayName(store.storeUrl);
-  const favicon = storeFaviconUrl(store.storeUrl);
   const countryCode = store.countryCode && store.countryCode !== 'XX' ? store.countryCode : '—';
   const currency = store.currency || 'USD';
   const productLabel = `${store.productCount ?? 0}P`;
@@ -24,11 +23,7 @@ export function StoreCard({ store, viewMode }) {
     return (
       <article className="stores-glass stores-list-row">
         <div className="stores-logo stores-logo-sm">
-          {favicon && !logoError ? (
-            <img src={favicon} alt="" onError={() => setLogoError(true)} />
-          ) : (
-            displayName.charAt(0).toUpperCase()
-          )}
+          <StoreSiteLogo storeUrl={store.storeUrl} />
         </div>
         <a
           href={store.storeUrl}
@@ -51,11 +46,7 @@ export function StoreCard({ store, viewMode }) {
     <article className="stores-glass stores-grid-card">
       <div className="flex items-start gap-3">
         <div className="stores-logo stores-logo-sm">
-          {favicon && !logoError ? (
-            <img src={favicon} alt="" onError={() => setLogoError(true)} />
-          ) : (
-            displayName.charAt(0).toUpperCase()
-          )}
+          <StoreSiteLogo storeUrl={store.storeUrl} />
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-blaster-fg truncate">{displayName}</h3>

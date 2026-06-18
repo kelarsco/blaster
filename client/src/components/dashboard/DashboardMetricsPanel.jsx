@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { Layers, Zap, Percent, TrendingUp, TrendingDown, Minus, Mail, Eye, X } from 'react-feather';
+import { Layers, Zap, Percent, TrendingUp, TrendingDown, Minus, Mail } from 'react-feather';
 import { StreaksAndBadgesPanel } from './DashboardSections.jsx';
 import { RecentActivityList } from './RecentActivityList.jsx';
 
@@ -62,35 +62,6 @@ function formatTime(iso) {
   }
 }
 
-function formatViewedTime(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
-
-function storeLabel(storeUrl, email) {
-  const url = String(storeUrl || '').trim();
-  if (url) {
-    try {
-      const host = url.replace(/^https?:\/\//i, '').split('/')[0];
-      if (host) return host;
-    } catch (_) {}
-    return url;
-  }
-  const domain = String(email || '').split('@')[1];
-  return domain || 'Unknown store';
-}
-
 function MetricCell({ item, onAction }) {
   const base =
     'p-5 sm:p-6 block w-full text-left transition';
@@ -140,62 +111,6 @@ function MetricCell({ item, onAction }) {
   return <div className={base}>{content}</div>;
 }
 
-function ViewedMessagesModal({ items, onClose }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm p-0 sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full sm:max-w-lg max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl p-[1px] bg-gradient-to-br from-blaster-accent/25 via-blaster-accent/12 to-blaster-orange/30 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative flex flex-col rounded-2xl bg-white overflow-hidden max-h-[85vh]">
-          <div
-            className="pointer-events-none absolute inset-0 bg-gradient-to-tl from-blaster-orange/[0.05] via-blaster-accent/[0.03] to-transparent"
-            aria-hidden
-          />
-          <div className="relative flex items-center justify-between px-5 py-4 border-b border-blaster-border shrink-0">
-            <div>
-              <h3 className="text-base font-semibold text-blaster-fg">Viewed messages</h3>
-              <p className="text-xs text-blaster-muted mt-0.5">Emails opened by recipients</p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-gray-100 transition"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="relative overflow-y-auto flex-1 divide-y divide-blaster-border/70">
-            {items.length === 0 ? (
-              <p className="px-5 py-10 text-center text-sm text-blaster-muted">No viewed messages yet</p>
-            ) : (
-              items.map((item, i) => (
-                <div key={`${item.email}-${item.openedAt}-${i}`} className="px-5 py-4 flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blaster-accent/10 to-blaster-orange/15 border border-blaster-accent/15">
-                    <Eye className="w-4 h-4 text-blaster-accent" strokeWidth={1.75} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-blaster-fg truncate">{storeLabel(item.storeUrl, item.email)}</p>
-                    <p className="text-sm text-blaster-muted truncate mt-0.5">{item.email}</p>
-                    {item.storeUrl ? (
-                      <p className="text-xs text-blaster-muted/80 truncate mt-0.5">{item.storeUrl}</p>
-                    ) : null}
-                    <p className="text-xs text-blaster-muted mt-1.5">{formatViewedTime(item.openedAt)}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DashboardMetricsPanel({
   loading,
   metrics,
@@ -215,12 +130,7 @@ export function DashboardMetricsPanel({
   userName,
   outerBgClass = 'bg-blaster-sidebar',
 }) {
-  const [viewedModalOpen, setViewedModalOpen] = useState(false);
   const greeting = userName ? `Welcome, ${userName}` : 'Welcome back';
-
-  const handleMetricAction = (action) => {
-    if (action === 'viewedMessages') setViewedModalOpen(true);
-  };
 
   return (
     <div className={`min-h-full ${outerBgClass} p-4 sm:p-6 md:p-8`}>
@@ -283,7 +193,7 @@ export function DashboardMetricsPanel({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
               {metrics.overview.map((item) => (
-                <MetricCell key={item.key} item={item} onAction={handleMetricAction} />
+                <MetricCell key={item.key} item={item} />
               ))}
             </div>
           )}
@@ -307,7 +217,7 @@ export function DashboardMetricsPanel({
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-blaster-border">
               {metrics.performance.map((item) => (
-                <MetricCell key={item.key} item={item} onAction={handleMetricAction} />
+                <MetricCell key={item.key} item={item} />
               ))}
             </div>
           )}
@@ -389,13 +299,6 @@ export function DashboardMetricsPanel({
           </div>
         )}
       </div>
-
-      {viewedModalOpen ? (
-        <ViewedMessagesModal
-          items={metrics.viewedDetails || []}
-          onClose={() => setViewedModalOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

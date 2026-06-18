@@ -11,5 +11,5 @@ export function storeDisplayName(storeUrl) {
 export function storeFaviconUrl(storeUrl) {
   const name = storeDisplayName(storeUrl);
   if (!name || name === 'Store') return null;
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(name)}&sz=64`;
+  return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(name)}.ico`;
 }

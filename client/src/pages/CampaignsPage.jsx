@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { Download, Clipboard } from 'react-feather';
 import { useToolState } from '../context/ToolStateContext';
@@ -149,19 +150,23 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
     }
   };
 
-  return (
+  return createPortal(
     <>
       <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm p-0 sm:p-4"
+        className="fixed inset-0 z-50 overflow-y-auto bg-black/45 backdrop-blur-sm"
         onClick={onClose}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="campaign-detail-title"
       >
-        <div
-          className="w-full sm:max-w-2xl max-h-[90vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-blaster-border bg-white shadow-xl animate-[fadeIn_0.25s_ease-out]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="flex min-h-full min-h-[100dvh] items-center justify-center p-4 sm:p-6">
+          <div
+            className="w-full max-w-2xl max-h-[min(90vh,90dvh)] min-h-0 flex flex-col rounded-2xl border border-blaster-border bg-white shadow-xl animate-[fadeIn_0.25s_ease-out]"
+            onClick={(e) => e.stopPropagation()}
+          >
           <div className="flex items-center justify-between px-5 py-4 border-b border-blaster-border shrink-0">
             <div>
-              <h3 className="text-base font-semibold text-blaster-fg">{list.name}</h3>
+              <h3 id="campaign-detail-title" className="text-base font-semibold text-blaster-fg">{list.name}</h3>
               <p className="text-xs text-blaster-muted mt-0.5">{list.recipients?.length ?? 0} contacts</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -255,7 +260,7 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
               </div>
             )}
           </div>
-        <div className="overflow-y-auto flex-1 px-5 py-4">
+        <div className="overflow-y-auto flex-1 min-h-0 px-5 py-4">
           <div className="rounded-xl border border-blaster-border overflow-hidden bg-white">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50/95 border-b border-blaster-border z-10">
@@ -296,6 +301,7 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
           </div>
         </div>
         </div>
+        </div>
       </div>
 
       {exportOpen ? (
@@ -307,7 +313,8 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
           }}
         />
       ) : null}
-    </>
+    </>,
+    document.body
   );
 }
 
@@ -483,7 +490,7 @@ export function CampaignsPage() {
         {emailLists.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-blaster-border bg-white/60 py-14 px-6 text-center">
             <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blaster-accent/10 to-blaster-orange/20 mb-3 mx-auto" aria-hidden>
-              <Clipboard className="w-6 h-6 text-blaster-accent" strokeWidth={1.75} />
+              <Clipboard className="w-6 h-6 text-blaster-muted" strokeWidth={1.75} />
             </span>
             <p className="text-sm font-medium text-blaster-fg">No saved campaigns yet</p>
             <p className="text-xs text-blaster-muted mt-1 max-w-sm mx-auto">

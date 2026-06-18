@@ -4,6 +4,7 @@ import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { shuffleArray, pickNextSender } from '../services/senderShuffle.js';
 import { recordEmailSent } from '../services/streakService.js';
+import { sendViaSenderRow } from '../services/sendProcessor.js';
 import { logActivity } from './activity.js';
 
 export const manualCampaignRoutes = Router();
@@ -89,6 +90,47 @@ function rowToRun(row) {
     totalSent: row.total_sent || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+async function getRunTrackingStats(db, runId, row) {
+  const queue = parseJson(row.recipient_queue, []);
+  return {
+    totalSent: row.total_sent || 0,
+    totalQueued: queue.length,
+  };
+}
+
+async function buildCardAtIndex(db, userId, row, idx) {
+  const queue = parseJson(row.recipient_queue, []);
+  if (idx >= queue.length) return null;
+
+  const recipient = queue[idx];
+  let senderOrder = parseJson(row.sender_order, []);
+  const pick = pickNextSender(senderOrder, row.sender_cycle_index || 0, row.last_sender_email);
+  senderOrder = pick.order;
+
+  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+  const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
+  const subjectRaw = subjects.length
+    ? subjects[Math.floor(Math.random() * subjects.length)]
+    : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
+  const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
+
+  const subject = fillTemplate(subjectRaw, recipient);
+  const body = fillTemplate(bodyRaw, recipient);
+  const senderEmail = pick.email || senderOrder[0];
+
+  return {
+    currentIndex: idx,
+    totalQueued: queue.length,
+    totalSent: row.total_sent || 0,
+    recipient,
+    senderEmail,
+    subject,
+    body,
+    senderOrder,
+    senderPickIndex: pick.index,
   };
 }
 
@@ -188,6 +230,22 @@ manualCampaignRoutes.get('/:runId', requireAuth, async (req, res) => {
   }
 });
 
+manualCampaignRoutes.get('/:runId/stats', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, req.user.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    res.json(await getRunTrackingStats(db, row.id, row));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
   try {
     const db = getDb();
@@ -205,7 +263,8 @@ manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
       );
     }
     if (row.status === 'completed') {
-      return res.json({ completed: true, totalSent: row.total_sent, totalQueued: parseJson(row.recipient_queue, []).length });
+      const tracking = await getRunTrackingStats(db, row.id, row);
+      return res.json({ completed: true, ...tracking });
     }
 
     const queue = parseJson(row.recipient_queue, []);
@@ -215,36 +274,29 @@ manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
         "UPDATE manual_campaign_runs SET status = 'completed', updated_at = NOW() WHERE id = $1",
         [row.id]
       );
-      return res.json({ completed: true, totalSent: row.total_sent, totalQueued: queue.length });
+      const tracking = await getRunTrackingStats(db, row.id, row);
+      return res.json({ completed: true, ...tracking });
     }
 
-    const recipient = queue[idx];
-    let senderOrder = parseJson(row.sender_order, []);
-    const pick = pickNextSender(senderOrder, row.sender_cycle_index || 0, row.last_sender_email);
-    senderOrder = pick.order;
+    const card = await buildCardAtIndex(db, req.user.id, row, idx);
+    if (!card) {
+      const tracking = await getRunTrackingStats(db, row.id, row);
+      return res.json({ completed: true, ...tracking });
+    }
 
-    const { subjects, templates } = await loadPresets(db, req.user.id, parseJson(row.template_ids, []));
-    const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
-    const subjectRaw = subjects.length
-      ? subjects[Math.floor(Math.random() * subjects.length)]
-      : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
-    const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
+    let next = null;
+    if (idx + 1 < queue.length) {
+      next = await buildCardAtIndex(db, req.user.id, row, idx + 1);
+    }
 
-    const subject = fillTemplate(subjectRaw, recipient);
-    const body = fillTemplate(bodyRaw, recipient);
-    const senderEmail = pick.email || senderOrder[0];
+    const tracking = await getRunTrackingStats(db, row.id, row);
 
     res.json({
       completed: false,
-      currentIndex: idx,
-      totalQueued: queue.length,
-      totalSent: row.total_sent || 0,
-      recipient,
-      senderEmail,
-      subject,
-      body,
-      senderOrder,
-      senderPickIndex: pick.index,
+      ...card,
+      ...tracking,
+      next,
+      recipientQueue: queue,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -273,19 +325,40 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
     }
 
     const recipient = queue[idx];
-    const trackingToken = uuidv4().replace(/-/g, '');
     const eventId = uuidv4();
+
+    const senderResult = await db.query(
+      `SELECT * FROM senders WHERE user_id = $1 AND LOWER(email) = LOWER($2) AND is_active = 1 LIMIT 1`,
+      [userId, senderEmail]
+    );
+    const senderRow = senderResult.rows[0];
+    if (!senderRow) {
+      return res.status(400).json({ error: 'Sender not found or inactive' });
+    }
 
     await db.query(
       `INSERT INTO manual_send_events
         (id, run_id, recipient_email, recipient_store_url, sender_email, subject, tracking_token)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
       [
         eventId, row.id, recipient.email,
         recipient.storeUrl || recipient.store_url || null,
-        senderEmail, subject, trackingToken,
+        senderEmail, subject,
       ]
     );
+
+    try {
+      await sendViaSenderRow(senderRow, {
+        to: recipient.email,
+        subject,
+        text: body,
+      });
+    } catch (sendErr) {
+      await db.query('DELETE FROM manual_send_events WHERE id = $1', [eventId]);
+      return res.status(502).json({
+        error: sendErr.message || 'Failed to send email',
+      });
+    }
 
     const nextIndex = idx + 1;
     const completed = nextIndex >= queue.length;
@@ -313,18 +386,34 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
 
     await recordEmailSent(userId, 1);
 
-    const apiBase = process.env.PUBLIC_API_URL || process.env.FRONTEND_URL?.replace(/\/$/, '') || '';
-    const trackUrl = `${apiBase}/api/track/open/${trackingToken}`;
+    const totalSent = (row.total_sent || 0) + 1;
+    const updatedRow = {
+      ...row,
+      current_index: nextIndex,
+      last_sender_email: senderEmail,
+      sender_order: JSON.stringify(order),
+      sender_cycle_index: nextCycleIndex,
+      total_sent: totalSent,
+      status: completed ? 'completed' : row.status,
+    };
+
+    let next = null;
+    let prefetch = null;
+    if (!completed) {
+      next = await buildCardAtIndex(db, userId, updatedRow, nextIndex);
+      if (nextIndex + 1 < queue.length) {
+        prefetch = await buildCardAtIndex(db, userId, updatedRow, nextIndex + 1);
+      }
+    }
+
+    const tracking = await getRunTrackingStats(db, row.id, updatedRow);
 
     res.json({
       ok: true,
-      trackingToken,
-      trackUrl,
-      trackingPixelHtml: `<img src="${trackUrl}" width="1" height="1" alt="" style="display:none;border:0;" />`,
-      nextIndex,
       completed,
-      totalSent: (row.total_sent || 0) + 1,
-      totalQueued: queue.length,
+      ...tracking,
+      next,
+      prefetch,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

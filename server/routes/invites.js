@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
+import { resolveFrontendUrl } from '../services/oauthUrls.js';
 import { sendInviteAcceptedNotification } from '../services/transactionalEmail.js';
 
 const hasInviteSmtp =
@@ -66,8 +67,8 @@ inviteRoutes.post('/', requireAuth, async (req, res) => {
       [id, inviterId, inviterEmail, inviteeEmail, token, expiresAt]
     );
 
-    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000';
-    const acceptUrl = `${baseUrl.replace(/\/$/, '')}/invite/accept?token=${token}`;
+    const baseUrl = resolveFrontendUrl(req);
+    const acceptUrl = `${baseUrl}/invite/accept?token=${token}`;
 
     if (hasInviteSmtp && inviteTransporter) {
       const from = process.env.INVITE_EMAIL_FROM || process.env.INVITE_SMTP_USER || 'no-reply@wiblaster.com';
