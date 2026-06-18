@@ -41,6 +41,23 @@ export function getRailwayHost() {
   return String(raw).trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
 }
 
+/** Fly.io public hostname (custom domain or app.fly.dev). */
+export function getFlyPublicHost() {
+  const explicit = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || process.env.BASE_URL || '').trim();
+  if (explicit && !isLocalUrl(explicit)) {
+    return normalizeUrl(explicit).replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  }
+  const flyHostname = (process.env.FLY_PUBLIC_HOSTNAME || '').trim();
+  if (flyHostname) return flyHostname.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  const app = (process.env.FLY_APP_NAME || '').trim();
+  if (app) return `${app}.fly.dev`;
+  return '';
+}
+
+export function isFlyDeploy() {
+  return Boolean(process.env.FLY_APP_NAME || process.env.FLY_REGION);
+}
+
 export function isRailwayDeploy() {
   return Boolean(
     getRailwayHost() ||
@@ -61,8 +78,17 @@ export function resolveFrontendUrl(req) {
   }
 
   const explicit = (process.env.FRONTEND_URL || process.env.BASE_URL || '').trim();
+  if (explicit && !isLocalUrl(explicit)) {
+    return normalizeUrl(explicit);
+  }
+
+  const flyHost = getFlyPublicHost();
+  if (flyHost) {
+    return normalizeUrl(`https://${flyHost}`);
+  }
+
   const railwayHost = getRailwayHost();
-  if (railwayHost && (!explicit || isLocalUrl(explicit))) {
+  if (railwayHost) {
     return normalizeUrl(`https://${railwayHost}`);
   }
   return normalizeUrl(explicit || 'http://localhost:3000');
@@ -79,8 +105,17 @@ export function resolveGoogleCallbackURL(req) {
   }
 
   const explicit = (process.env.GOOGLE_CALLBACK_URL || '').trim();
+  if (explicit && !isLocalUrl(explicit)) {
+    return normalizeUrl(explicit);
+  }
+
+  const flyHost = getFlyPublicHost();
+  if (flyHost) {
+    return normalizeUrl(`https://${flyHost}/api/auth/google/callback`);
+  }
+
   const railwayHost = getRailwayHost();
-  if (railwayHost && (!explicit || isLocalUrl(explicit))) {
+  if (railwayHost) {
     return normalizeUrl(`https://${railwayHost}/api/auth/google/callback`);
   }
   if (explicit) return normalizeUrl(explicit);
@@ -105,6 +140,8 @@ export function getOAuthSetupInfo(req) {
     callbackUrl,
     frontendUrl,
     railway: isRailwayDeploy(),
+    fly: isFlyDeploy(),
+    publicHost: getFlyPublicHost() || getRailwayHost() || null,
     googleConsoleHint:
       'In Google Cloud Console → Credentials → your OAuth client, add this Authorized redirect URI exactly:',
   };
