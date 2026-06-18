@@ -23,6 +23,15 @@ function nextCardFromPayload(data) {
   return cardFromPayload({ ...data, completed: false });
 }
 
+async function readJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error('Server returned an invalid response. Restart the API server and try again.');
+  }
+}
+
 function SendProgress({ totalSent, totalQueued, progress }) {
   return (
     <div className="mb-4">
@@ -129,7 +138,7 @@ export function ManualSendPage() {
           senderPickIndex: sendingCard.senderPickIndex,
         }),
       });
-      const preData = await preRes.json();
+      const preData = await readJsonResponse(preRes);
       if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
 
       setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
@@ -153,9 +162,16 @@ export function ManualSendPage() {
     setError('');
 
     try {
-      const res = await authFetch(`${API}/manual-campaigns/${runId}/skip`, { method: 'POST' });
-      const data = await res.json();
+      const res = await authFetch(`${API}/manual-campaigns/${runId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skip: true }),
+      });
+      const data = await readJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to skip');
+      if (!data.skipped) {
+        throw new Error('Skip is not available yet — restart or redeploy the API server.');
+      }
 
       setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
       if (data.completed) {
