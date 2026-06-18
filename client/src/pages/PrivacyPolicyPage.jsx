@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
+import { MarketingFooter } from '../layout/MarketingFooter.jsx';
 
 export function PrivacyPolicyPage() {
   return (
@@ -91,9 +91,7 @@ export function PrivacyPolicyPage() {
         </div>
       </main>
 
-      <footer className="py-6 px-4 border-t border-blaster-border text-center text-sm text-blaster-muted mt-12">
-        <p>© {new Date().getFullYear()} <Logo className="inline w-auto h-auto" />. All rights reserved.</p>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

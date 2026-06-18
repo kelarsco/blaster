@@ -1,27 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { domainFromUrl } from '../utils/scannerUrls.js';
-import { buildMailtoUrl } from '../utils/campaignSend.js';
+import { buildMailtoUrl, openMailtoUrl } from '../utils/campaignSend.js';
+import {
+  clearManualCampaignDeck,
+  deckCardToUi,
+  loadManualCampaignDeck,
+  saveManualCampaignDeck,
+} from '../utils/manualCampaignDeck.js';
 
-function cardFromPayload(data) {
-  if (!data || data.completed) return null;
-  return {
-    recipient: data.recipient,
-    senderEmail: data.senderEmail,
-    subject: data.subject,
-    body: data.body,
-    senderOrder: data.senderOrder,
-    senderPickIndex: data.senderPickIndex,
-  };
-}
-
-function nextCardFromPayload(data) {
-  if (!data) return null;
-  return cardFromPayload({ ...data, completed: false });
-}
+const SEND_LOG_MAX_WAIT_MS = 2000;
 
 async function readJsonResponse(res) {
   const text = await res.text();
@@ -48,6 +39,17 @@ function SendProgress({ totalSent, totalQueued, progress }) {
   );
 }
 
+function applyDeckHead(deck) {
+  if (!deck?.length) {
+    return { card: null, nextCard: null, completed: true };
+  }
+  return {
+    card: deckCardToUi(deck[0]),
+    nextCard: deckCardToUi(deck[1]),
+    completed: false,
+  };
+}
+
 export function ManualSendPage() {
   const { runId } = useParams();
   const navigate = useNavigate();
@@ -56,10 +58,26 @@ export function ManualSendPage() {
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deck, setDeck] = useState([]);
   const [card, setCard] = useState(null);
   const [nextCard, setNextCard] = useState(null);
   const [completed, setCompleted] = useState(false);
   const [stats, setStats] = useState({ totalSent: 0, totalQueued: 0 });
+  const deckRef = useRef([]);
+
+  useEffect(() => {
+    deckRef.current = deck;
+  }, [deck]);
+
+  const syncFromDeck = useCallback((nextDeck, totalSent, totalQueued) => {
+    setDeck(nextDeck);
+    saveManualCampaignDeck(runId, nextDeck);
+    const view = applyDeckHead(nextDeck);
+    setCard(view.card);
+    setNextCard(view.nextCard);
+    setCompleted(view.completed);
+    setStats({ totalSent, totalQueued });
+  }, [runId]);
 
   const refreshStats = useCallback(async () => {
     if (!authFetch || !runId) return;
@@ -75,32 +93,42 @@ export function ManualSendPage() {
     } catch (_) {}
   }, [authFetch, runId]);
 
-  const loadCurrent = useCallback(async () => {
+  const loadCampaign = useCallback(async () => {
     if (!authFetch || !runId) return;
     setError('');
+
+    const cachedDeck = loadManualCampaignDeck(runId);
+    if (cachedDeck?.length) {
+      syncFromDeck(cachedDeck, 0, cachedDeck.length);
+      setInitialLoading(false);
+      refreshStats().then(() => {});
+      return;
+    }
+
     try {
-      const res = await authFetch(`${API}/manual-campaigns/${runId}/current`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load');
-      if (data.completed) {
+      const res = await authFetch(`${API}/manual-campaigns/${runId}/deck`);
+      const data = await readJsonResponse(res);
+      if (!res.ok) throw new Error(data.error || 'Failed to load campaign');
+
+      if (data.completed || !data.deck?.length) {
         setCompleted(true);
-        setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+        setStats({ totalSent: data.totalSent ?? 0, totalQueued: data.totalQueued ?? 0 });
         setCard(null);
+        clearManualCampaignDeck(runId);
         return;
       }
-      setCard(cardFromPayload(data));
-      setNextCard(nextCardFromPayload(data.next));
-      setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+
+      syncFromDeck(data.deck, data.totalSent ?? 0, data.totalQueued ?? data.deck.length);
     } catch (e) {
       setError(e.message);
     } finally {
       setInitialLoading(false);
     }
-  }, [authFetch, runId]);
+  }, [authFetch, runId, refreshStats, syncFromDeck]);
 
   useEffect(() => {
-    loadCurrent();
-  }, [loadCurrent]);
+    loadCampaign();
+  }, [loadCampaign]);
 
   useEffect(() => {
     if (!authFetch || !runId) return;
@@ -115,6 +143,26 @@ export function ManualSendPage() {
     };
   }, [authFetch, runId, refreshStats]);
 
+  const advanceLocal = useCallback((sentDelta = 0) => {
+    const remaining = deckRef.current.slice(1);
+    deckRef.current = remaining;
+    setDeck(remaining);
+    saveManualCampaignDeck(runId, remaining);
+    const view = applyDeckHead(remaining);
+    setCard(view.card);
+    setNextCard(view.nextCard);
+    setCompleted(view.completed);
+    if (sentDelta) {
+      setStats((prev) => ({
+        totalSent: prev.totalSent + sentDelta,
+        totalQueued: prev.totalQueued,
+      }));
+    }
+    if (view.completed) {
+      clearManualCampaignDeck(runId);
+    }
+  }, [runId]);
+
   const handleSend = async () => {
     if (!authFetch || !card) return;
     setError('');
@@ -122,44 +170,62 @@ export function ManualSendPage() {
     const sendingCard = card;
     const mailto = buildMailtoUrl({
       to: sendingCard.recipient.email,
+      from: sendingCard.senderEmail,
       subject: sendingCard.subject,
       body: sendingCard.body,
     });
 
-    try {
-      const preRes = await authFetch(`${API}/manual-campaigns/${runId}/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          senderEmail: sendingCard.senderEmail,
-          subject: sendingCard.subject,
-          body: sendingCard.body,
-          senderOrder: sendingCard.senderOrder,
-          senderPickIndex: sendingCard.senderPickIndex,
-        }),
+    const sendPromise = authFetch(`${API}/manual-campaigns/${runId}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        senderEmail: sendingCard.senderEmail,
+        subject: sendingCard.subject,
+        body: sendingCard.body,
+        senderOrder: sendingCard.senderOrder,
+        senderPickIndex: sendingCard.senderPickIndex,
+      }),
+    })
+      .then(readJsonResponse)
+      .then((preData) => {
+        if (preData.error) throw new Error(preData.error);
+        return preData;
       });
-      const preData = await readJsonResponse(preRes);
-      if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
 
+    const timeout = new Promise((resolve) => {
+      setTimeout(() => resolve(null), SEND_LOG_MAX_WAIT_MS);
+    });
+
+    const preData = await Promise.race([sendPromise, timeout]);
+    advanceLocal(1);
+
+    if (preData) {
       setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
       if (preData.completed) {
         setCompleted(true);
         setCard(null);
         setNextCard(null);
-      } else {
-        setCard(nextCardFromPayload(preData.next));
-        setNextCard(nextCardFromPayload(preData.prefetch));
+        clearManualCampaignDeck(runId);
       }
-
-      window.location.href = mailto;
-    } catch (e) {
-      setError(e.message);
+    } else {
+      sendPromise
+        .then((data) => {
+          setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+        })
+        .catch((e) => {
+          setError(e.message);
+          loadCampaign();
+        });
     }
+
+    openMailtoUrl(mailto);
   };
 
   const handleSkip = async () => {
     if (!authFetch || !card) return;
     setError('');
+    advanceLocal(0);
 
     try {
       const res = await authFetch(`${API}/manual-campaigns/${runId}/send`, {
@@ -172,16 +238,7 @@ export function ManualSendPage() {
       if (!data.skipped) {
         throw new Error('Skip is not available yet — restart or redeploy the API server.');
       }
-
       setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
-      if (data.completed) {
-        setCompleted(true);
-        setCard(null);
-        setNextCard(null);
-      } else {
-        setCard(nextCardFromPayload(data.next));
-        setNextCard(nextCardFromPayload(data.prefetch));
-      }
     } catch (e) {
       setError(e.message);
     }

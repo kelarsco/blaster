@@ -58,18 +58,13 @@ export function StreaksAndBadgesPanelSkeleton({ fullWidth = false }) {
         <Skeleton className="h-9 w-[136px] rounded-full" />
       </div>
       <div className="space-y-2 mb-6">
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between px-4 py-3 rounded-xl border border-blaster-border/50 bg-gray-50/60"
-          >
-            <div className="flex items-center gap-2.5">
-              <Skeleton className="h-4 w-4 rounded" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <Skeleton className="h-5 w-20 rounded-md" />
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-blaster-border/50 bg-gray-50/60">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-4 w-20" />
           </div>
-        ))}
+          <Skeleton className="h-5 w-20 rounded-md" />
+        </div>
       </div>
       <Skeleton className="h-4 w-28 mb-3" />
       <div className={`grid gap-2 sm:gap-3 ${badgeCols}`}>

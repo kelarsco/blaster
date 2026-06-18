@@ -5,8 +5,7 @@
 import https from 'https';
 import http from 'http';
 
-const REQUEST_TIMEOUT_MS = 15000;
-const DELAY_BETWEEN_PAGES_MS = 600;
+const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 10000;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -124,9 +123,14 @@ export async function crawlStore(storeUrl) {
   let privacyPageUrl = null;
   let fallbackUsed = false;
 
-  for (const path of PRIVACY_PATHS) {
-    const url = path === '/' ? `${origin}/` : `${origin}${path}`;
-    const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+  const privacyUrls = PRIVACY_PATHS.map((path) => (path === '/' ? `${origin}/` : `${origin}${path}`));
+  const privacyResponses = await Promise.all(
+    privacyUrls.map(async (url) => {
+      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+      return { url, response };
+    })
+  );
+  for (const { url, response } of privacyResponses) {
     if (response.ok && response.html && response.html.trim().length > 0) {
       addPage(url, response.html);
       if (!privacyPageFound) {
@@ -134,18 +138,21 @@ export async function crawlStore(storeUrl) {
         privacyPageUrl = url;
       }
     }
-    await delay(DELAY_BETWEEN_PAGES_MS);
   }
 
   if (!privacyPageFound) {
     fallbackUsed = true;
-    for (const path of FINAL_FALLBACK_PATHS) {
-      const url = path === '/' ? `${origin}/` : `${origin}${path}`;
-      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+    const fallbackUrls = FINAL_FALLBACK_PATHS.map((path) => (path === '/' ? `${origin}/` : `${origin}${path}`));
+    const fallbackResponses = await Promise.all(
+      fallbackUrls.map(async (url) => {
+        const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
+        return { url, response };
+      })
+    );
+    for (const { url, response } of fallbackResponses) {
       if (response.ok && response.html && response.html.trim().length > 0) {
         addPage(url, response.html);
       }
-      await delay(DELAY_BETWEEN_PAGES_MS);
     }
   }
 

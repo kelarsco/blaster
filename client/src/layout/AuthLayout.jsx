@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Logo } from '../components/Logo.jsx';
+
+const AUTH_LOGO_SRC = '/logo-blue-bg.png';
 
 const EyeIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -75,13 +76,23 @@ export function PasswordInputFollow({ id, value, onChange, placeholder, autoComp
 }
 
 /**
- * Shared layout for login/signup. Form centered in the middle of the viewport.
+ * Shared layout for login/signup — branded card centered in the viewport.
  */
 export function AuthLayout({ children }) {
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center bg-white px-4 sm:px-6 py-10">
-      <div className="w-full max-w-[420px]">
-        {children}
+    <div className="min-h-screen flex flex-col justify-center items-center bg-white p-[10px] sm:p-6 py-10">
+      <div className="w-full max-w-[420px] rounded-2xl p-px bg-gradient-to-tl from-blaster-accent/15 via-blaster-orange/15 to-blaster-accent/15 shadow-sm">
+        <div className="relative rounded-[calc(1rem-1px)] bg-white overflow-hidden">
+          <div
+            className="absolute inset-0 pointer-events-none"
+            aria-hidden
+            style={{
+              background:
+                'radial-gradient(ellipse 85% 75% at 100% 100%, rgba(99, 102, 241, 0.03) 0%, rgba(252, 176, 76, 0.03) 42%, transparent 72%)',
+            }}
+          />
+          <div className="relative px-6 sm:px-8 py-8 sm:py-10">{children}</div>
+        </div>
       </div>
     </div>
   );
@@ -96,13 +107,31 @@ export const authPrimaryButtonClass =
 export const authSecondaryButtonClass =
   'w-full py-2.5 rounded-xl border border-blaster-border bg-white hover:bg-blaster-bg-app text-blaster-fg font-medium text-sm transition disabled:opacity-50';
 
-export function AuthLogoLink() {
+export function AuthBrandHeader({ title, description }) {
   return (
-    <Link
-      to="/"
-      className="flex items-center gap-2 text-blaster-fg font-semibold text-base mb-8"
-    >
-      <Logo />
-    </Link>
+    <div className="flex flex-col items-center text-center mb-8">
+      <Link to="/" className="mb-5 shrink-0">
+        <img
+          src={AUTH_LOGO_SRC}
+          alt="wiblaster"
+          width={56}
+          height={56}
+          className="w-14 h-14 rounded-full object-cover"
+        />
+      </Link>
+      {title ? <h1 className="text-2xl font-bold text-blaster-fg">{title}</h1> : null}
+      {description ? (
+        <p className="mt-1.5 text-sm text-blaster-muted max-w-[280px]">{description}</p>
+      ) : null}
+    </div>
   );
+}
+
+/** Logo-only header for other auth flows (reset password, verify email, etc.). */
+export function AuthLogoLink() {
+  return <AuthBrandHeader />;
+}
+
+export function AuthFooterLink({ children }) {
+  return <p className="mt-6 text-sm text-blaster-muted text-center">{children}</p>;
 }

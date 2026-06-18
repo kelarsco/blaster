@@ -6,10 +6,10 @@ import { extractEmailsFromPages } from './emailExtractor.js';
 import { extractContactsFromPages, hasAnyContactData } from './contactExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 5, 12);
-const DELAY_BETWEEN_STORES_MS = 500;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 10, 16);
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 100;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 45000;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
 function parseUrls(text) {

@@ -48,6 +48,30 @@ async function countTotalEmailsSent(db, userId) {
   return (regular.rows[0]?.total || 0) + (manual.rows[0]?.total || 0) + (domain.rows[0]?.total || 0);
 }
 
+async function countEmailsSentOnDate(db, userId, dateKey) {
+  const manual = await db.query(
+    `SELECT COUNT(*)::int AS total FROM manual_send_events mse
+     JOIN manual_campaign_runs mcr ON mcr.id = mse.run_id
+     WHERE mcr.user_id = $1 AND DATE(mse.sent_at AT TIME ZONE 'UTC') = $2::date`,
+    [userId, dateKey]
+  );
+  const regular = await db.query(
+    `SELECT COUNT(*)::int AS total
+     FROM campaign_sends cs
+     JOIN campaigns c ON c.id = cs.campaign_id
+     WHERE c.user_id = $1 AND cs.status = 'sent' AND DATE(cs.sent_at AT TIME ZONE 'UTC') = $2::date`,
+    [userId, dateKey]
+  );
+  const domain = await db.query(
+    `SELECT COUNT(*)::int AS total
+     FROM domain_campaign_sends dcs
+     JOIN domain_campaigns dc ON dc.id = dcs.campaign_id
+     WHERE dc.user_id = $1 AND dcs.status = 'sent' AND DATE(dcs.sent_at AT TIME ZONE 'UTC') = $2::date`,
+    [userId, dateKey]
+  );
+  return (manual.rows[0]?.total || 0) + (regular.rows[0]?.total || 0) + (domain.rows[0]?.total || 0);
+}
+
 async function countThisWeekEmails(db, userId) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const regular = await db.query(
@@ -57,6 +81,12 @@ async function countThisWeekEmails(db, userId) {
      WHERE c.user_id = $1 AND cs.status = 'sent' AND cs.sent_at >= $2`,
     [userId, weekAgo]
   );
+  const manual = await db.query(
+    `SELECT COUNT(*)::int AS total FROM manual_send_events mse
+     JOIN manual_campaign_runs mcr ON mcr.id = mse.run_id
+     WHERE mcr.user_id = $1 AND mse.sent_at >= $2`,
+    [userId, weekAgo]
+  );
   const domain = await db.query(
     `SELECT COUNT(*)::int AS total
      FROM domain_campaign_sends dcs
@@ -64,7 +94,7 @@ async function countThisWeekEmails(db, userId) {
      WHERE dc.user_id = $1 AND dcs.status = 'sent' AND dcs.sent_at >= $2`,
     [userId, weekAgo]
   );
-  return (regular.rows[0]?.total || 0) + (domain.rows[0]?.total || 0);
+  return (regular.rows[0]?.total || 0) + (manual.rows[0]?.total || 0) + (domain.rows[0]?.total || 0);
 }
 
 function rowToState(row) {
@@ -169,6 +199,11 @@ async function reconcileStreakRow(db, row) {
     emailsTodayDate = today;
   } else if (!emailsTodayDate) {
     emailsTodayDate = today;
+  }
+
+  const dbTodayCount = await countEmailsSentOnDate(db, row.user_id, today);
+  if (dbTodayCount > emailsSentToday) {
+    emailsSentToday = dbTodayCount;
   }
 
   if (dailyTarget && streakIsBroken(lastQualifyingDate, today)) {
@@ -282,6 +317,17 @@ export async function getStreakState(userId, { userEmail, userName } = {}) {
       [userId, dbTotal]
     );
     row.total_emails_sent = dbTotal;
+  }
+
+  const today = todayDateKey();
+  const dbTodayCount = await countEmailsSentOnDate(db, userId, today);
+  if (dbTodayCount > Number(row.emails_sent_today || 0)) {
+    await db.query(
+      `UPDATE user_streaks SET emails_sent_today = $2, emails_today_date = $3, updated_at = NOW() WHERE user_id = $1`,
+      [userId, dbTodayCount, today]
+    );
+    row.emails_sent_today = dbTodayCount;
+    row.emails_today_date = today;
   }
 
   row = await qualifyDayIfNeeded(db, userId, row, userEmail, userName);

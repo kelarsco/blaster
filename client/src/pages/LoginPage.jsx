@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
+import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 
 export function LoginPage() {
@@ -96,11 +96,9 @@ export function LoginPage() {
         onClose={() => setSuspendedNotice(false)}
         autoDismissMs={0}
       />
-      <AuthLogoLink />
-      <h1 className="text-2xl font-bold text-blaster-fg">Welcome back</h1>
-      <p className="mt-1.5 text-sm text-blaster-muted">Sign in to your account to continue</p>
+      <AuthBrandHeader title="Welcome back" description="Sign in to your account" />
 
-      <form onSubmit={handleEmailLogin} className="mt-6 space-y-4">
+      <form onSubmit={handleEmailLogin} className="space-y-4">
         <div>
           <label htmlFor="login-email" className="block text-sm font-medium text-blaster-fg mb-1">
             Email
@@ -169,12 +167,12 @@ export function LoginPage() {
         </button>
       </div>
 
-      <p className="mt-6 text-sm text-blaster-muted">
+      <AuthFooterLink>
         Don&apos;t have an account?{' '}
         <Link to="/signup" className="text-blaster-fg font-semibold hover:underline">
           Sign up
         </Link>
-      </p>
+      </AuthFooterLink>
     </AuthLayout>
   );
 }

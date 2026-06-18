@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getStoredPlanId } from '../data/plans';
 import { API } from '../api.js';
-import { AuthLayout, AuthLogoLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
+import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
 
 function getPostSignupPath(search) {
   const fromPricing = search && search.includes('from=pricing');
@@ -113,11 +113,9 @@ export function SignupPage() {
 
   return (
     <AuthLayout>
-      <AuthLogoLink />
-      <h1 className="text-2xl font-bold text-blaster-fg">Create your account</h1>
-      <p className="mt-1.5 text-sm text-blaster-muted">Get started with wiblaster — verify your email to activate your account.</p>
+      <AuthBrandHeader title="Join wiblaster" description="Sign up now to review your dashboard" />
 
-      <form onSubmit={handleSignup} className="mt-6 space-y-4">
+      <form onSubmit={handleSignup} className="space-y-4">
         <div>
           <label htmlFor="signup-username" className="block text-sm font-medium text-blaster-fg mb-1">
             Username
@@ -221,12 +219,12 @@ export function SignupPage() {
         </p>
       </div>
 
-      <p className="mt-6 text-sm text-blaster-muted">
+      <AuthFooterLink>
         Already have an account?{' '}
         <Link to="/login" className="text-blaster-fg font-semibold hover:underline">
           Sign in
         </Link>
-      </p>
+      </AuthFooterLink>
     </AuthLayout>
   );
 }

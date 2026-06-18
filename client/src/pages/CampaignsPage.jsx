@@ -11,6 +11,7 @@ import { ExecutionDashboard } from '../components/ExecutionDashboard';
 import { ExportFieldsModal } from '../components/scanner/ExportFieldsModal.jsx';
 import { API } from '../api.js';
 import { domainFromUrl, exportScanResultsCsv, recipientsToScanResults } from '../utils/scannerUrls.js';
+import { saveManualCampaignDeck } from '../utils/manualCampaignDeck.js';
 import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 
 function DotsIcon({ className }) {
@@ -123,8 +124,20 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
     if (!authFetch) return;
     setSetupError('');
     if (hasActiveRun) {
-      navigate(`/app/campaigns/send/${activeRun.id}`);
-      onClose();
+      setStarting(true);
+      try {
+        const deckRes = await authFetch(`${API}/manual-campaigns/${activeRun.id}/deck`);
+        const deckData = await deckRes.json();
+        if (deckRes.ok && Array.isArray(deckData.deck)) {
+          saveManualCampaignDeck(activeRun.id, deckData.deck);
+        }
+        navigate(`/app/campaigns/send/${activeRun.id}`);
+        onClose();
+      } catch (e) {
+        setSetupError(e.message);
+      } finally {
+        setStarting(false);
+      }
       return;
     }
     if (!canStart) return;
@@ -142,6 +155,9 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to start');
+      if (Array.isArray(data.deck)) {
+        saveManualCampaignDeck(data.run.id, data.deck);
+      }
       navigate(`/app/campaigns/send/${data.run.id}`);
       onClose();
     } catch (e) {

@@ -106,32 +106,39 @@ export function MarketingHeader() {
           <aside
             className={`fixed top-0 right-0 z-50 w-full max-w-sm h-full bg-white border-l shadow-xl flex flex-col sidebar-panel rounded-tl-2xl rounded-bl-2xl ${sidebarVisible ? 'sidebar-panel-open' : ''} ${sidebarClosing ? 'sidebar-panel-closing' : ''}`}
           >
-            <div className="flex items-center justify-between p-4 border-b">
-              <span className="font-bold">Menu</span>
+            <div className="flex items-center justify-end p-4 border-b">
               <button type="button" onClick={closeSidebar} className="p-2 rounded-lg hover:bg-blaster-bg" aria-label="Close">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <nav className="flex-1 p-4 space-y-1">
-              {MARKETING_NAV_LINKS.map((l) =>
-                l.isRoute ? (
-                  <Link key={l.label} to={l.href} onClick={closeSidebar} className="block py-3 font-medium">
-                    {l.label}
-                  </Link>
-                ) : (
-                  <a key={l.label} href={l.href} onClick={closeSidebar} className="block py-3 font-medium">
-                    {l.label}
-                  </a>
-                )
-              )}
-              <Link to="/login" onClick={closeSidebar} className="block py-3 font-medium">
-                Login
-              </Link>
-              <Link to="/pricing" onClick={closeSidebar} className="block py-3 font-medium text-blaster-accent">
-                Start Blasting
-              </Link>
+            <nav className="flex-1 p-4 flex flex-col">
+              <div className="space-y-1">
+                {MARKETING_NAV_LINKS.map((l) =>
+                  l.isRoute ? (
+                    <Link key={l.label} to={l.href} onClick={closeSidebar} className="block py-3 font-medium">
+                      {l.label}
+                    </Link>
+                  ) : (
+                    <a key={l.label} href={l.href} onClick={closeSidebar} className="block py-3 font-medium">
+                      {l.label}
+                    </a>
+                  )
+                )}
+              </div>
+              <div className="mt-auto pt-6 flex flex-col gap-3">
+                <PrimaryPillButton as={Link} to="/pricing" onClick={closeSidebar} className="w-full">
+                  Start Blasting
+                </PrimaryPillButton>
+                <Link
+                  to="/login"
+                  onClick={closeSidebar}
+                  className="inline-flex items-center justify-center h-[45px] px-6 rounded-full border border-black font-medium text-base tracking-wide hover:bg-black/5 transition w-full"
+                >
+                  Login
+                </Link>
+              </div>
             </nav>
           </aside>
         </>

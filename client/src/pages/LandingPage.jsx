@@ -101,9 +101,7 @@ export function LandingPage() {
 
   const handleHeroSubmit = (e) => {
     e.preventDefault();
-    const email = heroEmail.trim();
-    if (email) navigate(`/signup?email=${encodeURIComponent(email)}`);
-    else navigate('/pricing');
+    navigate('/pricing');
   };
 
   return (
@@ -112,9 +110,9 @@ export function LandingPage() {
 
       {/* Hero */}
       <section className="relative min-h-[100vh] flex flex-col justify-center px-4 sm:px-8 py-10 md:py-16 overflow-hidden">
-        <div className="max-w-4xl mx-auto text-center w-full">
+        <div className="max-w-4xl mx-auto text-center w-full -translate-y-10">
           <p className="font-rubik text-sm sm:text-xl text-blaster-ink tracking-wide uppercase">
-            Sit back, your outreach is now on autopilot
+            outreach made fast
           </p>
 
           <h1 className="mt-6 font-bold font-sans text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] leading-[1.05] tracking-tight text-black [text-shadow:1px_1px_0px_white]">
@@ -127,22 +125,18 @@ export function LandingPage() {
                   src={LANDING_ICONS.heroEmail}
                   alt=""
                   className={`hero-email-icon absolute left-1/2 object-contain -translate-x-1/2 -translate-y-1/2 ${heroIconVisible ? 'hero-email-icon--visible' : ''}`}
-                  width={204}
+                  width={244}
                   height={71}
                   decoding="async"
                 />
               </span>
               ges
             </span>{' '}
-            That Actually{' '}
-            <span className="relative inline-block">
-              Convert
-              <span className="absolute left-0 right-0 -bottom-1 h-1 sm:h-1.5 bg-gradient-to-r from-blaster-purple/60 to-blaster-accent/80 rounded-full" aria-hidden />
-            </span>
+            That Actually Convert
           </h1>
 
           <p className="mt-8 font-rubik text-lg sm:text-xl text-blaster-ink max-w-2xl mx-auto leading-relaxed tracking-wide">
-            Find leads, extract emails, and send tailored messges automatically, all from one simple dashboard.
+            Find leads, extract emails, and send tailored messges in minutes, all from one simple dashboard.
           </p>
 
           <form onSubmit={handleHeroSubmit} className="mt-10 aos-fade-up flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-0 max-w-xl mx-auto">

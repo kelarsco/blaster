@@ -145,37 +145,80 @@ async function advanceRunAfterSkip(db, userId, row) {
   };
 }
 
-async function buildCardAtIndex(db, userId, row, idx) {
-  const queue = parseJson(row.recipient_queue, []);
-  if (idx >= queue.length) return null;
-
-  const recipient = queue[idx];
-  let senderOrder = parseJson(row.sender_order, []);
-  const pick = pickNextSender(senderOrder, row.sender_cycle_index || 0, row.last_sender_email);
-  senderOrder = pick.order;
-
-  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+function buildCardContent(recipient, pick, subjects, templates, meta) {
   const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
   const subjectRaw = subjects.length
     ? subjects[Math.floor(Math.random() * subjects.length)]
     : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
   const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
-
-  const subject = fillTemplate(subjectRaw, recipient);
-  const body = fillTemplate(bodyRaw, recipient);
-  const senderEmail = pick.email || senderOrder[0];
+  const senderOrder = pick.order;
 
   return {
-    currentIndex: idx,
-    totalQueued: queue.length,
-    totalSent: row.total_sent || 0,
+    currentIndex: meta.idx,
+    totalQueued: meta.totalQueued,
+    totalSent: meta.totalSent,
     recipient,
-    senderEmail,
-    subject,
-    body,
+    senderEmail: pick.email || senderOrder[0],
+    subject: fillTemplate(subjectRaw, recipient),
+    body: fillTemplate(bodyRaw, recipient),
     senderOrder,
     senderPickIndex: pick.index,
   };
+}
+
+function simulateSenderState(row, upToIndex) {
+  let order = parseJson(row.sender_order, []);
+  let cycleIndex = row.sender_cycle_index || 0;
+  let lastSender = row.last_sender_email;
+  const start = row.current_index || 0;
+
+  for (let i = start; i < upToIndex; i++) {
+    const step = pickNextSender(order, cycleIndex, lastSender);
+    order = step.order;
+    cycleIndex = step.index + 1;
+    lastSender = step.email;
+  }
+  return { order, cycleIndex, lastSender };
+}
+
+async function buildDeckForRun(db, userId, row, fromIndex = 0) {
+  const queue = parseJson(row.recipient_queue, []);
+  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+  const start = Math.max(fromIndex, row.current_index || 0);
+
+  let { order, cycleIndex, lastSender } = simulateSenderState(row, start);
+  const deck = [];
+
+  for (let idx = start; idx < queue.length; idx++) {
+    const pick = pickNextSender(order, cycleIndex, lastSender);
+    order = pick.order;
+    deck.push(
+      buildCardContent(queue[idx], pick, subjects, templates, {
+        idx,
+        totalQueued: queue.length,
+        totalSent: row.total_sent || 0,
+      })
+    );
+    cycleIndex = pick.index + 1;
+    lastSender = pick.email;
+  }
+
+  return deck;
+}
+
+async function buildCardAtIndex(db, userId, row, idx) {
+  const queue = parseJson(row.recipient_queue, []);
+  if (idx >= queue.length) return null;
+
+  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+  let { order, cycleIndex, lastSender } = simulateSenderState(row, idx);
+  const pick = pickNextSender(order, cycleIndex, lastSender);
+
+  return buildCardContent(queue[idx], pick, subjects, templates, {
+    idx,
+    totalQueued: queue.length,
+    totalSent: row.total_sent || 0,
+  });
 }
 
 manualCampaignRoutes.get('/', requireAuth, async (req, res) => {
@@ -229,8 +272,10 @@ manualCampaignRoutes.post('/start', requireAuth, async (req, res) => {
         "UPDATE manual_campaign_runs SET status = 'in_progress', updated_at = NOW() WHERE id = $1",
         [existing.rows[0].id]
       );
-      const run = rowToRun(existing.rows[0]);
-      return res.json({ run: { ...run, status: 'in_progress' }, resumed: true });
+      const row = existing.rows[0];
+      const run = rowToRun({ ...row, status: 'in_progress' });
+      const deck = await buildDeckForRun(db, userId, row, row.current_index || 0);
+      return res.json({ run, deck, resumed: true });
     }
 
     const id = uuidv4();
@@ -248,7 +293,8 @@ manualCampaignRoutes.post('/start', requireAuth, async (req, res) => {
     );
     logActivity('manual_campaign_start', { runId: id, emailListId, total: recipients.length }, userId);
     const row = (await db.query('SELECT * FROM manual_campaign_runs WHERE id = $1', [id])).rows[0];
-    res.json({ run: rowToRun(row), resumed: false });
+    const deck = await buildDeckForRun(db, userId, row, 0);
+    res.json({ run: rowToRun(row), deck, resumed: false });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -285,6 +331,28 @@ manualCampaignRoutes.get('/:runId/stats', requireAuth, async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'Run not found' });
     res.json(await getRunTrackingStats(db, row.id, row));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+manualCampaignRoutes.get('/:runId/deck', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const result = await db.query(
+      'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
+      [req.params.runId, req.user.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    if (row.status === 'completed') {
+      const tracking = await getRunTrackingStats(db, row.id, row);
+      return res.json({ completed: true, deck: [], ...tracking });
+    }
+    const deck = await buildDeckForRun(db, req.user.id, row, row.current_index || 0);
+    const tracking = await getRunTrackingStats(db, row.id, row);
+    res.json({ completed: false, deck, ...tracking });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

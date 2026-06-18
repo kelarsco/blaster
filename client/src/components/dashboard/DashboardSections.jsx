@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, TrendingUp, TrendingDown, Minus, Calendar, Mail, Zap, Award, Target, Star } from 'react-feather';
+import { Check, TrendingUp, TrendingDown, Minus, Mail, Zap, Award, Target, Star } from 'react-feather';
 import { RecentActivityList } from './RecentActivityList.jsx';
 import { FeatureLockOverlay } from '../access/PlanAccessUI.jsx';
 import { MIN_DAILY_TARGET } from '../../utils/streaksAndBadges.js';
@@ -281,6 +281,10 @@ export function StreaksAndBadgesPanel({
 
   const parsedTarget = Number(targetInput);
   const canSetTarget = Number.isFinite(parsedTarget) && parsedTarget >= MIN_DAILY_TARGET;
+  const dailyTarget = data.dailyTarget || 0;
+  const emailsSentTodayDisplay = dailyTarget
+    ? Math.min(data.emailsSentToday || 0, dailyTarget)
+    : data.emailsSentToday || 0;
 
   const handleSetTarget = async () => {
     if (!canSetTarget || !onSetTarget) return;
@@ -365,18 +369,11 @@ export function StreaksAndBadgesPanel({
 
       {data.hasDailyTarget && (
         <p className="text-right text-xs text-blaster-muted -mt-3 mb-5">
-          {data.emailsSentToday?.toLocaleString() || 0} / {data.dailyTarget?.toLocaleString()} sent today
+          {emailsSentTodayDisplay.toLocaleString()} / {dailyTarget.toLocaleString()} sent today
         </p>
       )}
 
       <div className="space-y-2 mb-6">
-        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gray-50 border border-blaster-border/60">
-          <div className="flex items-center gap-2.5 text-sm text-blaster-muted">
-            <BrandGradientIcon Icon={Calendar} />
-            This week
-          </div>
-          <StreakStatValue>{data.thisWeekEmails.toLocaleString()} emails</StreakStatValue>
-        </div>
         <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gray-50 border border-blaster-border/60">
           <div className="flex items-center gap-2.5 text-sm text-blaster-muted">
             <BrandGradientIcon Icon={Mail} />

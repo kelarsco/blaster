@@ -8,13 +8,25 @@ export function fillTemplate(text, recipient) {
 }
 
 /** Plain-text mailto — uses encodeURIComponent so spaces stay spaces (not +). */
-export function buildMailtoUrl({ to, subject, body }) {
+export function buildMailtoUrl({ to, from, subject, body }) {
   const toEnc = encodeURIComponent(to || '');
   const params = [];
+  if (from) params.push(`from=${encodeURIComponent(from)}`);
   if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
   if (body) params.push(`body=${encodeURIComponent(body)}`);
   const qs = params.join('&');
   return `mailto:${toEnc}${qs ? `?${qs}` : ''}`;
+}
+
+/** Open mailto without unloading the page (keeps in-flight send logging alive). */
+export function openMailtoUrl(url) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.rel = 'noopener noreferrer';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
 }
 
 /** Invisible 1×1 open tracker for HTML emails (not visible in compose — use with SMTP/HTML send). */

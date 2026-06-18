@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Check, X, ChevronDown } from 'react-feather';
+import { Check, X, ChevronDown, Link2, Download, Mail, CreditCard } from 'react-feather';
 import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 import {
@@ -12,6 +12,22 @@ import {
   getBillingPlanId,
   storeSelectedPlan,
 } from '../data/plans';
+
+const PLAN_INCLUDES = [
+  { label: 'Store URL scanner & email extraction', Icon: Link2 },
+  { label: 'Export to Excel', Icon: Download },
+  { label: 'Campaigns & templates', Icon: Mail },
+  { label: 'Secure payment via Paystack', Icon: CreditCard },
+];
+
+function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...props }) {
+  const classes = `inline-flex items-center justify-center h-[53px] px-6 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-poppins font-medium text-base tracking-wide shadow-blaster-cta transition hover:opacity-90 ${className}`;
+  return (
+    <Tag className={classes} {...props}>
+      {children}
+    </Tag>
+  );
+}
 
 function ComparisonCell({ value }) {
   if (value === true) {
@@ -198,45 +214,56 @@ export function PricingPage() {
 
         <section className="mt-16 text-center">
           <h2 className="text-xl font-bold text-blaster-fg">What’s included in every plan</h2>
-          <ul className="mt-4 inline-flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm text-blaster-muted">
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" strokeWidth={2.5} />
-              Store URL scanner & email extraction
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" strokeWidth={2.5} />
-              Export to Excel
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" strokeWidth={2.5} />
-              Campaigns & templates
-            </li>
-            <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600 shrink-0" strokeWidth={2.5} />
-              Secure payment via Paystack
-            </li>
+          <ul className="mt-4 inline-flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm text-blaster-muted">
+            {PLAN_INCLUDES.map(({ label, Icon }) => (
+              <li key={label} className="flex items-center gap-2">
+                <Icon className="w-4 h-4 text-blaster-accent shrink-0" strokeWidth={2} />
+                {label}
+              </li>
+            ))}
           </ul>
         </section>
 
-        <div className="mt-16 rounded-2xl bg-blaster-accent/10 border border-blaster-accent/20 p-8 text-center">
-          <h2 className="text-xl font-bold text-blaster-fg">Ready to scale your outreach?</h2>
-          <p className="mt-2 text-blaster-muted max-w-lg mx-auto">
+        <div className="mt-16 max-w-[850px] mx-auto bg-white border border-[rgba(99,101,242,0.13)] rounded-[25px] shadow-step p-8 md:p-10 text-center">
+          <h2 className="font-rubik text-2xl md:text-[32px] text-[#030303] leading-tight">Ready to scale your outreach?</h2>
+          <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-lg mx-auto">
             Create an account in under a minute. Pick a plan and complete payment securely with Paystack.
           </p>
-          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link to="/signup" className="btn-blaster-cta btn-landing-pop">
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <PrimaryPillButton as={Link} to="/signup">
               Create free account
-            </Link>
-            <Link to="/login" className="btn-blaster-accent px-5 py-2.5 rounded-lg btn-landing-pop">
+            </PrimaryPillButton>
+            <Link
+              to="/login"
+              className="inline-flex items-center justify-center h-[45px] px-6 rounded-full border border-black font-medium text-base tracking-wide hover:bg-black/5 transition"
+            >
               I already have an account
             </Link>
           </div>
         </div>
       </main>
 
-      <footer className="py-8 px-4 border-t border-blaster-border text-center text-sm text-blaster-muted mt-12">
-        <Link to="/" className="text-blaster-accent hover:underline">← Back to home</Link>
-        <p className="mt-2">© {new Date().getFullYear()} <Logo className="inline w-auto h-auto" />. All rights reserved.</p>
+      <footer className="py-10 px-4 sm:px-8 border-t border-blaster-border bg-white">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-blaster-muted">
+          <Link to="/" className="shrink-0">
+            <Logo className="!w-[100px]" />
+          </Link>
+          <div className="flex flex-wrap justify-center gap-6">
+            <Link to="/pricing" className="hover:text-black transition">
+              Pricing
+            </Link>
+            <Link to="/login" className="hover:text-black transition">
+              Login
+            </Link>
+            <Link to="/privacy" className="hover:text-black transition">
+              Privacy
+            </Link>
+            <Link to="/terms" className="hover:text-black transition">
+              Terms
+            </Link>
+          </div>
+          <p className="text-center sm:text-right">© {new Date().getFullYear()} wiblaster</p>
+        </div>
       </footer>
     </div>
   );

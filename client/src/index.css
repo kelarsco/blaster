@@ -166,9 +166,17 @@ input:focus, textarea:focus {
 .hero-email-icon {
   opacity: 0;
   pointer-events: none;
-  top: 43px;
-  width: 204px;
-  height: 71px;
+  top: 13px;
+  width: 76.9387px;
+  height: 167px;
+}
+
+@media (min-width: 640px) {
+  .hero-email-icon {
+    top: 43px;
+    width: 56.9387px;
+    height: 147px;
+  }
 }
 
 .hero-email-icon--visible {
