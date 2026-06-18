@@ -35,7 +35,8 @@ function isLocalHost(host) {
 function getPublicHost(req) {
   if (!req) return '';
   const forwarded = (req.get('x-forwarded-host') || '').split(',')[0].trim();
-  return forwarded || req.get('host') || '';
+  const host = (forwarded || req.get('host') || '').split(',')[0].trim();
+  return host;
 }
 
 function getPublicProto(req) {
@@ -74,49 +75,65 @@ export function isRailwayDeploy() {
   );
 }
 
-/** Public site URL (referrals, post-OAuth redirects, invite links). */
-export function resolveFrontendUrl(req) {
-  const explicit = (
+function pickFirstEnvUrl(value) {
+  return String(value || '').split(',')[0].trim();
+}
+
+/** Normalize wiblaster.com / www.wiblaster.com to one canonical origin. */
+export function normalizeToCanonicalSiteUrl(url) {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return normalized;
+  try {
+    const { hostname, protocol } = new URL(normalized);
+    const host = hostname.toLowerCase();
+    if (host === 'wiblaster.com' || host === 'www.wiblaster.com') {
+      return CANONICAL_SITE_URL;
+    }
+    return `${protocol}//${host}`;
+  } catch {
+    return normalized;
+  }
+}
+
+/** Single public site origin for referral links, emails, and redirects. */
+export function getCanonicalPublicSiteUrl(req) {
+  const explicit = pickFirstEnvUrl(
     process.env.FRONTEND_URL ||
-    process.env.PUBLIC_APP_URL ||
-    process.env.CANONICAL_FRONTEND_URL ||
-    ''
-  ).trim();
+      process.env.PUBLIC_APP_URL ||
+      process.env.CANONICAL_FRONTEND_URL
+  );
   if (explicit && !isLocalUrl(explicit)) {
-    return normalizeUrl(explicit);
+    return normalizeToCanonicalSiteUrl(explicit);
+  }
+
+  if (isFlyDeploy() || isRailwayDeploy() || process.env.NODE_ENV === 'production') {
+    return CANONICAL_SITE_URL;
+  }
+
+  const flyHost = getFlyPublicHost();
+  if (flyHost && !isFlyDevHost(flyHost) && !isLocalHost(flyHost)) {
+    return normalizeToCanonicalSiteUrl(`https://${flyHost.split(',')[0].trim()}`);
+  }
+
+  const railwayHost = getRailwayHost();
+  if (railwayHost) {
+    return normalizeToCanonicalSiteUrl(`https://${railwayHost.split(',')[0].trim()}`);
   }
 
   if (req) {
     const host = getPublicHost(req);
     const proto = getPublicProto(req);
     if (host && !isLocalHost(host) && !isFlyDevHost(host)) {
-      return normalizeUrl(`${proto}://${host}`);
-    }
-  }
-
-  if (isFlyDeploy() || isRailwayDeploy() || process.env.NODE_ENV === 'production') {
-    return normalizeUrl(CANONICAL_SITE_URL);
-  }
-
-  const flyHost = getFlyPublicHost();
-  if (flyHost && !isFlyDevHost(flyHost)) {
-    return normalizeUrl(`https://${flyHost}`);
-  }
-
-  const railwayHost = getRailwayHost();
-  if (railwayHost) {
-    return normalizeUrl(`https://${railwayHost}`);
-  }
-
-  if (req) {
-    const host = getPublicHost(req);
-    const proto = getPublicProto(req);
-    if (host && !isLocalHost(host)) {
-      return normalizeUrl(`${proto}://${host}`);
+      return normalizeToCanonicalSiteUrl(`${proto}://${host}`);
     }
   }
 
   return normalizeUrl(explicit || 'http://localhost:3000');
+}
+
+/** Public site URL (referrals, post-OAuth redirects, invite links). */
+export function resolveFrontendUrl(req) {
+  return getCanonicalPublicSiteUrl(req);
 }
 
 /** Google OAuth redirect URI — must match Google Cloud Console exactly. */

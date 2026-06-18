@@ -3,6 +3,7 @@ import { Trash2 } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext';
 import { ResourceTypeToggle } from '../../components/resources/ResourceTypeToggle.jsx';
 import { getYoutubeVideoId } from '../../utils/youtube.js';
+import { useConfirm } from '../../context/ConfirmDialogContext.jsx';
 
 function formatAddedAt(iso) {
   if (!iso) return '';
@@ -19,6 +20,7 @@ function formatAddedAt(iso) {
 
 export function AdminResourcesPage() {
   const { adminFetch } = useAdmin();
+  const confirm = useConfirm();
   const [listTab, setListTab] = useState('video');
   const [addType, setAddType] = useState('video');
   const [title, setTitle] = useState('');
@@ -89,7 +91,13 @@ export function AdminResourcesPage() {
   };
 
   const deleteResource = async (id) => {
-    if (!window.confirm('Delete this resource?')) return;
+    const ok = await confirm({
+      title: 'Delete resource',
+      message: 'Delete this resource? This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setError('');
     try {
       const res = await adminFetch(`/resources/${id}`, { method: 'DELETE' });

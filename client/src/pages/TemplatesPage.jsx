@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Trash2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
+import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 
 export function TemplatesPage() {
   const { authFetch } = useAuth();
+  const confirm = useConfirm();
   const [presets, setPresets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,7 +61,12 @@ export function TemplatesPage() {
 
   const deleteTemplate = async (preset) => {
     if (!authFetch || !preset?.id) return;
-    const ok = window.confirm(`Delete template "${preset.name}"?`);
+    const ok = await confirm({
+      title: 'Delete template',
+      message: `Delete template "${preset.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
     if (!ok) return;
     setError('');
     try {

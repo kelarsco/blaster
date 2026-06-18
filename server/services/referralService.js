@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
-import { resolveFrontendUrl } from './oauthUrls.js';
+import { getCanonicalPublicSiteUrl } from './oauthUrls.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './cookiePolicy.js';
 import {
   sendReferralSignupNotification,
@@ -79,8 +79,10 @@ export function getProgressMessage(upgradeCount) {
 }
 
 export function buildReferralUrl(code, req) {
-  const base = resolveFrontendUrl(req);
-  return `${base}/signup?ref=${encodeURIComponent(code)}`;
+  const base = getCanonicalPublicSiteUrl(req);
+  const safeCode = String(code || '').trim().toUpperCase();
+  if (!safeCode) return '';
+  return `${base}/signup?ref=${encodeURIComponent(safeCode)}`;
 }
 
 export async function ensureUserReferralCode(userId) {

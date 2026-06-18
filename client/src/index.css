@@ -289,7 +289,7 @@ button[class*="bg-blaster-accent"]:not([class*="bg-blaster-accent/"]) {
 /* Mobile: lift plan panel above bottom edge */
 @media (max-width: 767px) {
   .sidebar-plan-panel {
-    margin-bottom: 2rem;
+    margin-bottom: calc(2rem + 20px);
     transform: none;
   }
 }

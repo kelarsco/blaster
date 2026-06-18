@@ -3,6 +3,7 @@ import { Mail } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
+import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 
 function VerifiedBadge() {
   return (
@@ -31,6 +32,7 @@ export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
   const { status, openUpgradeModal, refresh } = usePlanAccess();
+  const confirm = useConfirm();
 
   const [groups, setGroups] = useState([]);
   const [maxPerGroup, setMaxPerGroup] = useState(10);
@@ -89,7 +91,14 @@ export function SendersPage() {
   };
 
   const deleteGroup = async (groupId) => {
-    if (!authFetch || !window.confirm('Delete this sender group and all its email links?')) return;
+    if (!authFetch) return;
+    const ok = await confirm({
+      title: 'Delete sender group',
+      message: 'Delete this sender group and all its email links? This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await authFetch(`${API}/automation/senders/groups/${groupId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');

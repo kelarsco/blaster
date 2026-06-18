@@ -48,6 +48,7 @@ import { AdminAddLeadsPage } from './pages/bl-admin/AdminAddLeadsPage';
 import { AdminReferralsPage } from './pages/bl-admin/AdminReferralsPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
 import { PlanAccessProvider } from './context/PlanAccessContext.jsx';
+import { ConfirmDialogProvider } from './context/ConfirmDialogContext.jsx';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -170,9 +171,11 @@ export default function App() {
     <BrowserRouter>
       <ScrollToTop />
       <AuthProvider>
-        <GlobalPreloaderGate>
-          <AppRoutes />
-        </GlobalPreloaderGate>
+        <ConfirmDialogProvider>
+          <GlobalPreloaderGate>
+            <AppRoutes />
+          </GlobalPreloaderGate>
+        </ConfirmDialogProvider>
       </AuthProvider>
     </BrowserRouter>
   );

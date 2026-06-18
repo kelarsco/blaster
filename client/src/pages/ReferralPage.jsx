@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
+import { buildReferralSignupUrl, sanitizeReferralUrl } from '../utils/referralUrl.js';
 import { ReferralPageSkeleton } from '../components/referral/ReferralPageSkeleton.jsx';
 import { BrandGradientIcon, BrandIconBox, CrownIcon } from '../components/BrandGradientIcon.jsx';
 import { FeatureLockOverlay } from '../components/access/PlanAccessUI.jsx';
@@ -159,7 +160,11 @@ export function ReferralPage() {
     loadReferral();
   }, [loadReferral]);
 
-  const referralUrl = data?.referralUrl || '';
+  const referralUrl = useMemo(() => {
+    const code = data?.referralCode || '';
+    if (code) return buildReferralSignupUrl(code);
+    return sanitizeReferralUrl(data?.referralUrl, code);
+  }, [data?.referralCode, data?.referralUrl]);
   const shareText = `${REFERRAL_MESSAGE} ${referralUrl}`;
 
   const copyLink = async () => {

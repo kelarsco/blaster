@@ -58,7 +58,10 @@ export function ManualSendPage() {
       const res = await authFetch(`${API}/manual-campaigns/${runId}/stats`);
       const data = await res.json();
       if (res.ok) {
-        setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+        setStats((prev) => ({
+          totalSent: Math.max(prev.totalSent, data.totalSent ?? 0),
+          totalQueued: data.totalQueued ?? prev.totalQueued,
+        }));
       }
     } catch (_) {}
   }, [authFetch, runId]);
@@ -103,7 +106,7 @@ export function ManualSendPage() {
     };
   }, [authFetch, runId, refreshStats]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!authFetch || !card) return;
     setError('');
 
@@ -114,50 +117,35 @@ export function ManualSendPage() {
       body: sendingCard.body,
     });
 
-    const queuedNext = nextCard;
-    const willComplete = stats.totalSent + 1 >= stats.totalQueued;
+    try {
+      const preRes = await authFetch(`${API}/manual-campaigns/${runId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderEmail: sendingCard.senderEmail,
+          subject: sendingCard.subject,
+          body: sendingCard.body,
+          senderOrder: sendingCard.senderOrder,
+          senderPickIndex: sendingCard.senderPickIndex,
+        }),
+      });
+      const preData = await preRes.json();
+      if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
 
-    setStats((s) => ({
-      totalSent: s.totalSent + 1,
-      totalQueued: s.totalQueued,
-    }));
+      setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
+      if (preData.completed) {
+        setCompleted(true);
+        setCard(null);
+        setNextCard(null);
+      } else {
+        setCard(nextCardFromPayload(preData.next));
+        setNextCard(nextCardFromPayload(preData.prefetch));
+      }
 
-    if (willComplete) {
-      setCompleted(true);
-      setCard(null);
-      setNextCard(null);
-    } else if (queuedNext) {
-      setCard(queuedNext);
-      setNextCard(null);
+      window.location.href = mailto;
+    } catch (e) {
+      setError(e.message);
     }
-
-    window.location.href = mailto;
-
-    void authFetch(`${API}/manual-campaigns/${runId}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        senderEmail: sendingCard.senderEmail,
-        subject: sendingCard.subject,
-        body: sendingCard.body,
-        senderOrder: sendingCard.senderOrder,
-        senderPickIndex: sendingCard.senderPickIndex,
-      }),
-    })
-      .then(async (preRes) => {
-        const preData = await preRes.json();
-        if (!preRes.ok) throw new Error(preData.error || 'Failed to log send');
-        setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
-        if (preData.completed) {
-          setCompleted(true);
-          setCard(null);
-          setNextCard(null);
-        } else {
-          if (preData.next) setCard(nextCardFromPayload(preData.next));
-          setNextCard(nextCardFromPayload(preData.prefetch));
-        }
-      })
-      .catch((e) => setError(e.message));
   };
 
   const handlePause = async () => {

@@ -11,6 +11,7 @@ import { ExecutionDashboard } from '../components/ExecutionDashboard';
 import { ExportFieldsModal } from '../components/scanner/ExportFieldsModal.jsx';
 import { API } from '../api.js';
 import { domainFromUrl, exportScanResultsCsv, recipientsToScanResults } from '../utils/scannerUrls.js';
+import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 
 function DotsIcon({ className }) {
   return (
@@ -321,6 +322,7 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
 export function CampaignsPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const confirm = useConfirm();
   const location = useLocation();
   const { status, openUpgradeModal } = usePlanAccess();
   const { setAutomationOpen, activeCampaignId, setActiveCampaignId } = useToolState();
@@ -346,9 +348,12 @@ export function CampaignsPage() {
 
   const archiveList = useCallback(async (list) => {
     if (!authFetch || !list?.id) return;
-    const ok = window.confirm(
-      `Remove "${list.name}" from campaigns? Contact data is kept for analytics.`
-    );
+    const ok = await confirm({
+      title: 'Remove campaign',
+      message: `Remove "${list.name}" from campaigns? Contact data is kept for analytics.`,
+      confirmLabel: 'Remove',
+      variant: 'danger',
+    });
     if (!ok) return;
     try {
       const res = await authFetch(`${API}/email-lists/${list.id}`, { method: 'DELETE' });
@@ -361,7 +366,7 @@ export function CampaignsPage() {
     } catch (e) {
       window.alert(e?.message || 'Failed to remove campaign');
     }
-  }, [authFetch, viewingList?.id]);
+  }, [authFetch, confirm, viewingList?.id]);
 
   useEffect(() => {
     fetchLists();
@@ -438,6 +443,13 @@ export function CampaignsPage() {
 
   const deleteSelected = async () => {
     if (selectedIds.size === 0 || !authFetch) return;
+    const ok = await confirm({
+      title: 'Delete campaigns',
+      message: `Delete ${selectedIds.size} selected campaign(s)? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       const res = await authFetch(`${API}/campaigns/delete`, {

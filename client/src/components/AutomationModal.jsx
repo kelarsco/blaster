@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { domainFromUrl } from '../utils/scannerUrls.js';
+import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 
 function getEmailProvider(email) {
   if (!email || typeof email !== 'string') return 'domain';
@@ -55,6 +56,7 @@ function mergePresets(presetList) {
 export function AutomationModal({ scanId, results, recipientsOverride, onClose, onCampaignStart }) {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const confirm = useConfirm();
   const [groups, setGroups] = useState([]);
   const [inUseGroupIds, setInUseGroupIds] = useState(new Set());
   const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -96,7 +98,12 @@ export function AutomationModal({ scanId, results, recipientsOverride, onClose, 
 
   const deletePreset = async (preset) => {
     if (!preset?.id || !authFetch) return;
-    const ok = window.confirm(`Delete template "${preset.name}"?`);
+    const ok = await confirm({
+      title: 'Delete template',
+      message: `Delete template "${preset.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
     if (!ok) return;
     setError('');
     try {
