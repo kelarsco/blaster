@@ -1,33 +1,32 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Image, Edit2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
-
-const PROFILE_KEY = 'wiblaster-profile';
-const PROFILE_IMAGE_KEY = 'wiblaster-profile-image';
-
-function loadProfile() {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  return { firstName: '', lastName: '' };
-}
-
-function loadProfileImage() {
-  try {
-    return localStorage.getItem(PROFILE_IMAGE_KEY) || null;
-  } catch (_) {}
-  return null;
-}
+import {
+  loadProfileFromStorage,
+  loadProfileImageFromStorage,
+  saveProfileToStorage,
+  saveProfileImageToStorage,
+} from '../utils/profileStorage.js';
 
 export function ProfilePage() {
   const { user, authFetch } = useAuth();
-  const [profile, setProfile] = useState(loadProfile);
+  const userId = user?.id;
+  const [profile, setProfile] = useState({ firstName: '', lastName: '' });
   const [saved, setSaved] = useState(false);
-  const [profileImage, setProfileImage] = useState(loadProfileImage);
+  const [profileImage, setProfileImage] = useState(null);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setProfile({ firstName: '', lastName: '' });
+      setProfileImage(null);
+      return;
+    }
+    setProfile(loadProfileFromStorage(userId));
+    setProfileImage(loadProfileImageFromStorage(userId));
+  }, [userId]);
 
   const isGoogleUser = user?.auth_provider === 'google';
 
@@ -43,26 +42,22 @@ export function ProfilePage() {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file || !file.type.startsWith('image/') || !userId) return;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result;
       setProfileImage(dataUrl);
-      try {
-        localStorage.setItem(PROFILE_IMAGE_KEY, dataUrl);
-        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('profileImageUpdated'));
-      } catch (_) {}
+      saveProfileImageToStorage(userId, dataUrl);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
   const save = () => {
-    try {
-      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (_) {}
+    if (!userId) return;
+    saveProfileToStorage(userId, profile);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   const handleChangePassword = async (e) => {

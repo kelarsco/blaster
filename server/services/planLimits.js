@@ -85,6 +85,13 @@ export async function getPlanLimitsForUser(userId) {
   const feats = row ? features : (await db.query(`SELECT features FROM plans WHERE id = 'free' LIMIT 1`).then((r) => r.rows?.[0]?.features || {}));
   defaults.emailsLimit = parseFeatureNum(feats, 'emails', FREE_TRIAL_EMAILS_LIMIT);
   defaults.scansLimit = parseFeatureNum(feats, 'scans', FREE_TRIAL_SCANS_LIMIT);
+
+  if (row && (planId.startsWith('essentials') || planId.startsWith('standard') || planId.startsWith('premium'))) {
+    defaults.emailsLimit = UNLIMITED_NUM;
+    defaults.scansLimit = UNLIMITED_NUM;
+    defaults.campaignsLimit = UNLIMITED_NUM;
+  }
+
   defaults.usersLimit = row ? parseFeatureNum(features, 'users', 1) : 1;
   const camp = feats.campaigns;
   if (camp != null) {

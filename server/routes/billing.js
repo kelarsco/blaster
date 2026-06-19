@@ -21,6 +21,44 @@ async function getPlanIdByPaystackCode(paystackPlanCode) {
   return r.rows?.[0]?.id || null;
 }
 
+function periodDaysForPlanInterval(interval) {
+  return interval === 'annually' ? 365 : 31;
+}
+
+async function disablePaystackSubscription(code) {
+  if (!PAYSTACK_SECRET || !code) return;
+  try {
+    const response = await fetch(`${PAYSTACK_BASE}/subscription/disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PAYSTACK_SECRET },
+      body: JSON.stringify({ code, token: code }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!data.status && data.message) {
+      console.warn('[billing] Paystack disable:', data.message);
+    }
+  } catch (e) {
+    console.warn('[billing] Paystack disable failed:', e?.message || e);
+  }
+}
+
+/** Cancel all active paid subscriptions for a user (DB + Paystack). Used for plan changes. */
+async function cancelActivePaidSubscriptions(db, userId) {
+  const subs = await db.query(
+    `SELECT s.id, s.paystack_subscription_code FROM subscriptions s
+     JOIN plans p ON p.id = s.plan_id
+     WHERE s.user_id = $1 AND s.status IN ('active', 'trialing') AND p.amount > 0`,
+    [userId]
+  );
+  for (const row of subs.rows || []) {
+    await disablePaystackSubscription(row.paystack_subscription_code);
+    await db.query(
+      `UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+      [row.id]
+    );
+  }
+}
+
 export const billingRoutes = Router();
 const FREE_TRIAL_HOURS = 24;
 
@@ -260,6 +298,16 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
     if (!PAYSTACK_SECRET) return res.status(503).json({ error: 'Paystack is not configured. Set PAYSTACK_SECRET_KEY in server .env' });
     const { planId } = req.body || {};
     if (!planId) return res.status(400).json({ error: 'planId is required' });
+    const userId = req.user.id;
+
+    const existingSame = await db.query(
+      `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = $2 AND status IN ('active', 'trialing') LIMIT 1`,
+      [userId, planId]
+    );
+    if (existingSame.rows.length > 0) {
+      return res.status(400).json({ error: 'You are already on this plan.' });
+    }
+
     let planRow = await db.query('SELECT id, name, amount, paystack_plan_code FROM plans WHERE id = $1', [planId]);
     let plan = planRow.rows?.[0];
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
@@ -272,7 +320,7 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
     if (plan.amount > 0 && !planCode) return res.status(503).json({ error: 'Paystack plans are still being set up. Please try again in a moment.' });
 
     const email = req.user.email;
-    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/billing?paystack=success';
+    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/settings/usage?paystack=success';
 
     // Paystack requires amount in the body (plan overrides it for the charge). Omitting it can cause "Invalid Amount Sent".
     const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
@@ -342,17 +390,7 @@ billingRoutes.post('/subscription/pause', requireAuth, async (req, res) => {
     const row = sub.rows?.[0];
     if (!row) return res.status(400).json({ error: 'No active paid subscription to pause. Free plans cannot be paused.' });
     const code = row.paystack_subscription_code;
-    if (PAYSTACK_SECRET && code) {
-      const response = await fetch(`${PAYSTACK_BASE}/subscription/disable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PAYSTACK_SECRET },
-        body: JSON.stringify({ code, token: code }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!data.status && data.message) {
-        console.warn('[billing pause] Paystack:', data.message);
-      }
-    }
+    await disablePaystackSubscription(code);
     await db.query(
       `UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
       [row.id]
@@ -438,7 +476,7 @@ billingRoutes.post('/extra-credit/initialize', requireAuth, async (req, res) => 
       return res.status(400).json({ error: 'amountCents must be 1000 ($10), 3000 ($30), 5000 ($50), or 10000 ($100)' });
     }
     const email = req.user.email;
-    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/billing?paystack=success&extra=1';
+    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/settings/usage?paystack=success&extra=1';
     const reference = `extra_${uuidv4().replace(/-/g, '')}`;
     const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'NGN';
     const { getUsdToNgnRate, amountForPaystack } = await import('../services/paystackSync.js');
@@ -519,6 +557,11 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     if (tx.status !== 'success') {
       return res.status(400).json({ error: 'Transaction was not successful' });
     }
+    const payerEmail = (tx.customer?.email || tx.authorization?.email || '').trim().toLowerCase();
+    const userEmail = (req.user?.email || '').trim().toLowerCase();
+    if (payerEmail && userEmail && payerEmail !== userEmail) {
+      return res.status(403).json({ error: 'Payment does not belong to this account' });
+    }
     const planRef = tx.plan;
     const planCode = typeof planRef === 'string' ? planRef : (planRef?.plan_code ?? null);
     if (!planCode) {
@@ -538,15 +581,17 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     if (existing.rows.length > 0) {
       return res.json({ ok: true, planId });
     }
+    await cancelActivePaidSubscriptions(db, userId);
     const now = new Date();
-    const periodEnd = new Date(now.getTime() + 31 * 24 * 60 * 60 * 1000);
+    const planMeta = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [planId]);
+    const plan = planMeta.rows?.[0];
+    const periodDays = periodDaysForPlanInterval(plan?.interval);
+    const periodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000);
     await db.query(
       `INSERT INTO subscriptions (id, user_id, plan_id, paystack_subscription_code, paystack_customer_code, status, current_period_start, current_period_end, updated_at)
        VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
       [uuidv4(), userId, planId, tx.authorization?.subscription_code ?? null, tx.authorization?.customer_code ?? null, now, periodEnd]
     );
-    const planRow = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [planId]);
-    const plan = planRow.rows?.[0];
     const toEmail = req.user?.email;
     if (toEmail && plan) {
       const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';
@@ -595,6 +640,12 @@ export async function handlePaystackWebhook(req, res) {
       const paystackPlanCode = data?.plan || data?.authorization?.plan;
       const planId = paystackPlanCode ? await getPlanIdByPaystackCode(paystackPlanCode) : null;
       if (!planId) return res.status(200).send('OK');
+      const existing = await db.query(
+        `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = $2 AND status = 'active' ORDER BY current_period_end DESC LIMIT 1`,
+        [userId, planId]
+      );
+      if (existing.rows.length > 0) return res.status(200).send('OK');
+      await cancelActivePaidSubscriptions(db, userId);
       const sub = data?.authorization?.subscription || data?.subscription || {};
       const periodStart = sub.start ? new Date(sub.start * 1000) : new Date();
       const periodEnd = sub.end ? new Date(sub.end * 1000) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);

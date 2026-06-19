@@ -315,6 +315,7 @@ async function runSchema(p) {
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"5"') WHERE id LIKE 'essentials%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'premium%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"500/month"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id LIKE 'premium%';

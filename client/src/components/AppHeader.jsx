@@ -25,18 +25,25 @@ const dropdownItems = [
 
 export function AppHeader({ loading, trialBannerVisible, onOpenHelp, onOpenSupport }) {
   const { user, logout } = useAuth();
+  const userId = user?.id;
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [profile, setProfile] = useState(() => loadProfileFromStorage());
-  const [profileImage, setProfileImage] = useState(() => loadProfileImageFromStorage());
+  const [profile, setProfile] = useState({ firstName: '', lastName: '' });
+  const [profileImage, setProfileImage] = useState(null);
   const [imageError, setImageError] = useState(false);
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
 
   useEffect(() => {
-    setProfile(loadProfileFromStorage());
-    setProfileImage(loadProfileImageFromStorage());
+    if (!userId) {
+      setProfile({ firstName: '', lastName: '' });
+      setProfileImage(null);
+      setImageError(false);
+      return;
+    }
+    setProfile(loadProfileFromStorage(userId));
+    setProfileImage(loadProfileImageFromStorage(userId));
     setImageError(false);
-  }, [user?.id, user?.picture]);
+  }, [userId, user?.picture]);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -53,11 +60,14 @@ export function AppHeader({ loading, trialBannerVisible, onOpenHelp, onOpenSuppo
 
   useEffect(() => {
     function onFocus() {
-      setProfile(loadProfileFromStorage());
-      setProfileImage(loadProfileImageFromStorage());
+      if (!userId) return;
+      setProfile(loadProfileFromStorage(userId));
+      setProfileImage(loadProfileImageFromStorage(userId));
     }
-    function onProfileImageUpdated() {
-      setProfileImage(loadProfileImageFromStorage());
+    function onProfileImageUpdated(e) {
+      if (e.detail?.userId && e.detail.userId !== userId) return;
+      if (!userId) return;
+      setProfileImage(loadProfileImageFromStorage(userId));
       setImageError(false);
     }
     window.addEventListener('focus', onFocus);
@@ -66,11 +76,12 @@ export function AppHeader({ loading, trialBannerVisible, onOpenHelp, onOpenSuppo
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('profileImageUpdated', onProfileImageUpdated);
     };
-  }, []);
+  }, [userId]);
 
   const refreshProfileFromStorage = () => {
-    setProfile(loadProfileFromStorage());
-    setProfileImage(loadProfileImageFromStorage());
+    if (!userId) return;
+    setProfile(loadProfileFromStorage(userId));
+    setProfileImage(loadProfileImageFromStorage(userId));
     setImageError(false);
   };
 

@@ -136,6 +136,37 @@ export function subscriptionPlanIdToTier(planId) {
   return null;
 }
 
+const PLAN_TIER_RANK = { free: 0, essentials: 1, standard: 2, premium: 3 };
+
+export function getPlanTierRank(planId) {
+  const tier = subscriptionPlanIdToTier(planId);
+  return tier ? (PLAN_TIER_RANK[tier] ?? 0) : 0;
+}
+
+/** Button label for pricing card CTA (new subscribe, upgrade, downgrade, or billing switch). */
+export function getSubscribeButtonLabel(plan, currentPlanId, isAnnually, subscribingPlanId) {
+  const targetPlanId = getBillingPlanId(plan, isAnnually);
+  if (subscribingPlanId === targetPlanId) return 'Redirecting…';
+  if (plan.isFreeTrial) return 'Start free trial';
+
+  if (!currentPlanId || currentPlanId === 'free') {
+    return 'Get this plan';
+  }
+
+  if (currentPlanId === targetPlanId) {
+    return 'Current plan';
+  }
+
+  const currentRank = getPlanTierRank(currentPlanId);
+  const targetRank = getPlanTierRank(targetPlanId);
+
+  if (currentRank === targetRank) {
+    return 'Switch billing period';
+  }
+
+  return targetRank > currentRank ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`;
+}
+
 export function isPlanCurrentForUser(plan, subscriptionPlanId) {
   const tier = subscriptionPlanIdToTier(subscriptionPlanId);
   if (plan.isFreeTrial || plan.id === 'free') return tier === 'free';

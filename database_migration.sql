@@ -195,23 +195,20 @@ UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"u
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"2"') WHERE id LIKE 'essentials%';
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"3"') WHERE id LIKE 'standard%';
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{domains}', '"5"') WHERE id LIKE 'premium%';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"5000"') WHERE id LIKE 'essentials%';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'standard%';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"50000"') WHERE id LIKE 'premium%';
+UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%';
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"2000"') WHERE id = 'trial_weekly';
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"500 daily"') WHERE id = 'trial_weekly';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"20000"') WHERE id LIKE 'essentials%';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"100000"') WHERE id LIKE 'standard%';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"150000"') WHERE id LIKE 'premium%';
+UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%';
 UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"1"') WHERE id = 'trial_weekly';
-UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('trial_weekly');
+UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free', 'trial_weekly');
+UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"500/month"') WHERE id LIKE 'standard%';
+UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id LIKE 'premium%';
 
--- Clear plan codes for fresh setup
-UPDATE plans SET amount = 3900, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
-UPDATE plans SET amount = 39000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
-UPDATE plans SET amount = 7900, paystack_plan_code = NULL WHERE id = 'standard_monthly';
-UPDATE plans SET amount = 79000, paystack_plan_code = NULL WHERE id = 'standard_annual';
-UPDATE plans SET amount = 29500, paystack_plan_code = NULL WHERE id = 'premium_monthly';
-UPDATE plans SET amount = 295000, paystack_plan_code = NULL WHERE id = 'premium_annual';
+UPDATE plans SET name = 'Basic', amount = 399, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+UPDATE plans SET name = 'Basic', amount = 3990, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+UPDATE plans SET name = 'Growth', amount = 2990, paystack_plan_code = NULL WHERE id = 'standard_monthly';
+UPDATE plans SET name = 'Growth', amount = 29900, paystack_plan_code = NULL WHERE id = 'standard_annual';
+UPDATE plans SET name = 'Pro', amount = 7500, paystack_plan_code = NULL WHERE id = 'premium_monthly';
+UPDATE plans SET name = 'Pro', amount = 75000, paystack_plan_code = NULL WHERE id = 'premium_annual';
 
 COMMIT;

@@ -58,6 +58,12 @@ function ScrollToTop() {
   return null;
 }
 
+/** Preserve Paystack callback query params when redirecting billing → usage. */
+function BillingRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/app/account/settings/usage${search}`} replace />;
+}
+
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -146,7 +152,7 @@ function AppRoutes() {
             <Route path="settings/usage" element={<BillingOverviewPage />} />
             <Route path="settings/current-plan" element={<Navigate to="/app/account/settings/usage" replace />} />
             <Route path="settings/manage-plan" element={<ManagePlanPage />} />
-            <Route path="billing" element={<Navigate to="/app/account/settings/usage" replace />} />
+            <Route path="billing" element={<BillingRedirect />} />
             <Route path="billing/monthly-plan" element={<BillingMonthlyPlanPage />} />
             <Route path="billing/information" element={<BillingInformationPage />} />
             <Route path="billing/history" element={<BillingHistoryPage />} />
@@ -156,8 +162,8 @@ function AppRoutes() {
           <Route path="settings/*" element={<Navigate to="/app/dashboard" replace />} />
           <Route path="profile" element={<Navigate to="/app/account" replace />} />
           <Route path="profile/*" element={<Navigate to="/app/account" replace />} />
-          <Route path="billing" element={<Navigate to="/app/account/settings/usage" replace />} />
-          <Route path="billing/*" element={<Navigate to="/app/account/settings/usage" replace />} />
+          <Route path="billing" element={<BillingRedirect />} />
+          <Route path="billing/*" element={<BillingRedirect />} />
           <Route path="pricing" element={<Navigate to="/app/account/pricing" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

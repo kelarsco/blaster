@@ -22,13 +22,16 @@ export function BillingOverviewPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let reference = searchParams.get('reference');
+    let reference = searchParams.get('reference') || searchParams.get('trxref');
     const paystackSuccess = searchParams.get('paystack') === 'success';
     const isExtraCredit = searchParams.get('extra') === '1';
-    if (!reference && paystackSuccess && typeof sessionStorage !== 'undefined') {
+    if (!reference && typeof sessionStorage !== 'undefined') {
       try {
-        reference = sessionStorage.getItem('paystack-pending-reference');
-        if (reference) sessionStorage.removeItem('paystack-pending-reference');
+        const pending = sessionStorage.getItem('paystack-pending-reference');
+        if (pending && (paystackSuccess || searchParams.get('trxref'))) {
+          reference = pending;
+          sessionStorage.removeItem('paystack-pending-reference');
+        }
       } catch (_) {}
     }
     if (reference && authFetch) {

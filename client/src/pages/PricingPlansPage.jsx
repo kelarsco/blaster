@@ -10,8 +10,8 @@ import {
   formatPriceNum,
   getDisplayPrice,
   getBillingPlanId,
-  isPlanCurrentForUser,
   subscriptionPlanIdToTier,
+  getSubscribeButtonLabel,
 } from '../data/plans';
 
 function PlanPrice({ plan, isAnnually }) {
@@ -87,13 +87,12 @@ export function PricingPlansPage() {
       return;
     }
 
-    if (subscription && subscription.status === 'active' && subscription.planId !== 'free') {
-      showNotice('You already have an active subscription. Go to Account Settings to manage your plan.');
-      navigate('/app/account/settings/usage', { replace: true });
+    const planId = getBillingPlanId(plan, isAnnually);
+    if (subscription?.status === 'active' && subscription.planId === planId) {
+      showNotice('This is already your current plan.', 'Already subscribed');
       return;
     }
 
-    const planId = getBillingPlanId(plan, isAnnually);
     setSubscribingPlanId(planId);
     try {
       const res = await authFetch(`${API}/billing/initialize`, {
@@ -178,7 +177,7 @@ export function PricingPlansPage() {
         {PLANS.map((plan) => {
           const planIdForCard = getBillingPlanId(plan, isAnnually);
           const isFreeDisabledForSubscriber = plan.isFreeTrial && hasPaidSubscription;
-          const isCurrent = isPlanCurrentForUser(plan, currentPlanId);
+          const isCurrent = subscription?.planId === planIdForCard;
           const intervalMatches =
             !currentPlanId ||
             currentPlanId === 'free' ||
@@ -246,13 +245,7 @@ export function PricingPlansPage() {
                   disabled={isFreeDisabledForSubscriber || (!plan.isFreeTrial && subscribingPlanId != null)}
                   className="w-full py-2.5 rounded-xl btn-blaster-accent text-sm disabled:opacity-50"
                 >
-                  {isFreeDisabledForSubscriber
-                    ? 'Unavailable on active subscription'
-                    : plan.isFreeTrial
-                      ? 'Start free trial'
-                      : subscribingPlanId === planIdForCard
-                        ? 'Redirecting…'
-                        : 'Get this plan'}
+                  {getSubscribeButtonLabel(plan, currentPlanId, isAnnually, subscribingPlanId)}
                 </button>
               )}
             </div>
