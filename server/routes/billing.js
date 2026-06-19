@@ -21,8 +21,18 @@ async function getPlanIdByPaystackCode(paystackPlanCode) {
   return r.rows?.[0]?.id || null;
 }
 
-function periodDaysForPlanInterval(interval) {
+function periodDaysForPlanInterval(interval, planId) {
+  if (planId === 'trial_3day') return 3;
   return interval === 'annually' ? 365 : 31;
+}
+
+async function createUserSubscription(db, userId, planId, { periodStart, periodEnd, paystackSubscriptionCode = null, paystackCustomerCode = null }) {
+  await cancelActivePaidSubscriptions(db, userId);
+  await db.query(
+    `INSERT INTO subscriptions (id, user_id, plan_id, paystack_subscription_code, paystack_customer_code, status, current_period_start, current_period_end, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
+    [uuidv4(), userId, planId, paystackSubscriptionCode, paystackCustomerCode, periodStart, periodEnd]
+  );
 }
 
 async function disablePaystackSubscription(code) {
@@ -60,7 +70,7 @@ async function cancelActivePaidSubscriptions(db, userId) {
 }
 
 export const billingRoutes = Router();
-const FREE_TRIAL_HOURS = 24;
+const TRIAL_DAYS = 3;
 
 /** List all plans (from DB; Paystack plan codes are created automatically when PAYSTACK_SECRET_KEY is set). */
 billingRoutes.get('/plans', async (_req, res) => {
@@ -124,22 +134,14 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     } else {
       const freeRow = await db.query(`SELECT id, name, amount, interval, features FROM plans WHERE id = 'free' LIMIT 1`);
       const free = freeRow.rows?.[0];
-      const userCreated = await db.query('SELECT created_at FROM users WHERE id = $1 LIMIT 1', [userId]);
-      const createdAt = userCreated.rows?.[0]?.created_at ? new Date(userCreated.rows[0].created_at) : new Date();
-      const trialEndsAt = new Date(createdAt.getTime() + FREE_TRIAL_HOURS * 60 * 60 * 1000);
-      const trialActive = trialEndsAt.getTime() > Date.now();
       plan = free
         ? {
-            name: trialActive ? 'Free trial' : free.name,
+            name: 'No active plan',
             amount: free.amount,
             interval: free.interval,
-            features: {
-              ...(free.features || {}),
-              emails: trialActive ? '100' : '0',
-              scans: trialActive ? '100' : '0',
-            },
+            features: { emails: '0', scans: '0', senders: '0', campaigns: '0' },
           }
-        : { name: trialActive ? 'Free trial' : 'Free', amount: 0, interval: 'monthly', features: { emails: trialActive ? '100' : '0', users: '1 seat', senders: '1', scans: trialActive ? '100' : '0' } };
+        : { name: 'No active plan', amount: 0, interval: 'monthly', features: { emails: '0', scans: '0' } };
     }
 
     const periodStart = row?.current_period_start ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -308,9 +310,39 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'You are already on this plan.' });
     }
 
-    let planRow = await db.query('SELECT id, name, amount, paystack_plan_code FROM plans WHERE id = $1', [planId]);
+    let planRow = await db.query('SELECT id, name, amount, paystack_plan_code, interval FROM plans WHERE id = $1', [planId]);
     let plan = planRow.rows?.[0];
     if (!plan) return res.status(404).json({ error: 'Plan not found' });
+
+    const email = req.user.email;
+    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/settings/usage?paystack=success';
+    const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
+    const amountSubunit = amountForPaystack(plan.amount, PAYSTACK_CURRENCY, usdToNgn);
+
+    if (planId === 'trial_3day') {
+      const reference = `trial_${uuidv4().replace(/-/g, '')}`;
+      const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + PAYSTACK_SECRET,
+        },
+        body: JSON.stringify({
+          email,
+          amount: amountSubunit,
+          currency: PAYSTACK_CURRENCY,
+          reference,
+          callback_url: callbackUrl,
+          metadata: { plan_id: 'trial_3day', user_id: userId },
+        }),
+      });
+      const data = await response.json();
+      if (!data.status || !data.data?.authorization_url) {
+        return res.status(400).json({ error: data.message || 'Paystack could not create payment link' });
+      }
+      return res.json({ authorizationUrl: data.data.authorization_url, reference: data.data.reference });
+    }
+
     if (plan.amount > 0 && !plan.paystack_plan_code) {
       await syncPaystackPlans();
       planRow = await db.query('SELECT id, name, amount, paystack_plan_code FROM plans WHERE id = $1', [planId]);
@@ -318,13 +350,6 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
     }
     let planCode = plan?.paystack_plan_code;
     if (plan.amount > 0 && !planCode) return res.status(503).json({ error: 'Paystack plans are still being set up. Please try again in a moment.' });
-
-    const email = req.user.email;
-    const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/settings/usage?paystack=success';
-
-    // Paystack requires amount in the body (plan overrides it for the charge). Omitting it can cause "Invalid Amount Sent".
-    const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
-    const amountSubunit = amountForPaystack(plan.amount, PAYSTACK_CURRENCY, usdToNgn);
 
     const doInitialize = async (code) => {
       const reference = `sub_${uuidv4().replace(/-/g, '')}`;
@@ -562,6 +587,36 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     if (payerEmail && userEmail && payerEmail !== userEmail) {
       return res.status(403).json({ error: 'Payment does not belong to this account' });
     }
+
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const userId = req.user.id;
+    const paymentRef = reference.trim();
+
+    if (paymentRef.startsWith('trial_') || tx.metadata?.plan_id === 'trial_3day') {
+      const existingTrial = await db.query(
+        `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = 'trial_3day' AND status = 'active' AND current_period_end > NOW() LIMIT 1`,
+        [userId]
+      );
+      if (existingTrial.rows.length > 0) {
+        return res.json({ ok: true, planId: 'trial_3day' });
+      }
+      const now = new Date();
+      const periodEnd = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+      await createUserSubscription(db, userId, 'trial_3day', {
+        periodStart: now,
+        periodEnd,
+        paystackCustomerCode: tx.authorization?.customer_code ?? null,
+      });
+      const planMeta = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', ['trial_3day']);
+      const plan = planMeta.rows?.[0];
+      const toEmail = req.user?.email;
+      if (toEmail && plan) {
+        sendSubscriptionConfirmation(toEmail, plan.name || 'trial_3day', '$1.00', '3 days').catch((e) => console.warn('[transactional trial email]', e?.message || e));
+      }
+      return res.json({ ok: true, planId: 'trial_3day' });
+    }
+
     const planRef = tx.plan;
     const planCode = typeof planRef === 'string' ? planRef : (planRef?.plan_code ?? null);
     if (!planCode) {
@@ -571,9 +626,6 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     if (!planId) {
       return res.status(400).json({ error: 'Plan not recognized' });
     }
-    const db = getDb();
-    if (!db) return res.status(503).json({ error: 'Database unavailable' });
-    const userId = req.user.id;
     const existing = await db.query(
       `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = $2 AND status = 'active' ORDER BY current_period_end DESC LIMIT 1`,
       [userId, planId]
@@ -581,17 +633,17 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     if (existing.rows.length > 0) {
       return res.json({ ok: true, planId });
     }
-    await cancelActivePaidSubscriptions(db, userId);
     const now = new Date();
     const planMeta = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [planId]);
     const plan = planMeta.rows?.[0];
-    const periodDays = periodDaysForPlanInterval(plan?.interval);
+    const periodDays = periodDaysForPlanInterval(plan?.interval, planId);
     const periodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000);
-    await db.query(
-      `INSERT INTO subscriptions (id, user_id, plan_id, paystack_subscription_code, paystack_customer_code, status, current_period_start, current_period_end, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, NOW())`,
-      [uuidv4(), userId, planId, tx.authorization?.subscription_code ?? null, tx.authorization?.customer_code ?? null, now, periodEnd]
-    );
+    await createUserSubscription(db, userId, planId, {
+      periodStart: now,
+      periodEnd,
+      paystackSubscriptionCode: tx.authorization?.subscription_code ?? null,
+      paystackCustomerCode: tx.authorization?.customer_code ?? null,
+    });
     const toEmail = req.user?.email;
     if (toEmail && plan) {
       const amountFormatted = plan.amount != null ? `$${(plan.amount / 100).toFixed(2)}` : '';

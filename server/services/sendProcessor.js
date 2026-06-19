@@ -367,7 +367,7 @@ async function updateCampaignCounts(db, campaignId, type) {
   if (!row) return;
   if (type === 'sent') {
     await db.query('UPDATE campaigns SET sent = sent + 1, updated_at = NOW() WHERE id = $1', [campaignId]);
-    if (row.user_id) recordEmailSent(row.user_id, 1);
+    if (row.user_id) await recordEmailSent(row.user_id, 1);
   } else {
     await db.query('UPDATE campaigns SET failed = failed + 1, updated_at = NOW() WHERE id = $1', [campaignId]);
   }

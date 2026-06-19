@@ -491,7 +491,7 @@ export function CampaignsPage() {
         title: 'Campaign limit reached',
         message: 'Upgrade to run more active campaigns.',
         tierName: 'Basic',
-        tierPrice: '$3.99/month',
+        tierPrice: '$29/month',
       });
       return;
     }

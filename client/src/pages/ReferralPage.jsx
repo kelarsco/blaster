@@ -13,13 +13,11 @@ import {
   Link as LinkIcon,
 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
-import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 import { buildReferralSignupUrl, sanitizeReferralUrl } from '../utils/referralUrl.js';
 import { ReferralPageSkeleton } from '../components/referral/ReferralPageSkeleton.jsx';
 import { BrandGradientIcon, BrandIconBox, CrownIcon } from '../components/BrandGradientIcon.jsx';
-import { FeatureLockOverlay } from '../components/access/PlanAccessUI.jsx';
 import '../styles/referral-page.css';
 
 const REFERRAL_MESSAGE =
@@ -115,8 +113,6 @@ function TierStatusPill({ status }) {
 
 export function ReferralPage() {
   const { authFetch, user, loading: authLoading } = useAuth();
-  const { access } = usePlanAccess();
-  const referralLocked = access?.referral ?? false;
   const authFetchRef = useRef(authFetch);
   authFetchRef.current = authFetch;
 
@@ -225,14 +221,6 @@ export function ReferralPage() {
           </p>
         </div>
 
-        {referralLocked ? (
-          <FeatureLockOverlay
-            message="Upgrade to access your referral dashboard."
-            minHeight="min(60vh, 28rem)"
-            className="rounded-2xl border border-blaster-border"
-          />
-        ) : (
-        <>
         <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
           <div className="px-5 sm:px-6 py-4 border-b border-blaster-border">
             <div className="flex items-center gap-2.5">
@@ -432,8 +420,6 @@ export function ReferralPage() {
           </div>
           <p className="referral-progress-message">{data?.progressMessage}</p>
         </div>
-        </>
-        )}
       </div>
     </div>
   );

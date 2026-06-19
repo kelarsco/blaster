@@ -41,7 +41,7 @@ export function StoresFilterPanel({
   hasPendingFilters = false,
   resultCount = 0,
   applying = false,
-  disabled = false,
+  onBlockedInteract,
 }) {
   const [openKey, setOpenKey] = useState(null);
   const [countryQuery, setCountryQuery] = useState('');
@@ -59,7 +59,13 @@ export function StoresFilterPanel({
 
   const tags = buildFilterTags(filters);
 
+  const guardInteract = () => {
+    if (!onBlockedInteract) return true;
+    return onBlockedInteract();
+  };
+
   const toggleInList = (key, value) => {
+    if (!guardInteract()) return;
     const set = new Set(filters[key]);
     if (set.has(value)) set.delete(value);
     else set.add(value);
@@ -78,14 +84,18 @@ export function StoresFilterPanel({
       c.code.toLowerCase().includes(currencyQuery.toLowerCase())
   );
 
-  const toggleOpen = (key) => setOpenKey(openKey === key ? null : key);
+  const toggleOpen = (key) => {
+    if (!guardInteract()) return;
+    setOpenKey(openKey === key ? null : key);
+  };
 
   const handleDateChange = (dateFields) => {
+    if (!guardInteract()) return;
     onChange({ ...filters, ...dateFields });
   };
 
   return (
-    <div className={`stores-filter-panel stores-glass${disabled ? ' stores-filter-panel--disabled' : ''}`}>
+    <div className="stores-filter-panel stores-glass">
       <div className="stores-filter-header">
         <div>
           <h2 className="stores-filter-title">Store Leads</h2>
@@ -221,7 +231,10 @@ export function StoresFilterPanel({
               <button
                 type="button"
                 className="stores-filter-tag-remove"
-                onClick={() => onChange(removeFilterTag(filters, tag))}
+                onClick={() => {
+                  if (!guardInteract()) return;
+                  onChange(removeFilterTag(filters, tag));
+                }}
                 aria-label={`Remove ${tag.label}`}
               >
                 <X className="w-3 h-3" strokeWidth={2.5} />

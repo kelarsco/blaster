@@ -1,16 +1,14 @@
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
 
-/** Default sender limit when user has no subscription (free). */
-const DEFAULT_SENDER_LIMIT = 1;
-const DEFAULT_DOMAIN_LIMIT = 1;
-const TRIAL_WEEKLY_SCANS_LIMIT = 500;
-const TRIAL_WEEKLY_EMAILS_LIMIT = 2000;
+/** Default sender limit when user has no subscription. */
+const DEFAULT_SENDER_LIMIT = 999999;
+const DEFAULT_DOMAIN_LIMIT = 5;
+const TRIAL_FILTER_LIMIT = 20;
 
-/** Free trial limits (legacy constants for compatibility) */
-const FREE_TRIAL_EMAILS_LIMIT = 100;
-const FREE_TRIAL_SCANS_LIMIT = 100;
-const FREE_TRIAL_HOURS = 24;
+/** No automatic signup trial — access requires trial_3day or paid plan. */
+const FREE_TRIAL_EMAILS_LIMIT = 0;
+const FREE_TRIAL_SCANS_LIMIT = 0;
 
 /** Cap for "unlimited" plans. */
 const UNLIMITED_SENDERS = 999;
@@ -33,11 +31,15 @@ async function getPeriodForUserLocal(db, userId) {
 }
 
 async function getFreeTrialState(db, userId) {
-  const row = await db.query('SELECT created_at FROM users WHERE id = $1 LIMIT 1', [userId]);
-  const createdAt = row.rows?.[0]?.created_at ? new Date(row.rows[0].created_at) : null;
-  if (!createdAt) return { active: false, endsAt: null };
-  const endsAt = new Date(createdAt.getTime() + FREE_TRIAL_HOURS * 60 * 60 * 1000);
-  return { active: endsAt.getTime() > Date.now(), endsAt };
+  const sub = await db.query(
+    `SELECT current_period_end FROM subscriptions
+     WHERE user_id = $1 AND plan_id = 'trial_3day' AND status IN ('active', 'trialing')
+       AND current_period_end > NOW()
+     ORDER BY current_period_end DESC LIMIT 1`,
+    [userId]
+  );
+  const endsAt = sub.rows?.[0]?.current_period_end ? new Date(sub.rows[0].current_period_end) : null;
+  return { active: Boolean(endsAt), endsAt };
 }
 
 /**
@@ -86,7 +88,7 @@ export async function getPlanLimitsForUser(userId) {
   defaults.emailsLimit = parseFeatureNum(feats, 'emails', FREE_TRIAL_EMAILS_LIMIT);
   defaults.scansLimit = parseFeatureNum(feats, 'scans', FREE_TRIAL_SCANS_LIMIT);
 
-  if (row && (planId.startsWith('essentials') || planId.startsWith('standard') || planId.startsWith('premium'))) {
+  if (row && (planId.startsWith('essentials') || planId.startsWith('standard') || planId.startsWith('premium') || planId === 'trial_3day')) {
     defaults.emailsLimit = UNLIMITED_NUM;
     defaults.scansLimit = UNLIMITED_NUM;
     defaults.campaignsLimit = UNLIMITED_NUM;
@@ -103,11 +105,14 @@ export async function getPlanLimitsForUser(userId) {
   defaults.sendersLimit = sendersLimit;
 
   if (!row) {
+    defaults.isTrial = false;
+    defaults.trialEndsAt = null;
+    defaults.emailsLimit = 0;
+    defaults.scansLimit = 0;
+  } else if (planId === 'trial_3day') {
     const trial = await getFreeTrialState(db, userId);
     defaults.isTrial = trial.active;
     defaults.trialEndsAt = trial.endsAt;
-    defaults.emailsLimit = trial.active ? FREE_TRIAL_EMAILS_LIMIT : 0;
-    defaults.scansLimit = trial.active ? FREE_TRIAL_SCANS_LIMIT : 0;
   }
 
   const start = period.start.toISOString();
@@ -176,22 +181,16 @@ export async function getSenderLimitForUser(userId) {
   );
   const row = sub.rows?.[0];
   if (!row) {
-    const freeRow = await db.query(`SELECT features FROM plans WHERE id = 'free' LIMIT 1`);
-    const features = freeRow.rows?.[0]?.features || {};
-    const senders = features.senders;
-    if (senders == null) return { limit: DEFAULT_SENDER_LIMIT, planId: null };
-    const str = String(senders).toLowerCase();
-    const num = str === 'unlimited' || str === '∞' ? UNLIMITED_SENDERS : parseInt(senders, 10);
-    return { limit: Number.isNaN(num) ? DEFAULT_SENDER_LIMIT : Math.min(Math.max(0, num), UNLIMITED_SENDERS), planId: null };
+    return { limit: 0, planId: null };
   }
 
   const features = row.features || {};
   const senders = features.senders;
-  if (senders == null) return { limit: DEFAULT_SENDER_LIMIT, planId: row.plan_id };
+  if (senders == null) return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
   const str = String(senders).toLowerCase();
   if (str === 'unlimited' || str === '∞') return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
   const num = parseInt(senders, 10);
-  if (Number.isNaN(num) || num < 0) return { limit: DEFAULT_SENDER_LIMIT, planId: row.plan_id };
+  if (Number.isNaN(num) || num < 0) return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
   return { limit: Math.min(num, UNLIMITED_SENDERS), planId: row.plan_id };
 }
 

@@ -6,6 +6,7 @@ import { syncReferralUpgradeFromSubscription } from './referralService.js';
 
 export const ADMIN_ASSIGNABLE_PLAN_IDS = [
   'free',
+  'trial_3day',
   'essentials_monthly',
   'essentials_annual',
   'standard_monthly',
@@ -18,6 +19,8 @@ function periodEndFromInterval(interval, start = new Date()) {
   const end = new Date(start);
   if (interval === 'annually') {
     end.setFullYear(end.getFullYear() + 1);
+  } else if (interval === 'trial') {
+    end.setDate(end.getDate() + 3);
   } else if (interval === 'weekly') {
     end.setDate(end.getDate() + 7);
   } else {

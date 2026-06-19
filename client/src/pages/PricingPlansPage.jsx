@@ -6,29 +6,20 @@ import { useAuth } from '../context/AuthContext';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 import {
   PLANS,
+  TRIAL_PLAN,
   PLAN_COMPARISON,
   formatPriceNum,
   getDisplayPrice,
   getBillingPlanId,
-  subscriptionPlanIdToTier,
   getSubscribeButtonLabel,
 } from '../data/plans';
 
 function PlanPrice({ plan, isAnnually }) {
-  if (plan.isFreeTrial) {
-    return (
-      <>
-        <span className="text-xl md:text-2xl font-bold text-blaster-fg">Free</span>
-        <span className="text-blaster-muted text-sm"> / 24 hours</span>
-      </>
-    );
-  }
-
   const display = getDisplayPrice(plan.price, isAnnually, plan.period);
   return (
     <>
       <span className="text-xl md:text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
-      <span className="text-blaster-muted text-sm">/{display.primaryLabel}</span>
+      <span className="text-blaster-muted text-sm"> /{display.primaryLabel}</span>
       {display.secondary != null && (
         <span className="ml-1.5 text-blaster-muted text-xs">
           (~${formatPriceNum(display.secondary)}/{display.secondaryLabel})
@@ -82,11 +73,6 @@ export function PricingPlansPage() {
   }, [authFetch]);
 
   const handleSubscribe = async (plan) => {
-    if (plan.isFreeTrial || plan.id === 'free') {
-      navigate('/app/dashboard', { replace: true });
-      return;
-    }
-
     const planId = getBillingPlanId(plan, isAnnually);
     if (subscription?.status === 'active' && subscription.planId === planId) {
       showNotice('This is already your current plan.', 'Already subscribed');
@@ -119,8 +105,7 @@ export function PricingPlansPage() {
   };
 
   const currentPlanId = subscription?.planId || null;
-  const currentTier = subscriptionPlanIdToTier(currentPlanId);
-  const hasPaidSubscription = currentTier !== 'free' && currentTier != null;
+  const hasActivePlan = Boolean(currentPlanId);
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
@@ -173,28 +158,25 @@ export function PricingPlansPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
         {PLANS.map((plan) => {
           const planIdForCard = getBillingPlanId(plan, isAnnually);
-          const isFreeDisabledForSubscriber = plan.isFreeTrial && hasPaidSubscription;
           const isCurrent = subscription?.planId === planIdForCard;
           const intervalMatches =
             !currentPlanId ||
-            currentPlanId === 'free' ||
-            plan.isFreeTrial ||
+            currentPlanId === 'trial_3day' ||
             (currentPlanId.endsWith('_annual') ? isAnnually : !isAnnually);
 
           return (
             <div
               key={plan.id}
-              className={`bg-blaster-bg-card rounded-xl md:rounded-2xl border card-body-mobile relative flex flex-col ${
+              className={`bg-blaster-bg-card rounded-xl md:rounded-2xl border card-body-mobile relative flex flex-col h-full ${
                 isCurrent
                   ? 'border-emerald-500/60 ring-2 ring-emerald-500/25'
                   : plan.tag
-                    ? 'border-blaster-accent/50 ring-2 ring-blaster-accent/20'
+                    ? 'border-emerald-500/50 ring-2 ring-emerald-500/20'
                     : 'border-blaster-border'
-              } ${isFreeDisabledForSubscriber ? 'opacity-55 pointer-events-none select-none' : ''}`}
-              aria-disabled={isFreeDisabledForSubscriber ? 'true' : 'false'}
+              }`}
               aria-current={isCurrent ? 'true' : undefined}
             >
               {isCurrent && (
@@ -202,14 +184,13 @@ export function PricingPlansPage() {
                   Current plan
                 </span>
               )}
-              {plan.tag && (
-                <span className="absolute -top-3 left-4 px-3 py-0.5 rounded-full bg-blaster-accent/20 text-blaster-accent text-xs font-medium">
+              {plan.tag && !isCurrent && (
+                <span className="absolute -top-3 left-4 px-3 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-medium">
                   {plan.tag}
                 </span>
               )}
               <h3 className="card-title-mobile text-base md:text-lg">{plan.name}</h3>
-              <p className="text-sm text-blaster-muted mt-2 mb-4">{plan.description}</p>
-              <div className="mb-4">
+              <div className="mb-4 mt-2">
                 <PlanPrice plan={plan} isAnnually={isAnnually} />
               </div>
               {plan.highlights?.length > 0 && (
@@ -232,7 +213,7 @@ export function PricingPlansPage() {
                     <p className="text-xs text-blaster-muted">
                       {subscription.planName}
                       {subscription.interval === 'annually' ? ' · billed annually' : subscription.interval === 'monthly' ? ' · billed monthly' : ''}
-                      {!intervalMatches && !plan.isFreeTrial && (
+                      {!intervalMatches && (
                         <span className="text-blaster-muted"> · switch billing period above to match</span>
                       )}
                     </p>
@@ -242,8 +223,10 @@ export function PricingPlansPage() {
                 <button
                   type="button"
                   onClick={() => handleSubscribe(plan)}
-                  disabled={isFreeDisabledForSubscriber || (!plan.isFreeTrial && subscribingPlanId != null)}
-                  className="w-full py-2.5 rounded-xl btn-blaster-accent text-sm disabled:opacity-50"
+                  disabled={subscribingPlanId != null}
+                  className={`w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+                    plan.tag ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'btn-blaster-accent'
+                  }`}
                 >
                   {getSubscribeButtonLabel(plan, currentPlanId, isAnnually, subscribingPlanId)}
                 </button>
@@ -251,6 +234,33 @@ export function PricingPlansPage() {
             </div>
           );
         })}
+      </div>
+
+      <div className="mb-12 rounded-xl md:rounded-2xl border border-blaster-border bg-blaster-bg-card p-5 md:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h3 className="card-title-mobile text-base md:text-lg">{TRIAL_PLAN.name}</h3>
+          <p className="text-sm text-blaster-muted mt-1">
+            Unlimited scans & campaigns · {TRIAL_PLAN.features.filters} store filters · ${TRIAL_PLAN.price} for 3 days
+          </p>
+        </div>
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="text-right">
+            <span className="text-xl font-bold text-blaster-fg">${formatPriceNum(TRIAL_PLAN.price)}</span>
+            <span className="text-sm text-blaster-muted block">/ 3 days</span>
+          </div>
+          {currentPlanId === 'trial_3day' ? (
+            <span className="text-sm font-medium text-emerald-600">Current trial</span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleSubscribe(TRIAL_PLAN)}
+              disabled={subscribingPlanId != null || (hasActivePlan && currentPlanId !== 'trial_3day')}
+              className="px-5 py-2.5 rounded-xl border-2 border-black text-sm font-semibold hover:bg-black hover:text-white transition disabled:opacity-50"
+            >
+              {subscribingPlanId === 'trial_3day' ? 'Redirecting…' : 'Start for $1'}
+            </button>
+          )}
+        </div>
       </div>
 
       <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border overflow-hidden">

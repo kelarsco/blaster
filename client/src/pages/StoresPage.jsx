@@ -17,7 +17,6 @@ import { StoresPageSkeleton } from '../components/stores/StoresPageSkeleton.jsx'
 import { StoresExportFieldsModal } from '../components/stores/StoresExportFieldsModal.jsx';
 import {
   FeatureLockOverlay,
-  FeatureLockWrap,
   PaygConfirmModal,
 } from '../components/access/PlanAccessUI.jsx';
 
@@ -29,9 +28,10 @@ export function StoresPage() {
     status,
     loading: planLoading,
     access,
+    trialExpired,
     recordFilterUse,
     activatePayg,
-    showToast,
+    openUpgradeModal,
   } = usePlanAccess();
 
   const [allStores, setAllStores] = useState([]);
@@ -50,8 +50,7 @@ export function StoresPage() {
   const [showPaygHint, setShowPaygHint] = useState(false);
 
   const storesAccess = access?.storesPage;
-  const trialPartialLock = storesAccess === 'partial';
-  const basicPageBlocked = storesAccess === 'blocked';
+  const basicPageBlocked = storesAccess === 'blocked' || trialExpired;
   const filtersBlocked = status?.filtersBlocked ?? false;
   const exportCopyBlocked = status?.exportCopyBlocked ?? false;
   const paygActive = status?.paygActive ?? false;
@@ -60,10 +59,36 @@ export function StoresPage() {
   const paygChargesCents = status?.paygChargesCents ?? 0;
   const paygCapCents = status?.paygCapCents ?? 1000;
   const showPaygOffer =
-    status?.tier === 2 &&
+    (status?.tier === 1 || status?.tier === 2) &&
     filterUses >= filterLimit &&
     !paygActive &&
     access?.paygAvailable;
+
+  const promptFilterUpgrade = useCallback(() => {
+    if (!filtersBlocked) return true;
+    if (showPaygOffer) {
+      setPaygModalOpen(true);
+      return false;
+    }
+    const tier = status?.upgradeTierInfo?.[status?.tier === 0 ? 1 : status?.tier === 1 ? 2 : 3];
+    openUpgradeModal({
+      title: 'Filter limit reached',
+      message: paygActive
+        ? `You've reached your pay-as-you-go filter cap for this period. Upgrade for unlimited store filters.`
+        : `You've used all ${filterLimit} store filters for this period. Upgrade your plan for more filters.`,
+      tierName: tier?.name,
+      tierPrice: tier?.price,
+    });
+    return false;
+  }, [
+    filtersBlocked,
+    showPaygOffer,
+    status?.tier,
+    status?.upgradeTierInfo,
+    paygActive,
+    filterLimit,
+    openUpgradeModal,
+  ]);
 
   const loadStores = useCallback(async () => {
     try {
@@ -101,10 +126,7 @@ export function StoresPage() {
   };
 
   const handleFilterChange = (next) => {
-    if (filtersBlocked) {
-      if (showPaygOffer) setShowPaygHint(true);
-      return;
-    }
+    if (!promptFilterUpgrade()) return;
     setFilters(next);
     if (buildFilterTags(next).length === 0) {
       setAppliedFilters(next);
@@ -113,19 +135,16 @@ export function StoresPage() {
   };
 
   const handleApplyFilters = async () => {
-    if (filtersBlocked) {
-      if (showPaygOffer) setShowPaygHint(true);
-      return;
-    }
+    if (!promptFilterUpgrade()) return;
     if (!hasPendingFilters) return;
     setApplyingFilters(true);
     const applyStarted = Date.now();
     try {
       const tags = buildFilterTags(filters);
-      if (tags.length > 0 && status?.tier === 2) {
+      if (tags.length > 0 && (status?.tier === 0 || status?.tier === 1 || status?.tier === 2)) {
         const result = await recordFilterUse();
         if (!result.ok) {
-          if (showPaygOffer) setShowPaygHint(true);
+          promptFilterUpgrade();
           return;
         }
       }
@@ -141,7 +160,7 @@ export function StoresPage() {
   };
 
   const handleClearFilters = () => {
-    if (filtersBlocked && trialPartialLock) return;
+    if (filtersBlocked) return;
     const cleared = emptyFilters();
     setFilters(cleared);
     setAppliedFilters(cleared);
@@ -151,14 +170,14 @@ export function StoresPage() {
   const hasPendingFilters = !filtersEqual(filters, appliedFilters);
 
   const trackExportOrCopy = useCallback(async () => {
-    if (status?.tier !== 2) return { ok: true };
-    return recordFilterUse();
+    if (status?.tier === 3) return { ok: true };
+    if (status?.tier === 0 || status?.tier === 1 || status?.tier === 2) return recordFilterUse();
+    return { ok: true };
   }, [status?.tier, recordFilterUse]);
 
   const handleCopyLinks = useCallback(async () => {
     if (exportCopyBlocked) {
-      if (showPaygOffer) setShowPaygHint(true);
-      showToast("You've reached your 500-filter limit for this month.");
+      promptFilterUpgrade();
       return;
     }
     const urls = filtered.map((s) => s.storeUrl).filter(Boolean);
@@ -170,17 +189,16 @@ export function StoresPage() {
       await navigator.clipboard.writeText(urls.join('\n'));
     } catch (_) {}
     setCopying(false);
-  }, [filtered, exportCopyBlocked, showPaygOffer, showToast, trackExportOrCopy]);
+  }, [filtered, exportCopyBlocked, promptFilterUpgrade, trackExportOrCopy]);
 
   const handleExportClick = useCallback(() => {
     if (exportCopyBlocked) {
-      if (showPaygOffer) setShowPaygHint(true);
-      showToast("You've reached your 500-filter limit for this month.");
+      promptFilterUpgrade();
       return;
     }
     if (!filtered.length) return;
     setExportModalOpen(true);
-  }, [filtered.length, exportCopyBlocked, showPaygOffer, showToast]);
+  }, [filtered.length, exportCopyBlocked, promptFilterUpgrade]);
 
   const handleExportConfirm = useCallback(
     async (fields) => {
@@ -219,7 +237,7 @@ export function StoresPage() {
     return (
       <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
         <FeatureLockOverlay
-          message="Upgrade to Growth to access the Stores page."
+          message="Start a $1 trial or choose a plan to access the Stores page."
           minHeight="min(70vh, 32rem)"
           className="stores-glass"
         />
@@ -286,43 +304,33 @@ export function StoresPage() {
       )}
 
       <div className="flex flex-col gap-5">
-        <FeatureLockWrap
-          locked={trialPartialLock}
-          message="Upgrade to access store filters and results."
-        >
-          <StoresFilterPanel
-            filters={filters}
-            onChange={handleFilterChange}
-            onApply={handleApplyFilters}
-            onClear={handleClearFilters}
-            hasPendingFilters={hasPendingFilters}
-            applying={applyingFilters}
-            resultCount={filtered.length}
-            disabled={filtersBlocked && !trialPartialLock}
-          />
-        </FeatureLockWrap>
+        <StoresFilterPanel
+          filters={filters}
+          onChange={handleFilterChange}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+          hasPendingFilters={hasPendingFilters}
+          applying={applyingFilters}
+          resultCount={filtered.length}
+          onBlockedInteract={promptFilterUpgrade}
+        />
 
-        {(showPaygHint || showPaygOffer) && !trialPartialLock && (
+        {(showPaygHint || showPaygOffer) && (
           <div className="plan-payg-hint">
-            <span>Want more? Activate pay-as-you-go filtering.</span>
+            <span>Want more? Activate pay-as-you-go filtering ($1 per 100 searches).</span>
             <button type="button" onClick={() => setPaygModalOpen(true)}>
               Activate PAYG
             </button>
           </div>
         )}
 
-        {paygActive && !trialPartialLock && (
+        {paygActive && (
           <p className="plan-payg-balance">
             PAYG used: ${(paygChargesCents / 100).toFixed(2)} / ${(paygCapCents / 100).toFixed(2)}
           </p>
         )}
 
-        <FeatureLockWrap
-          locked={trialPartialLock}
-          message="Upgrade to access store filters and results."
-        >
-          {resultsSection}
-        </FeatureLockWrap>
+        {resultsSection}
       </div>
     </div>
   );

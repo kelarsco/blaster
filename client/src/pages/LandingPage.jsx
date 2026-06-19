@@ -329,7 +329,7 @@ function LandingCtaSection() {
           Ready to find your next lead?
         </h2>
         <p className="mt-4 font-rubik text-base sm:text-lg text-blaster-muted">
-          Start with a 24-hour free trial — no credit card required.
+          Start with a $1 three-day trial — full scanner & campaigns, 20 store filters included.
         </p>
         <PrimaryPillButton as={Link} to="/signup" className="mt-8">
           Get started
@@ -397,7 +397,8 @@ export function LandingPage() {
 
   const handleHeroSubmit = (e) => {
     e.preventDefault();
-    navigate('/pricing');
+    storeSelectedPlan('trial_3day');
+    navigate('/signup?from=pricing');
   };
 
   return (
@@ -469,7 +470,7 @@ export function LandingPage() {
               type="submit"
               className="mt-3 sm:mt-0 shrink-0 h-[60px] px-8 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-rubik font-medium text-lg sm:text-xl tracking-wide shadow-blaster-cta hover:opacity-90 transition sm:-ml-4"
             >
-              Explore Trial
+              Try for $1
             </button>
           </form>
         </div>

@@ -7,15 +7,23 @@ import { TrialCountdown } from './TrialCountdown.jsx';
 
 const UPGRADE_PATH = '/app/account/pricing';
 
-/** Routes where expired-trial users can pick a plan and pay — wall must not block these. */
+/** Routes where expired-trial users can still use the app (billing, referral, analytics, etc.). */
 export function isPlanUpgradeRoute(pathname) {
   if (!pathname) return false;
-  return (
+  if (
     pathname === UPGRADE_PATH ||
     pathname.startsWith(`${UPGRADE_PATH}/`) ||
     pathname.startsWith('/app/account/billing') ||
     pathname.startsWith('/app/account/settings/usage') ||
     pathname.startsWith('/app/account/settings/manage-plan')
+  ) {
+    return true;
+  }
+  return (
+    pathname === '/app/referral' ||
+    pathname.startsWith('/app/referral/') ||
+    pathname === '/app/analytics' ||
+    pathname.startsWith('/app/analytics/')
   );
 }
 
@@ -59,9 +67,9 @@ export function TrialExpiredWall() {
         <div className="plan-lock-icon-wrap mx-auto mb-4">
           <Lock className="w-6 h-6" strokeWidth={2} />
         </div>
-        <h1 className="text-xl font-semibold text-blaster-fg">Your free trial has ended</h1>
+        <h1 className="text-xl font-semibold text-blaster-fg">Your access has ended</h1>
         <p className="text-sm text-blaster-muted mt-2 max-w-md mx-auto">
-          Upgrade to continue using Wiblaster — campaigns, store scans, analytics, and more.
+          Start a $1 three-day trial or choose a plan to continue using Wiblaster.
         </p>
         <Link to={UPGRADE_PATH} className="plan-lock-cta mt-6 inline-flex">
           Choose a plan
@@ -89,7 +97,7 @@ export function TrialBanner({ trialEndsAt }) {
       <span>
         {remainingMs > 0 ? (
           <>
-            Your free trial expires in{' '}
+            Your trial expires in{' '}
             <TrialCountdown ms={remainingMs} trialEndsAt={trialEndsAt} className="plan-trial-countdown" size="banner" />
             .
           </>
@@ -158,8 +166,8 @@ export function PaygConfirmModal({ open, onConfirm, onCancel, loading }) {
       <div className="plan-upgrade-modal-card">
         <h2 className="text-lg font-semibold text-blaster-fg text-center">Activate pay-as-you-go filtering</h2>
         <p className="text-sm text-blaster-muted mt-2 text-center">
-          After your 500 included filter uses, each additional filter costs <strong>$0.05</strong>.
-          Charges are capped at <strong>$10.00</strong> per billing cycle and added to your next invoice.
+          After your included filter uses, each additional filter costs <strong>$0.01</strong> (100 searches = $1).
+          Charges are capped per billing cycle and added to your next invoice.
         </p>
         <div className="flex flex-col gap-2 mt-6">
           <button

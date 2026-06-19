@@ -14,7 +14,7 @@ const DEFAULT_UPGRADE = {
   title: 'Upgrade required',
   message: 'Upgrade your plan to unlock this feature.',
   tierName: 'Growth',
-  tierPrice: '$29.90/month',
+  tierPrice: '$75/month',
 };
 
 export function PlanAccessProvider({ children }) {
@@ -63,7 +63,7 @@ export function PlanAccessProvider({ children }) {
   }, []);
 
   const openUpgradeModal = useCallback((opts = {}) => {
-    const tier = status?.upgradeTierInfo?.[2] || { name: 'Growth', price: '$29.90/month' };
+    const tier = status?.upgradeTierInfo?.[2] || { name: 'Growth', price: '$75/month' };
     setUpgradeModal({
       open: true,
       title: opts.title || 'Upgrade required',
@@ -89,7 +89,8 @@ export function PlanAccessProvider({ children }) {
     if (data.status) setStatus(data.status);
     if (!res.ok) {
       if (data.error === 'filter_limit') {
-        showToast("You've reached your 500-filter limit for this month.");
+        const limit = data.status?.filterLimit ?? 500;
+        showToast(`You've reached your ${limit}-filter limit for this period.`);
       } else if (data.error === 'payg_cap') {
         showToast('You\'ve reached your pay-as-you-go limit. Upgrade to Pro for unlimited filters.');
       }

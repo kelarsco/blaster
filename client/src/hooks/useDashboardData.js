@@ -196,11 +196,37 @@ export function useDashboardData(range = '7d') {
     }
   }, [user, authFetch]);
 
+  const refreshStreaks = useCallback(async () => {
+    if (!user || !authFetch) return;
+    try {
+      const streaksRes = await authFetch(`${API}/streaks`);
+      if (streaksRes?.ok) {
+        const data = await streaksRes.json();
+        setStreaksAndBadges(data);
+      }
+    } catch (_) {}
+  }, [user, authFetch]);
+
   useEffect(() => {
     fetchDashboardData();
     const fallback = setTimeout(() => setLoading(false), 5000);
     return () => clearTimeout(fallback);
   }, [fetchDashboardData]);
+
+  useEffect(() => {
+    const onFocus = () => refreshStreaks();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshStreaks();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(refreshStreaks, 30000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
+  }, [refreshStreaks]);
 
   const setDailyTarget = useCallback(
     async (dailyTarget) => {
@@ -410,5 +436,6 @@ export function useDashboardData(range = '7d') {
     campaigns,
     activityLogs,
     refetch: fetchDashboardData,
+    refreshStreaks,
   };
 }

@@ -272,10 +272,21 @@ async function qualifyDayIfNeeded(db, userId, row, userEmail, userName) {
   let lastQualifyingDate = row.last_qualifying_date
     ? String(row.last_qualifying_date).slice(0, 10)
     : null;
-  const emailsSentToday = Number(row.emails_sent_today) || 0;
 
-  if (emailsSentToday < dailyTarget || lastQualifyingDate === today) {
-    return row;
+  const emailsSentToday = await countEmailsSentOnDate(db, userId, today);
+
+  if (emailsSentToday < dailyTarget) {
+    if (emailsSentToday !== Number(row.emails_sent_today || 0)) {
+      await db.query(
+        `UPDATE user_streaks SET emails_sent_today = $2, emails_today_date = $3, updated_at = NOW() WHERE user_id = $1`,
+        [userId, emailsSentToday, today]
+      );
+    }
+    return { ...row, emails_sent_today: emailsSentToday, emails_today_date: today };
+  }
+
+  if (lastQualifyingDate === today) {
+    return { ...row, emails_sent_today: emailsSentToday, emails_today_date: today };
   }
 
   if (lastQualifyingDate === yesterday) {
@@ -289,15 +300,19 @@ async function qualifyDayIfNeeded(db, userId, row, userEmail, userName) {
     `UPDATE user_streaks SET
       current_streak_days = $2,
       last_qualifying_date = $3,
+      emails_sent_today = $4,
+      emails_today_date = $5,
       updated_at = NOW()
      WHERE user_id = $1`,
-    [userId, currentStreak, lastQualifyingDate]
+    [userId, currentStreak, lastQualifyingDate, emailsSentToday, today]
   );
 
   const updated = {
     ...row,
     current_streak_days: currentStreak,
     last_qualifying_date: lastQualifyingDate,
+    emails_sent_today: emailsSentToday,
+    emails_today_date: today,
   };
 
   return maybeUnlockStreakBadges(db, userId, updated, userEmail, userName);

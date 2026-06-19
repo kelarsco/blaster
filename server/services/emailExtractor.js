@@ -3,29 +3,34 @@
  */
 import { load } from 'cheerio';
 
-/** Local part must not include slashes (avoids CDN / social URL false positives). */
-const EMAIL_REGEX = /\b[a-z0-9][a-z0-9.!#$%&'*+=?^_`{|}~-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,10}\b/gi;
-const VALID_EMAIL_REGEX = /^[a-z0-9][a-z0-9.!#$%&'*+=?^_`{|}~-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,10}$/i;
+const EMAIL_REGEX = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*/g;
+const VALID_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*/i;
 const IGNORE_LOCAL_PREFIXES = ['noreply', 'no-reply', 'donotreply'];
 /** French store pages often prefix the local part with "adresse"/"addresse" (address label). */
 const FRENCH_ADDRESS_LOCAL_PREFIX = /^(?:addresse|adresse)/i;
-const DOMAIN_GLUE_SUFFIX = /(?:adresse?s?|numer|contact|response|common|our|we|menu)$/i;
+const CONTACT_LOCAL_PREFIXES = /^(info|contact|support|hello|sales|help|team|service|customerservice|enquiries|inquiry|mail|office|admin|shop|store|orders|order)/i;
+
+const KNOWN_TLDS = [
+  'co.uk', 'org.uk', 'com.au', 'co.nz', 'co.za', 'com.br', 'com.mx',
+  'com', 'org', 'net', 'co', 'io', 'uk', 'eu', 'de', 'fr', 'es', 'it', 'nl', 'info', 'biz', 'me', 'us', 'ca', 'au', 'nz', 'store', 'shop', 'online', 'site', 'cloud', 'tech', 'app', 'dev',
+];
+
 const INVALID_EMAIL_TLDS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif',
   'css', 'js', 'mjs', 'json', 'map', 'xml', 'html', 'htm', 'php', 'asp', 'aspx',
   'woff', 'woff2', 'ttf', 'eot', 'otf', 'mp4', 'webm', 'mp3', 'wav', 'pdf',
-  'auto', 'empire', 'common', 'website', 'domain', 'email', 'test', 'invalid', 'localhost',
 ]);
-const PLACEHOLDER_DOMAINS = new Set([
-  'example.com', 'domain.com', 'email.com', 'yourwebsite.com', 'yourdomain.com',
-  'mystore.com', 'correo.com', 'yoursite.com', 'test.com', 'website.com',
+
+const FAKE_DOMAINS = new Set([
+  'example.com', 'example.org', 'example.net', 'test.com', 'email.com', 'domain.com',
+  'yourdomain.com', 'youremail.com', 'placeholder.com', 'sample.com', 'mailinator.com',
+  'sentry.io', 'wixpress.com', 'schema.org', 'domain.com', 'email.com',
 ]);
-const PLACEHOLDER_LOCALS = new Set(['you', 'your', 'tu', 'example', 'test', 'user', 'name', 'email']);
 
 const PROVIDER_PRIORITY = [
-  ['gmail.com'],
-  ['yahoo.com', 'yahoo.co.uk', 'yahoo.co.in'],
-  ['outlook.com', 'hotmail.com', 'live.com'],
+  ['gmail.com', 'googlemail.com'],
+  ['yahoo.com', 'yahoo.co.uk', 'yahoo.co.in', 'yahoo.fr', 'yahoo.de'],
+  ['outlook.com', 'hotmail.com', 'live.com', 'live.co.uk', 'msn.com'],
   ['aol.com'],
   ['protonmail.com'],
   ['zoho.com'],
@@ -54,14 +59,14 @@ function decodeHtmlEntities(str) {
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
 
-function looksLikeUrl(raw) {
-  const s = (raw || '').trim().toLowerCase();
-  if (!s) return false;
-  if (s.startsWith('//') || /^https?:\/\//.test(s)) return true;
-  if (/\/cdn\/|myshopify\.com\/|tiktok\.com\/|jsdelivr\.net|\/npm\/|\/vue@/.test(s)) return true;
-  if (/\.(png|jpe?g|gif|svg|webp|css|js)(\?|$|@)/i.test(s)) return true;
-  if (/@\d+x\.[a-z]/i.test(s)) return true;
-  return false;
+function normalizeObfuscated(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/\s*\[\s*at\s*\]\s*|\s*\(\s*at\s*\)\s*|\.at\./gi, '@')
+    .replace(/\s*\[\s*dot\s*\]\s*|\s*\(\s*dot\s*\)\s*|\.dot\./gi, '.')
+    .replace(/\s+at\s+/gi, '@')
+    .replace(/\s+dot\s+/gi, '.')
+    .trim();
 }
 
 function stripFrenchAddressLocalPrefix(local) {
@@ -75,50 +80,42 @@ function stripFrenchAddressLocalPrefix(local) {
   return cleaned;
 }
 
-function cleanDomain(domain) {
-  let d = (domain || '').toLowerCase().trim();
-  if (!d) return null;
-  for (let i = 0; i < 3; i += 1) {
-    const stripped = d.replace(DOMAIN_GLUE_SUFFIX, '');
-    if (stripped === d) break;
-    d = stripped;
+/** Trim glued junk after a real TLD (e.g. mystore.comtelefon → mystore.com). */
+function normalizeDomain(domain) {
+  if (!domain || typeof domain !== 'string') return null;
+  const d = domain.toLowerCase().trim();
+  for (const tld of KNOWN_TLDS) {
+    const suffix = `.${tld}`;
+    const idx = d.indexOf(suffix);
+    if (idx === -1) continue;
+    const after = d.slice(idx + suffix.length);
+    if (after.length === 0) return d;
+    if (/^[a-z0-9.-]+$/.test(after)) return d.slice(0, idx + suffix.length);
   }
-  const m = d.match(/^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)\.([a-z]{2,10})$/);
-  if (!m) return null;
-  const tld = m[2];
-  if (!/^[a-z]+$/.test(tld) || INVALID_EMAIL_TLDS.has(tld)) return null;
-  return `${m[1]}.${tld}`;
-}
-
-function isPlaceholderEmail(local, domain) {
-  if (PLACEHOLDER_DOMAINS.has(domain)) return true;
-  if (PLACEHOLDER_LOCALS.has(local) && (PLACEHOLDER_DOMAINS.has(domain) || domain.includes('example') || domain.includes('domain'))) {
-    return true;
+  const lastDot = d.lastIndexOf('.');
+  if (lastDot > 0) {
+    const tld = d.slice(lastDot + 1);
+    if (/^[a-z]{2,10}$/.test(tld) && !/[0-9]/.test(tld) && !INVALID_EMAIL_TLDS.has(tld)) return d;
   }
-  if (local === 'your' || local === 'you' || local === 'tu') return true;
-  if (domain.startsWith('your') && (domain.endsWith('.com') || domain.endsWith('.es'))) return true;
-  return false;
+  return null;
 }
 
 function isPlausibleEmail(local, domain) {
   if (!local || !domain) return false;
-  if (local.length > 64 || domain.length > 253) return false;
-  if (local.includes('/') || local.includes('\\')) return false;
-  if (!/^[a-z0-9]/.test(local)) return false;
-  if (/^\d+x$/i.test(local) || /@\d+x/i.test(`${local}@${domain}`)) return false;
+  if (local.length < 1 || local.length > 64 || domain.length > 253) return false;
+  if (/[{}'"\\\/]/.test(local)) return false;
   if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
+  if (/\.(com|net|org)\.([a-z0-9.-]+)$/i.test(domain)) return false;
   const tld = domain.split('.').pop() || '';
   if (tld.length < 2 || INVALID_EMAIL_TLDS.has(tld)) return false;
-  if (!/^[a-z]+$/.test(tld)) return false;
   if (/^\d+$/.test(tld)) return false;
+  if (FAKE_DOMAINS.has(domain)) return false;
   if (/^(localhost|example|invalid|test)$/i.test(domain.split('.')[0] || '')) return false;
-  if (isPlaceholderEmail(local, domain)) return false;
   return true;
 }
 
 function normalizeEmail(raw) {
   if (!raw || typeof raw !== 'string') return null;
-  if (looksLikeUrl(raw)) return null;
   const trimmed = raw
     .trim()
     .replace(/^mailto:/i, '')
@@ -127,13 +124,12 @@ function normalizeEmail(raw) {
     .replace(/[>)'"\].,:;!?]+$/, '')
     .toLowerCase();
   if (!trimmed || !trimmed.includes('@')) return null;
-  if (looksLikeUrl(trimmed)) return null;
   if (!VALID_EMAIL_REGEX.test(trimmed)) return null;
   let [local, domain] = trimmed.split('@');
   if (!local || !domain) return null;
   local = stripFrenchAddressLocalPrefix(local);
   if (!local) return null;
-  domain = cleanDomain(domain);
+  domain = normalizeDomain(domain);
   if (!domain) return null;
   if (IGNORE_LOCAL_PREFIXES.some((prefix) => local.startsWith(prefix))) return null;
   if (!isPlausibleEmail(local, domain)) return null;
@@ -141,7 +137,7 @@ function normalizeEmail(raw) {
 }
 
 function extractFromText(text) {
-  const normalized = decodeHtmlEntities(text || '');
+  const normalized = normalizeObfuscated(decodeHtmlEntities(text || ''));
   const matches = normalized.match(EMAIL_REGEX) || [];
   const out = [];
   for (const match of matches) {
@@ -157,6 +153,19 @@ function detectPlatform(html) {
   if (/woocommerce|wp-content\/plugins\/woocommerce/i.test(html)) return 'WooCommerce';
   if (/bigcommerce/i.test(html)) return 'BigCommerce';
   return null;
+}
+
+function extractSchemaEmails(html, url, add) {
+  const scripts = html.match(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  if (!scripts) return;
+  for (const tag of scripts) {
+    const raw = tag.replace(/<script[^>]*>([\s\S]*)<\/script>/i, '$1').replace(/<!--[\s\S]*?-->/g, '').trim();
+    try {
+      const obj = JSON.parse(raw);
+      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+      extractFromText(str).forEach((email) => add(email, 'schema'));
+    } catch (_) {}
+  }
 }
 
 function extractFromPage(url, html) {
@@ -179,7 +188,8 @@ function extractFromPage(url, html) {
 
   $('a[href^="mailto:"]').each((_, el) => {
     const href = $(el).attr('href') || '';
-    extractFromText(href).forEach((email) => add(email, 'mailto'));
+    const mailto = href.replace(/^mailto:/i, '').split(/[?,;&]/)[0].trim();
+    extractFromText(mailto).forEach((email) => add(email, 'mailto'));
   });
 
   $('[data-email], [data-contact], [data-e-mail]').each((_, el) => {
@@ -193,6 +203,13 @@ function extractFromPage(url, html) {
   const footerText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"]').text() || '';
   extractFromText(footerText).forEach((email) => add(email, 'footer'));
 
+  const htmlWithoutScripts = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  extractFromText(htmlWithoutScripts).forEach((email) => add(email, 'html'));
+
+  extractSchemaEmails(html, url, add);
+
   return found;
 }
 
@@ -202,11 +219,41 @@ function getProviderRank(email) {
   return PROVIDER_DOMAIN_TO_RANK.get(domain);
 }
 
-function compareByPriority(a, b) {
-  const rankA = getProviderRank(a.email);
-  const rankB = getProviderRank(b.email);
-  if (rankA !== rankB) return rankA - rankB;
-  return 0;
+function emailMatchesStoreHost(email, storeHost) {
+  if (!storeHost) return false;
+  const domain = (email.split('@')[1] || '').toLowerCase();
+  const host = storeHost.toLowerCase();
+  return domain === host || domain.endsWith(`.${host}`);
+}
+
+function scoreEmailCandidate(item, storeHost) {
+  const email = item.email || '';
+  const local = email.split('@')[0] || '';
+  let score = 0;
+
+  if (item.sourceType === 'mailto') score += 100;
+  else if (item.sourceType === 'schema') score += 70;
+  else if (item.sourceType === 'data') score += 50;
+  else if (item.sourceType === 'footer') score += 30;
+  else if (item.sourceType === 'text') score += 20;
+
+  if (emailMatchesStoreHost(email, storeHost)) score += 90;
+  if (CONTACT_LOCAL_PREFIXES.test(local)) score += 40;
+
+  const providerRank = getProviderRank(email);
+  if (providerRank < Number.MAX_SAFE_INTEGER) {
+    score += 25 - Math.min(providerRank, 20);
+  }
+
+  return score;
+}
+
+function pickBestEmail(candidates, storeHost) {
+  return [...candidates].sort((a, b) => {
+    const scoreDiff = scoreEmailCandidate(b, storeHost) - scoreEmailCandidate(a, storeHost);
+    if (scoreDiff !== 0) return scoreDiff;
+    return getProviderRank(a.email) - getProviderRank(b.email);
+  })[0];
 }
 
 function getStoreHost(storeUrl) {
@@ -236,11 +283,12 @@ export function getEmailType(email) {
 
 /**
  * Extract emails from crawled pages.
- * If multiple emails are found, applies provider priority and picks one by default.
+ * If multiple emails are found, picks the best business contact per store.
  */
 export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const onePerStore = options.onePerStore !== false;
   const privacyPageFound = options.privacyPageFound !== false;
+  const storeHost = getStoreHost(storeUrl);
 
   const byEmail = new Map();
   let platform = null;
@@ -252,20 +300,22 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
     }
   }
 
-  const sorted = [...byEmail.values()].sort(compareByPriority);
-  if (!sorted.length) return [];
+  const candidates = [...byEmail.values()];
+  if (!candidates.length) return [];
 
   if (!onePerStore) {
-    return sorted.map((item) => ({
-      email: item.email,
-      storeUrl: item.storeUrl,
-      sourcePage: item.sourcePage,
-      sourceType: item.sourceType,
-      platform,
-    }));
+    return candidates
+      .sort((a, b) => scoreEmailCandidate(b, storeHost) - scoreEmailCandidate(a, storeHost))
+      .map((item) => ({
+        email: item.email,
+        storeUrl: item.storeUrl,
+        sourcePage: item.sourcePage,
+        sourceType: item.sourceType,
+        platform,
+      }));
   }
 
-  const best = sorted[0];
+  const best = pickBestEmail(candidates, storeHost);
   const sourcePage = !privacyPageFound
     ? `Privacy Page Not Found | ${best.sourcePage}`
     : best.sourcePage;
@@ -275,6 +325,6 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
     sourcePage,
     sourceType: best.sourceType,
     platform,
-    storeHost: getStoreHost(storeUrl),
+    storeHost,
   }];
 }

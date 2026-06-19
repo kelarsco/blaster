@@ -6,6 +6,7 @@ import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 import {
   PLANS,
+  TRIAL_PLAN,
   PLAN_COMPARISON,
   formatPriceNum,
   getDisplayPrice,
@@ -39,6 +40,88 @@ function ComparisonCell({ value }) {
   return <span>{value}</span>;
 }
 
+function PlanCard({ plan, isAnnually, onChoose, featured }) {
+  const display = getDisplayPrice(plan.price, isAnnually, plan.period);
+  const isTrial = plan.period === 'trial';
+
+  return (
+    <div
+      className={`bg-blaster-bg-card rounded-2xl border flex flex-col h-full ${
+        featured
+          ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-lg'
+          : 'border-blaster-border shadow-md'
+      } overflow-hidden`}
+    >
+      {plan.tag && (
+        <div className="bg-emerald-600 px-4 py-1.5 text-center">
+          <span className="text-xs font-semibold text-white">{plan.tag}</span>
+        </div>
+      )}
+      <div className="p-6 flex-1 flex flex-col">
+        <h3 className="font-bold text-xl text-blaster-fg">{plan.name}</h3>
+        <div className="mt-4 flex items-baseline gap-2 flex-wrap">
+          <span className="text-3xl sm:text-4xl font-bold text-blaster-fg">
+            ${formatPriceNum(display.primary)}
+          </span>
+          <span className="text-blaster-muted text-sm">USD/{display.primaryLabel}</span>
+        </div>
+        {display.secondary != null && (
+          <p className="text-xs text-blaster-muted mt-1">
+            ~${formatPriceNum(display.secondary)}/mo billed annually
+          </p>
+        )}
+        {plan.highlights?.length > 0 && (
+          <ul className="mt-6 space-y-2.5 text-sm text-blaster-fg flex-1">
+            {plan.highlights.map((item) => (
+              <li key={item} className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" strokeWidth={2.5} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          onClick={() => onChoose(plan)}
+          className={`w-full mt-6 py-3 rounded-xl text-sm font-semibold transition ${
+            featured
+              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+              : 'bg-black text-white hover:opacity-90'
+          }`}
+        >
+          {isTrial ? 'Start 3-day trial' : `Start ${plan.name}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TrialBar({ onChoose }) {
+  return (
+    <div className="mt-6 rounded-2xl border border-blaster-border bg-white shadow-md p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h3 className="font-bold text-lg text-blaster-fg">{TRIAL_PLAN.name}</h3>
+        <p className="text-sm text-blaster-muted mt-1">
+          Scan stores, run campaigns, and try {TRIAL_PLAN.features.filters} store filters — ${TRIAL_PLAN.price} for 3 days.
+        </p>
+      </div>
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="text-right">
+          <span className="text-2xl font-bold text-blaster-fg">${formatPriceNum(TRIAL_PLAN.price)}</span>
+          <span className="text-sm text-blaster-muted block">/ 3 days</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChoose(TRIAL_PLAN)}
+          className="px-6 py-3 rounded-xl border-2 border-black text-sm font-semibold hover:bg-black hover:text-white transition whitespace-nowrap"
+        >
+          Start for $1
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PricingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -68,7 +151,7 @@ export function PricingPage() {
             Choose a plan that fits your outreach scale
           </h1>
           <p className="mt-3 text-blaster-muted max-w-2xl mx-auto">
-            Start with a 24-hour free trial — no card required. Upgrade when you need unlimited campaigns, filters, and senders.
+            Start with a $1 three-day trial, then upgrade when you need more store filters and scale.
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3">
@@ -95,70 +178,20 @@ export function PricingPage() {
           </div>
         </div>
 
-        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {PLANS.map((plan) => {
-            const display = getDisplayPrice(plan.price, isAnnually, plan.period);
-            return (
-              <div
-                key={plan.id}
-                className={`bg-blaster-bg-card rounded-2xl border flex flex-col ${
-                  plan.tag ? 'border-blaster-accent/50 ring-2 ring-blaster-accent/20' : 'border-blaster-border'
-                } shadow-md overflow-hidden`}
-              >
-                {plan.tag && (
-                  <div className="bg-blaster-accent/10 border-b border-blaster-accent/20 px-4 py-1.5 text-center">
-                    <span className="text-xs font-semibold text-blaster-accent">{plan.tag}</span>
-                  </div>
-                )}
-                <div className="p-6 flex-1 flex flex-col">
-                  <h3 className="font-bold text-lg text-blaster-fg">{plan.name}</h3>
-                  <p className="text-sm text-blaster-muted mt-1 mb-4">{plan.description}</p>
-                  <div className="mt-auto">
-                    {plan.isFreeTrial ? (
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <span className="text-2xl font-bold text-blaster-fg">Free</span>
-                        <span className="text-blaster-muted text-sm">/ 24 hours</span>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <span className="text-2xl font-bold text-blaster-fg">${formatPriceNum(display.primary)}</span>
-                          <span className="text-blaster-muted text-sm">/{display.primaryLabel}</span>
-                        </div>
-                        {display.secondary != null && (
-                          <p className="text-xs text-blaster-muted mt-0.5">
-                            ~${formatPriceNum(display.secondary)}/mo billed annually
-                          </p>
-                        )}
-                      </>
-                    )}
-                    {plan.highlights?.length > 0 && (
-                      <ul className="mt-4 space-y-2 text-sm text-blaster-fg">
-                        {plan.highlights.map((item) => (
-                          <li key={item} className="flex items-start gap-2">
-                            <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" strokeWidth={2.5} />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleChoosePlan(plan)}
-                      className={`w-full mt-6 py-2.5 rounded-xl text-sm font-semibold btn-landing-pop ${
-                        plan.isFreeTrial
-                          ? 'btn-blaster-accent'
-                          : 'bg-blaster-accent text-white hover:opacity-90'
-                      }`}
-                    >
-                      {plan.isFreeTrial ? 'Start free trial' : 'Choose plan'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {PLANS.map((plan) => (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              isAnnually={isAnnually}
+              onChoose={handleChoosePlan}
+              featured={plan.id === 'standard'}
+            />
+          ))}
         </div>
+
+        <TrialBar onChoose={handleChoosePlan} />
+
         <p className="mt-6 text-center text-sm text-blaster-muted">
           Already have an account?{' '}
           <Link to="/login" className="text-blaster-fg font-medium hover:underline">
@@ -227,11 +260,11 @@ export function PricingPage() {
         <div className="mt-16 max-w-[850px] mx-auto bg-white border border-[rgba(99,101,242,0.13)] rounded-[25px] shadow-step p-8 md:p-10 text-center">
           <h2 className="font-rubik text-2xl md:text-[32px] text-[#030303] leading-tight">Ready to scale your outreach?</h2>
           <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-lg mx-auto">
-            Create an account in under a minute. Pick a plan and complete payment securely with Paystack.
+            Create an account in under a minute. Try for $1 or pick a plan and complete payment securely with Paystack.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <PrimaryPillButton as={Link} to="/signup">
-              Create free account
+              Create account
             </PrimaryPillButton>
             <Link
               to="/login"

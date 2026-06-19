@@ -8,6 +8,7 @@ import { formatUTCDateOnly } from '../utils/dateUtils';
 import { getTrialRemainingMs } from '../utils/trialCountdown.js';
 import { TrialCountdown } from '../components/access/TrialCountdown.jsx';
 import { Logo } from '../components/Logo.jsx';
+import { SidebarReferralPromo } from '../components/referral/SidebarReferralPromo.jsx';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: DashboardIcon },
@@ -218,7 +219,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
     if (promoDaysLeft > 0) {
       return `${promoDaysLeft} days left for 50% off`;
     }
-    return 'Plans from $3.99/month';
+    return 'Plans from $29/month';
   })();
 
   return (
@@ -301,7 +302,8 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
           </>
         )}
       </nav>
-      <div className="sidebar-plan-panel shrink-0 p-3 border-t border-blaster-border">
+      <div className="sidebar-plan-panel shrink-0 p-3 border-t border-blaster-border space-y-3">
+        <SidebarReferralPromo userId={user?.id} onNavigate={onMobileClose} />
         {loading || !subscriptionLoaded ? (
           <div className="bg-white rounded-xl border border-blaster-border p-4 shadow-sm">
             <Skeleton className="h-3 w-20 mb-3" />

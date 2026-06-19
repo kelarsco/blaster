@@ -133,8 +133,8 @@ export function BillingOverviewPage() {
   const paygChargesCents = planStatus?.paygChargesCents ?? 0;
   const paygCapCents = planStatus?.paygCapCents ?? 1000;
   const paygPct = paygCapCents > 0 ? Math.min(100, (paygChargesCents / paygCapCents) * 100) : 0;
-  const showFilterUsage = planStatus?.tier === 2;
-  const showPaygUsage = planStatus?.paygActive || paygChargesCents > 0;
+  const showFilterUsage = planStatus?.tier != null && planStatus.tier < 3;
+  const showPaygUsage = (planStatus?.tier === 1 || planStatus?.tier === 2) && (planStatus?.paygActive || paygChargesCents > 0);
   const paygInvoiceCents = planStatus?.paygPendingInvoiceCents ?? paygChargesCents;
 
   return (
@@ -247,7 +247,7 @@ export function BillingOverviewPage() {
                       <div className="h-full bg-indigo-500/50 rounded-full transition-[width]" style={{ width: `${paygPct}%` }} />
                     </div>
                     <p className="text-xs text-blaster-muted mt-1">
-                      $0.05 per filter use beyond {filterLimit}. Charges are added to your next subscription invoice.
+                      $0.01 per filter beyond {filterLimit} (100 searches = $1). Charges are added to your next subscription invoice.
                     </p>
                   </div>
                 )}

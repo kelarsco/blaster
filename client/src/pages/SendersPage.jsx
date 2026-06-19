@@ -67,7 +67,7 @@ export function SendersPage() {
         title: 'Group limit reached',
         message: 'Upgrade to add more sender groups.',
         tierName: 'Basic',
-        tierPrice: '$3.99/month',
+        tierPrice: '$29/month',
       });
       return;
     }
@@ -127,7 +127,7 @@ export function SendersPage() {
         title: 'Sender limit reached',
         message: 'Upgrade to add more senders.',
         tierName: 'Basic',
-        tierPrice: '$3.99/month',
+        tierPrice: '$29/month',
       });
       return;
     }
@@ -163,7 +163,7 @@ export function SendersPage() {
         title: 'Group limit reached',
         message: 'Upgrade to add more sender groups.',
         tierName: 'Basic',
-        tierPrice: '$3.99/month',
+        tierPrice: '$29/month',
       });
       return;
     }
