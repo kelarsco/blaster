@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
+import LineWaves from '../components/LineWaves.jsx';
 
 /** Static assets from Figma — served from /public/landing/ */
 const LANDING_ICONS = {
@@ -31,16 +32,19 @@ const STEPS = [
     step: 'Step 1',
     title: 'Find your leads',
     desc: 'Discover and collect potential customers by generating and scanning store links in seconds. Easily uncover businesses and opportunities that match your target audience without manual searching.',
+    image: '/landing/hw1.png',
   },
   {
     step: 'Step 2',
     title: 'Build Your List',
     desc: 'Automatically extract and organize verified emails from the sites you scan. Turn scattered data into a clean, ready-to-use contact list built for outreach.',
+    image: '/landing/hw2.png',
   },
   {
     step: 'Step 3',
     title: 'Blast Your Message',
     desc: 'Launch personalized email campaigns with ease. Customize your message, hit send, and reach hundreds of potential customers without the manual work.',
+    image: '/landing/hw3.png',
   },
 ];
 
@@ -53,14 +57,24 @@ function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...pr
   );
 }
 
-function StepCard({ step, title, desc, index }) {
+function StepCard({ step, title, desc, image, index }) {
   return (
     <article
       className="aos-fade-up w-full max-w-[850px] bg-white border border-[rgba(99, 101, 242, 0.13)] rounded-[25px] shadow-step overflow-hidden flex flex-col md:flex-row min-h-[280px]"
       data-aos-delay={index * 80}
     >
-      <div className="md:w-[400px] shrink-0 m-3 rounded-[25px] border border-[rgba(99,102,242,0.3)] bg-white shadow-step-inset min-h-[200px] md:min-h-[280px] flex items-center justify-center">
-        <span className="font-poppins text-5xl font-semibold text-black/10">{index + 1}</span>
+      <div className="md:w-[400px] shrink-0 m-3 rounded-[25px] border border-[rgba(99,102,242,0.3)] bg-white shadow-step-inset min-h-[200px] md:min-h-[280px] flex items-center justify-center overflow-hidden">
+        {image ? (
+          <img
+            src={image}
+            alt=""
+            className="w-full h-full object-cover rounded-[20px]"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          <span className="font-poppins text-5xl font-semibold text-black/10">{index + 1}</span>
+        )}
       </div>
       <div className="flex-1 p-6 md:py-8 md:pr-8 flex flex-col justify-center">
         <p className="font-poppins font-semibold text-xl text-[rgba(99,102,242,0.74)]">{step}</p>
@@ -109,8 +123,25 @@ export function LandingPage() {
       <MarketingHeader />
 
       {/* Hero */}
-      <section className="relative min-h-[100vh] flex flex-col justify-center px-4 sm:px-8 py-10 md:py-16 overflow-hidden">
-        <div className="max-w-4xl mx-auto text-center w-full -translate-y-10">
+      <section className="relative min-h-[100vh] flex flex-col justify-center px-4 sm:px-8 py-10 md:py-16 overflow-hidden bg-blaster-bg">
+        <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none" aria-hidden>
+          <LineWaves
+            speed={0.3}
+            innerLineCount={32}
+            outerLineCount={36}
+            warpIntensity={1}
+            rotation={-45}
+            edgeFadeWidth={0}
+            colorCycleSpeed={1}
+            brightness={0.2}
+            color1="#faf8f5"
+            color2="#6366f2"
+            color3="#fcb04c"
+            enableMouseInteraction={false}
+            mouseInfluence={2}
+          />
+        </div>
+        <div className="relative z-10 max-w-4xl mx-auto text-center w-full -translate-y-10">
           <p className="font-rubik text-sm sm:text-xl text-blaster-ink tracking-wide uppercase">
             outreach made fast
           </p>
