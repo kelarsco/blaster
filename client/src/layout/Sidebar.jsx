@@ -230,13 +230,13 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
           tabIndex={0}
           onClick={onMobileClose}
           onKeyDown={(e) => e.key === 'Escape' && onMobileClose()}
-          className="md:hidden fixed inset-0 z-[60] bg-black/50 transition-opacity"
+          className="md:hidden fixed inset-0 z-[1000] bg-black/50 transition-opacity"
           aria-label="Close menu"
         />
       )}
       <aside
         className={`
-          fixed left-0 top-0 z-[70] h-screen w-64 bg-blaster-sidebar border-r border-blaster-border flex flex-col overflow-y-auto
+          fixed left-0 top-0 z-[1010] md:z-[70] h-screen w-64 bg-blaster-sidebar border-r border-blaster-border flex flex-col overflow-y-auto
           transform transition-transform duration-300 ease-out
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
           md:translate-x-0

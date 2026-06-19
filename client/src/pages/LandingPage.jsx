@@ -162,7 +162,7 @@ export function LandingPage() {
       </section>
 
       {/* Stats + integrations */}
-      <section className="bg-white py-12 md:py-16 px-4 sm:px-8 border-y border-blaster-border/40">
+      <section className="bg-white py-12 md:py-16 px-4 sm:px-[95px] border-y border-blaster-border/40">
         <div className="max-w-7xl mx-auto flex flex-col items-center lg:flex-row lg:items-center lg:justify-between gap-12 lg:gap-8">
           <div className="text-center lg:text-left">
             <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl text-black leading-snug max-w-xl mx-auto lg:mx-0">

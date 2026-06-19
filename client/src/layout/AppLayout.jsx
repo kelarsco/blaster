@@ -44,6 +44,7 @@ export function AppLayout() {
   const [layoutLoading, setLayoutLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navToggleVisible, setNavToggleVisible] = useState(true);
+  const [trialBannerHidden, setTrialBannerHidden] = useState(false);
   const mainRef = useRef(null);
   const lastScrollTop = useRef(0);
 
@@ -63,9 +64,10 @@ export function AppLayout() {
   // When route changes, scroll main content to top so the new page is visible
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
+    setTrialBannerHidden(false);
   }, [location.pathname]);
 
-  // Scroll: hide button when scrolling up, show when scrolling down (mobile). Listen to both main and window.
+  // Scroll: hide nav toggle / trial banner when scrolling down; show when at top or scrolling up.
   useEffect(() => {
     const getScrollTop = () => {
       const el = mainRef.current;
@@ -77,7 +79,15 @@ export function AppLayout() {
       const st = getScrollTop();
       const delta = st - lastScrollTop.current;
       if (Math.abs(delta) < SCROLL_THRESHOLD) return;
+
       setNavToggleVisible(delta <= 0);
+
+      if (st <= SCROLL_THRESHOLD) {
+        setTrialBannerHidden(false);
+      } else if (delta > 0) {
+        setTrialBannerHidden(true);
+      }
+
       lastScrollTop.current = st;
     };
 
@@ -93,12 +103,18 @@ export function AppLayout() {
   }, []);
 
   const showTrialBanner = status?.trialActive && !trialExpired;
+  const trialBannerDocked = showTrialBanner && !trialBannerHidden;
 
   const showTrialExpiredWall = trialExpired && !isPlanUpgradeRoute(location.pathname);
 
   return (
     <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
       {showTrialExpiredWall && <TrialExpiredWall />}
+      {showTrialBanner && (
+        <div className={`plan-trial-banner-fixed${trialBannerHidden ? ' plan-trial-banner-fixed--hidden' : ''}`}>
+          <TrialBanner trialEndsAt={status.trialEndsAt} />
+        </div>
+      )}
       <Sidebar
         loading={layoutLoading}
         mobileOpen={sidebarOpen}
@@ -112,15 +128,15 @@ export function AppLayout() {
       />
       <div
         className={`flex-1 min-w-0 ml-0 md:ml-64 flex flex-col min-h-screen relative z-0 isolate${
-          showTrialBanner ? ' app-content-with-trial-banner' : ''
-        }`}
+          showTrialBanner ? ' app-content-trial-aware' : ''
+        }${trialBannerDocked ? ' app-content-with-trial-banner' : ''}`}
       >
-        {showTrialBanner && (
-          <div className="plan-trial-banner-fixed">
-            <TrialBanner trialEndsAt={status.trialEndsAt} />
-          </div>
-        )}
-        <AppHeader loading={layoutLoading} onOpenHelp={() => setShowHelp(true)} onOpenSupport={() => setShowSupport(true)} />
+        <AppHeader
+          loading={layoutLoading}
+          trialBannerVisible={trialBannerDocked}
+          onOpenHelp={() => setShowHelp(true)}
+          onOpenSupport={() => setShowSupport(true)}
+        />
         <main ref={mainRef} className="flex-1 overflow-auto relative z-0 isolate">
           <div key={location.pathname} className="relative min-h-full">
             <PageTransitionWrapper>

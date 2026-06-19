@@ -82,14 +82,20 @@ export function TrialBanner({ trialEndsAt }) {
     return () => clearInterval(id);
   }, [trialEndsAt]);
 
-  if (!trialEndsAt || remainingMs <= 0) return null;
+  if (!trialEndsAt) return null;
 
   return (
     <div className="plan-trial-banner">
       <span>
-        Your free trial expires in{' '}
-        <TrialCountdown ms={remainingMs} trialEndsAt={trialEndsAt} className="plan-trial-countdown" size="banner" />
-        .
+        {remainingMs > 0 ? (
+          <>
+            Your free trial expires in{' '}
+            <TrialCountdown ms={remainingMs} trialEndsAt={trialEndsAt} className="plan-trial-countdown" size="banner" />
+            .
+          </>
+        ) : (
+          'Your free trial is ending soon.'
+        )}
       </span>
       <Link to="/app/account/pricing" className="plan-trial-banner-link">
         Upgrade now

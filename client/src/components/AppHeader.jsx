@@ -23,7 +23,7 @@ const dropdownItems = [
   { label: 'Log out', action: 'logout' },
 ];
 
-export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
+export function AppHeader({ loading, trialBannerVisible, onOpenHelp, onOpenSupport }) {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [profile, setProfile] = useState(() => loadProfileFromStorage());
@@ -84,7 +84,11 @@ export function AppHeader({ loading, onOpenHelp, onOpenSupport }) {
   const avatarUrl = profileImage || googlePicture;
 
   return (
-    <header className="sticky top-0 z-20 bg-white border-b border-blaster-border shrink-0">
+    <header
+      className={`sticky z-20 bg-white border-b border-blaster-border shrink-0 transition-[top] duration-300 ease-out${
+        trialBannerVisible ? ' top-[2.375rem]' : ' top-0'
+      }`}
+    >
       <div className="flex items-center justify-between px-4 sm:px-6 py-3 h-[60px] sm:h-[62px]">
         {/* Logo: mobile only; desktop has it in sidebar */}
         <Link
