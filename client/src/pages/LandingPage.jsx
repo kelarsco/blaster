@@ -57,6 +57,47 @@ function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...pr
   );
 }
 
+function PlayIcon() {
+  return (
+    <svg className="w-10 h-10 sm:w-12 sm:h-12 text-blaster-purple ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M8 5.14v14.72a1 1 0 001.5.86l11.04-7.36a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z" />
+    </svg>
+  );
+}
+
+function DemoSection() {
+  return (
+    <section id="demo" className="bg-black py-16 md:py-24 px-4 sm:px-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="aos-fade-up flex items-center justify-center gap-2 text-white font-rubik text-base sm:text-lg">
+          <img src={LANDING_ICONS.spark} alt="" className="w-5 h-5 object-contain shrink-0" width={20} height={20} />
+          <span>Watch a demo</span>
+        </div>
+
+        <article className="aos-fade-up mt-8 md:mt-10 w-full max-w-[850px] mx-auto bg-white border border-[rgba(99,101,242,0.13)] rounded-[25px] shadow-step overflow-hidden flex flex-col md:flex-row min-h-[280px]">
+          <div className="md:w-[400px] shrink-0 m-3 rounded-[25px] border border-[rgba(99,102,242,0.3)] bg-blaster-bg shadow-step-inset min-h-[200px] md:min-h-[280px] flex items-center justify-center">
+            <button
+              type="button"
+              className="group flex items-center justify-center w-[88px] h-[88px] sm:w-[100px] sm:h-[100px] rounded-full bg-[rgba(99,102,242,0.18)] transition hover:bg-[rgba(99,102,242,0.28)] focus:outline-none focus:ring-2 focus:ring-blaster-purple/40"
+              aria-label="Play demo video"
+            >
+              <PlayIcon />
+            </button>
+          </div>
+          <div className="flex-1 p-6 md:py-8 md:pr-8 flex flex-col justify-center">
+            <h3 className="font-poppins font-semibold text-xl sm:text-2xl text-[rgba(99,102,242,0.85)] leading-snug">
+              How Does Wiblaster Work?
+            </h3>
+            <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-md">
+              See how to filter businesses, extract quality leads, and set up personalized messaging campaigns, all from one simple workflow designed to save time and scale your outreach faster.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function StepCard({ step, title, desc, image, index }) {
   return (
     <article
@@ -265,6 +306,8 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      <DemoSection />
 
       {/* Footer */}
       <footer className="py-10 px-4 sm:px-8 border-t border-blaster-border bg-white">
