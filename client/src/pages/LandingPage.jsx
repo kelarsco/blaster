@@ -3,9 +3,19 @@
  */
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Check } from 'react-feather';
 import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 import LineWaves from '../components/LineWaves.jsx';
+import {
+  PLANS,
+  formatPriceNum,
+  getDisplayPrice,
+  getBillingPlanId,
+  storeSelectedPlan,
+} from '../data/plans.js';
+
+const LANDING_PRICING_PLANS = PLANS.filter((p) => p.id === 'essentials' || p.id === 'standard');
 
 /** Static assets from Figma — served from /public/landing/ */
 const LANDING_ICONS = {
@@ -58,34 +68,132 @@ function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...pr
 }
 
 function PlayIcon() {
+  const gradientId = React.useId().replace(/:/g, '');
   return (
-    <svg className="w-10 h-10 sm:w-12 sm:h-12 text-blaster-purple ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M8 5.14v14.72a1 1 0 001.5.86l11.04-7.36a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z" />
+    <svg className="w-10 h-10 sm:w-12 sm:h-12 ml-1" viewBox="0 0 24 24" aria-hidden>
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6366f1" />
+          <stop offset="100%" stopColor="#fcb04c" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M8 5.14v14.72a1 1 0 001.5.86l11.04-7.36a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z"
+        fill={`url(#${gradientId})`}
+      />
     </svg>
   );
 }
 
+const DEMO_VIDEO_URL =
+  'https://res.cloudinary.com/dhe2bjp2a/video/upload/v1781834623/prev_oubsh6.mp4';
+
+function DemoVideoModal({ open, onClose, videoRef }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || !videoRef.current) return;
+    videoRef.current.currentTime = 0;
+    videoRef.current.play().catch(() => {});
+  }, [open, videoRef]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Demo video"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-5xl animate-[demo-video-in_0.25s_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-10 right-0 sm:top-0 sm:-right-12 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition focus:outline-none focus:ring-2 focus:ring-white/40"
+          aria-label="Close video"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        <video
+          ref={videoRef}
+          src={DEMO_VIDEO_URL}
+          className="w-full max-h-[85vh] rounded-2xl bg-black shadow-2xl"
+          controls
+          playsInline
+          preload="auto"
+        />
+      </div>
+    </div>
+  );
+}
+
 function DemoSection() {
+  const [videoOpen, setVideoOpen] = useState(false);
+  const modalVideoRef = React.useRef(null);
+
+  const openVideo = () => setVideoOpen(true);
+  const closeVideo = () => {
+    if (modalVideoRef.current) {
+      modalVideoRef.current.pause();
+    }
+    setVideoOpen(false);
+  };
+
   return (
     <section id="demo" className="bg-black py-16 md:py-24 px-4 sm:px-8">
       <div className="max-w-5xl mx-auto">
-        <div className="aos-fade-up flex items-center justify-center gap-2 text-white font-rubik text-base sm:text-lg">
+        <button
+          type="button"
+          onClick={openVideo}
+          className="aos-fade-up flex items-center justify-center gap-2 w-full text-white font-rubik text-base sm:text-lg hover:opacity-80 transition focus:outline-none focus:ring-2 focus:ring-white/30 rounded-lg"
+        >
           <img src={LANDING_ICONS.spark} alt="" className="w-5 h-5 object-contain shrink-0" width={20} height={20} />
           <span>Watch a demo</span>
-        </div>
+        </button>
 
         <article className="aos-fade-up mt-8 md:mt-10 w-full max-w-[850px] mx-auto bg-white border border-[rgba(99,101,242,0.13)] rounded-[25px] shadow-step overflow-hidden flex flex-col md:flex-row min-h-[280px]">
-          <div className="md:w-[400px] shrink-0 m-3 rounded-[25px] border border-[rgba(99,102,242,0.3)] bg-blaster-bg shadow-step-inset min-h-[200px] md:min-h-[280px] flex items-center justify-center">
+          <div className="md:w-[400px] shrink-0 m-3 rounded-[25px] border border-[rgba(99,102,242,0.3)] bg-blaster-bg shadow-step-inset min-h-[200px] md:min-h-[280px] flex items-center justify-center overflow-hidden">
             <button
               type="button"
-              className="group flex items-center justify-center w-[88px] h-[88px] sm:w-[100px] sm:h-[100px] rounded-full bg-[rgba(99,102,242,0.18)] transition hover:bg-[rgba(99,102,242,0.28)] focus:outline-none focus:ring-2 focus:ring-blaster-purple/40"
+              onClick={openVideo}
+              className="group relative w-full h-full min-h-[200px] md:min-h-[280px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blaster-purple/40 focus:ring-inset rounded-[20px]"
               aria-label="Play demo video"
             >
-              <PlayIcon />
+              <video
+                src={DEMO_VIDEO_URL}
+                className="absolute inset-0 w-full h-full object-cover rounded-[20px]"
+                muted
+                playsInline
+                preload="metadata"
+                tabIndex={-1}
+                aria-hidden
+              />
+              <span className="absolute inset-0 rounded-[20px] bg-black/15 transition group-hover:bg-black/25" aria-hidden />
+              <span className="relative z-10 flex items-center justify-center w-[88px] h-[88px] sm:w-[100px] sm:h-[100px] rounded-full bg-brand-gradient-soft border border-blaster-accent/20 transition group-hover:opacity-90">
+                <PlayIcon />
+              </span>
             </button>
           </div>
           <div className="flex-1 p-6 md:py-8 md:pr-8 flex flex-col justify-center">
-            <h3 className="font-poppins font-semibold text-xl sm:text-2xl text-[rgba(99,102,242,0.85)] leading-snug">
+            <h3 className="font-poppins font-semibold text-xl sm:text-2xl text-brand-gradient leading-snug">
               How Does Wiblaster Work?
             </h3>
             <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-md">
@@ -93,6 +201,139 @@ function DemoSection() {
             </p>
           </div>
         </article>
+      </div>
+
+      <DemoVideoModal open={videoOpen} onClose={closeVideo} videoRef={modalVideoRef} />
+    </section>
+  );
+}
+
+function MiniPricingCard({ plan, isAnnually, featured }) {
+  const display = getDisplayPrice(plan.price, isAnnually, plan.period);
+  const priceLabel = isAnnually ? '/ yr' : '/ mo';
+
+  const handleSubscribe = () => {
+    storeSelectedPlan(getBillingPlanId(plan, isAnnually));
+  };
+
+  return (
+    <article
+      className={`relative flex flex-col rounded-2xl border bg-white p-6 sm:p-8 shadow-step ${
+        featured
+          ? 'border-black ring-1 ring-black'
+          : 'border-blaster-border'
+      }`}
+    >
+      {featured && plan.tag && (
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black px-3 py-1 text-xs font-medium text-white">
+          {plan.tag}
+        </span>
+      )}
+      <h3 className="font-poppins text-lg font-semibold text-black">{plan.name}</h3>
+      <div className="mt-4 flex items-baseline gap-1">
+        <span className="font-poppins text-4xl sm:text-5xl font-bold tracking-tight text-black">
+          ${formatPriceNum(display.primary)}
+        </span>
+        <span className="text-sm text-blaster-muted font-rubik">{priceLabel}</span>
+      </div>
+      {display.secondary != null && (
+        <p className="mt-1 text-xs text-blaster-muted font-rubik">
+          (~${formatPriceNum(display.secondary)}/mo billed annually)
+        </p>
+      )}
+      <ul className="mt-6 space-y-3 flex-1">
+        {plan.highlights.map((item) => (
+          <li key={item} className="flex items-start gap-2.5 text-sm text-blaster-fg">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" strokeWidth={2.5} />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+      <Link
+        to="/signup?from=pricing"
+        onClick={handleSubscribe}
+        className="mt-8 block w-full py-3 rounded-xl bg-black text-white text-center text-sm font-medium font-rubik hover:opacity-90 transition"
+      >
+        Subscribe
+      </Link>
+    </article>
+  );
+}
+
+function LandingPricingSection() {
+  const [billingPeriod, setBillingPeriod] = useState('monthly');
+  const isAnnually = billingPeriod === 'annually';
+
+  return (
+    <section id="pricing" className="bg-white py-16 md:py-24 px-4 sm:px-8 border-t border-blaster-border/40">
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center aos-fade-up">
+          <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl font-bold text-black">
+            Simple, transparent pricing
+          </h2>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            <span className={`text-sm font-medium ${!isAnnually ? 'text-black' : 'text-blaster-muted'}`}>
+              Monthly
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isAnnually}
+              onClick={() => setBillingPeriod((p) => (p === 'monthly' ? 'annually' : 'monthly'))}
+              className="relative inline-flex h-7 w-12 shrink-0 rounded-full border border-blaster-border bg-blaster-bg transition-colors focus:outline-none focus:ring-2 focus:ring-blaster-accent/40"
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-black shadow-sm transition-transform mt-0.5 ml-0.5 ${
+                  isAnnually ? 'translate-x-[22px]' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-medium ${isAnnually ? 'text-black' : 'text-blaster-muted'}`}>
+                Annually
+              </span>
+              <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                Save 2 months
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 md:mt-12 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 aos-fade-up">
+          {LANDING_PRICING_PLANS.map((plan) => (
+            <MiniPricingCard
+              key={plan.id}
+              plan={plan}
+              isAnnually={isAnnually}
+              featured={plan.id === 'standard'}
+            />
+          ))}
+        </div>
+
+        <p className="mt-8 text-center text-sm text-blaster-muted font-rubik aos-fade-up">
+          Need Pro or want to compare everything?{' '}
+          <Link to="/pricing" className="text-black underline underline-offset-4 hover:opacity-70">
+            View all plans
+          </Link>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function LandingCtaSection() {
+  return (
+    <section className="bg-blaster-bg py-16 md:py-24 px-4 sm:px-8">
+      <div className="max-w-2xl mx-auto text-center aos-fade-up">
+        <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl font-bold text-black leading-snug">
+          Ready to find your next lead?
+        </h2>
+        <p className="mt-4 font-rubik text-base sm:text-lg text-blaster-muted">
+          Start with a 24-hour free trial — no credit card required.
+        </p>
+        <PrimaryPillButton as={Link} to="/signup" className="mt-8">
+          Get started
+        </PrimaryPillButton>
       </div>
     </section>
   );
@@ -118,7 +359,7 @@ function StepCard({ step, title, desc, image, index }) {
         )}
       </div>
       <div className="flex-1 p-6 md:py-8 md:pr-8 flex flex-col justify-center">
-        <p className="font-poppins font-semibold text-xl text-[rgba(99,102,242,0.74)]">{step}</p>
+        <p className="font-poppins font-semibold text-xl text-brand-gradient">{step}</p>
         <h3 className="mt-2 font-rubik text-2xl md:text-[32px] text-[#030303] leading-tight">{title}</h3>
         <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-md">{desc}</p>
       </div>
@@ -183,9 +424,10 @@ export function LandingPage() {
           />
         </div>
         <div className="relative z-10 max-w-4xl mx-auto text-center w-full -translate-y-10">
-          <p className="font-rubik text-sm sm:text-xl text-blaster-ink tracking-wide uppercase">
-            outreach made fast
-          </p>
+          <div className="inline-flex items-center gap-2 bg-black text-white rounded-full px-5 py-2 text-base font-rubik">
+            <img src={LANDING_ICONS.spark} alt="" className="w-5 h-5 object-contain shrink-0" width={20} height={20} />
+            Outreach made fast
+          </div>
 
           <h1 className="mt-6 font-bold font-sans text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] leading-[1.05] tracking-tight text-black [text-shadow:1px_1px_0px_white]">
             Send Personalized{' '}
@@ -308,6 +550,10 @@ export function LandingPage() {
       </section>
 
       <DemoSection />
+
+      <LandingPricingSection />
+
+      <LandingCtaSection />
 
       {/* Footer */}
       <footer className="py-10 px-4 sm:px-8 border-t border-blaster-border bg-white">

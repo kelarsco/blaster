@@ -61,6 +61,18 @@
     font-family: 'Montserrat', 'Inter', system-ui, sans-serif;
     font-optical-sizing: auto;
   }
+
+  .text-brand-gradient {
+    @apply bg-gradient-to-r from-blaster-accent via-blaster-purple to-blaster-orange bg-clip-text text-transparent;
+  }
+
+  .bg-brand-gradient-soft {
+    @apply bg-gradient-to-br from-blaster-accent/25 to-blaster-orange/35;
+  }
+
+  .bg-brand-gradient {
+    @apply bg-gradient-to-r from-blaster-accent to-blaster-orange;
+  }
 }
 
 :root {
@@ -101,6 +113,17 @@ body {
 .aos-fade-up.aos-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+@keyframes demo-video-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .glass {
