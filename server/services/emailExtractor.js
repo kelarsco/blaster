@@ -3,16 +3,24 @@
  */
 import { load } from 'cheerio';
 
-const EMAIL_REGEX = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/g;
-const VALID_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
+/** Local part must not include slashes (avoids CDN / social URL false positives). */
+const EMAIL_REGEX = /\b[a-z0-9][a-z0-9.!#$%&'*+=?^_`{|}~-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,10}\b/gi;
+const VALID_EMAIL_REGEX = /^[a-z0-9][a-z0-9.!#$%&'*+=?^_`{|}~-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,10}$/i;
 const IGNORE_LOCAL_PREFIXES = ['noreply', 'no-reply', 'donotreply'];
 /** French store pages often prefix the local part with "adresse"/"addresse" (address label). */
 const FRENCH_ADDRESS_LOCAL_PREFIX = /^(?:addresse|adresse)/i;
+const DOMAIN_GLUE_SUFFIX = /(?:adresse?s?|numer|contact|response|common|our|we|menu)$/i;
 const INVALID_EMAIL_TLDS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif',
   'css', 'js', 'mjs', 'json', 'map', 'xml', 'html', 'htm', 'php', 'asp', 'aspx',
   'woff', 'woff2', 'ttf', 'eot', 'otf', 'mp4', 'webm', 'mp3', 'wav', 'pdf',
+  'auto', 'empire', 'common', 'website', 'domain', 'email', 'test', 'invalid', 'localhost',
 ]);
+const PLACEHOLDER_DOMAINS = new Set([
+  'example.com', 'domain.com', 'email.com', 'yourwebsite.com', 'yourdomain.com',
+  'mystore.com', 'correo.com', 'yoursite.com', 'test.com', 'website.com',
+]);
+const PLACEHOLDER_LOCALS = new Set(['you', 'your', 'tu', 'example', 'test', 'user', 'name', 'email']);
 
 const PROVIDER_PRIORITY = [
   ['gmail.com'],
@@ -46,6 +54,16 @@ function decodeHtmlEntities(str) {
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
 
+function looksLikeUrl(raw) {
+  const s = (raw || '').trim().toLowerCase();
+  if (!s) return false;
+  if (s.startsWith('//') || /^https?:\/\//.test(s)) return true;
+  if (/\/cdn\/|myshopify\.com\/|tiktok\.com\/|jsdelivr\.net|\/npm\/|\/vue@/.test(s)) return true;
+  if (/\.(png|jpe?g|gif|svg|webp|css|js)(\?|$|@)/i.test(s)) return true;
+  if (/@\d+x\.[a-z]/i.test(s)) return true;
+  return false;
+}
+
 function stripFrenchAddressLocalPrefix(local) {
   if (!local) return local;
   let cleaned = local;
@@ -57,19 +75,50 @@ function stripFrenchAddressLocalPrefix(local) {
   return cleaned;
 }
 
+function cleanDomain(domain) {
+  let d = (domain || '').toLowerCase().trim();
+  if (!d) return null;
+  for (let i = 0; i < 3; i += 1) {
+    const stripped = d.replace(DOMAIN_GLUE_SUFFIX, '');
+    if (stripped === d) break;
+    d = stripped;
+  }
+  const m = d.match(/^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)\.([a-z]{2,10})$/);
+  if (!m) return null;
+  const tld = m[2];
+  if (!/^[a-z]+$/.test(tld) || INVALID_EMAIL_TLDS.has(tld)) return null;
+  return `${m[1]}.${tld}`;
+}
+
+function isPlaceholderEmail(local, domain) {
+  if (PLACEHOLDER_DOMAINS.has(domain)) return true;
+  if (PLACEHOLDER_LOCALS.has(local) && (PLACEHOLDER_DOMAINS.has(domain) || domain.includes('example') || domain.includes('domain'))) {
+    return true;
+  }
+  if (local === 'your' || local === 'you' || local === 'tu') return true;
+  if (domain.startsWith('your') && (domain.endsWith('.com') || domain.endsWith('.es'))) return true;
+  return false;
+}
+
 function isPlausibleEmail(local, domain) {
   if (!local || !domain) return false;
   if (local.length > 64 || domain.length > 253) return false;
+  if (local.includes('/') || local.includes('\\')) return false;
+  if (!/^[a-z0-9]/.test(local)) return false;
+  if (/^\d+x$/i.test(local) || /@\d+x/i.test(`${local}@${domain}`)) return false;
   if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
   const tld = domain.split('.').pop() || '';
   if (tld.length < 2 || INVALID_EMAIL_TLDS.has(tld)) return false;
+  if (!/^[a-z]+$/.test(tld)) return false;
   if (/^\d+$/.test(tld)) return false;
   if (/^(localhost|example|invalid|test)$/i.test(domain.split('.')[0] || '')) return false;
+  if (isPlaceholderEmail(local, domain)) return false;
   return true;
 }
 
 function normalizeEmail(raw) {
   if (!raw || typeof raw !== 'string') return null;
+  if (looksLikeUrl(raw)) return null;
   const trimmed = raw
     .trim()
     .replace(/^mailto:/i, '')
@@ -78,11 +127,14 @@ function normalizeEmail(raw) {
     .replace(/[>)'"\].,:;!?]+$/, '')
     .toLowerCase();
   if (!trimmed || !trimmed.includes('@')) return null;
+  if (looksLikeUrl(trimmed)) return null;
   if (!VALID_EMAIL_REGEX.test(trimmed)) return null;
   let [local, domain] = trimmed.split('@');
   if (!local || !domain) return null;
   local = stripFrenchAddressLocalPrefix(local);
   if (!local) return null;
+  domain = cleanDomain(domain);
+  if (!domain) return null;
   if (IGNORE_LOCAL_PREFIXES.some((prefix) => local.startsWith(prefix))) return null;
   if (!isPlausibleEmail(local, domain)) return null;
   return `${local}@${domain}`;
@@ -140,12 +192,6 @@ function extractFromPage(url, html) {
 
   const footerText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"]').text() || '';
   extractFromText(footerText).forEach((email) => add(email, 'footer'));
-
-  // Final pass on HTML with scripts/styles stripped to reduce asset-URL false positives.
-  const htmlWithoutScripts = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
-  extractFromText(htmlWithoutScripts).forEach((email) => add(email, 'html'));
 
   return found;
 }
