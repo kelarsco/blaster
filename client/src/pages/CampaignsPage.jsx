@@ -526,7 +526,7 @@ export function CampaignsPage() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
             {emailLists.map((list) => (
               <SavedCampaignTile
                 key={list.id}

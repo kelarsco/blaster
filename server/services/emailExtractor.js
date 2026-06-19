@@ -6,6 +6,13 @@ import { load } from 'cheerio';
 const EMAIL_REGEX = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/g;
 const VALID_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/;
 const IGNORE_LOCAL_PREFIXES = ['noreply', 'no-reply', 'donotreply'];
+/** French store pages often prefix the local part with "adresse"/"addresse" (address label). */
+const FRENCH_ADDRESS_LOCAL_PREFIX = /^(?:addresse|adresse)/i;
+const INVALID_EMAIL_TLDS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif',
+  'css', 'js', 'mjs', 'json', 'map', 'xml', 'html', 'htm', 'php', 'asp', 'aspx',
+  'woff', 'woff2', 'ttf', 'eot', 'otf', 'mp4', 'webm', 'mp3', 'wav', 'pdf',
+]);
 
 const PROVIDER_PRIORITY = [
   ['gmail.com'],
@@ -39,6 +46,28 @@ function decodeHtmlEntities(str) {
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
 
+function stripFrenchAddressLocalPrefix(local) {
+  if (!local) return local;
+  let cleaned = local;
+  for (let i = 0; i < 2; i += 1) {
+    const next = cleaned.replace(FRENCH_ADDRESS_LOCAL_PREFIX, '').replace(/^[+:._\s-]+/, '');
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+  return cleaned;
+}
+
+function isPlausibleEmail(local, domain) {
+  if (!local || !domain) return false;
+  if (local.length > 64 || domain.length > 253) return false;
+  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
+  const tld = domain.split('.').pop() || '';
+  if (tld.length < 2 || INVALID_EMAIL_TLDS.has(tld)) return false;
+  if (/^\d+$/.test(tld)) return false;
+  if (/^(localhost|example|invalid|test)$/i.test(domain.split('.')[0] || '')) return false;
+  return true;
+}
+
 function normalizeEmail(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const trimmed = raw
@@ -50,10 +79,12 @@ function normalizeEmail(raw) {
     .toLowerCase();
   if (!trimmed || !trimmed.includes('@')) return null;
   if (!VALID_EMAIL_REGEX.test(trimmed)) return null;
-  const [local, domain] = trimmed.split('@');
+  let [local, domain] = trimmed.split('@');
   if (!local || !domain) return null;
+  local = stripFrenchAddressLocalPrefix(local);
+  if (!local) return null;
   if (IGNORE_LOCAL_PREFIXES.some((prefix) => local.startsWith(prefix))) return null;
-  if (domain.startsWith('.') || domain.endsWith('.')) return null;
+  if (!isPlausibleEmail(local, domain)) return null;
   return `${local}@${domain}`;
 }
 
@@ -110,8 +141,11 @@ function extractFromPage(url, html) {
   const footerText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"]').text() || '';
   extractFromText(footerText).forEach((email) => add(email, 'footer'));
 
-  // Final broad pass over full HTML for cases where email isn't in visible text nodes.
-  extractFromText(html).forEach((email) => add(email, 'html'));
+  // Final pass on HTML with scripts/styles stripped to reduce asset-URL false positives.
+  const htmlWithoutScripts = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  extractFromText(htmlWithoutScripts).forEach((email) => add(email, 'html'));
 
   return found;
 }

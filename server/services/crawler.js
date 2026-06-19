@@ -5,7 +5,8 @@
 import https from 'https';
 import http from 'http';
 
-const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 10000;
+const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 12000;
+const PAGE_DELAY_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 200;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -124,13 +125,10 @@ export async function crawlStore(storeUrl) {
   let fallbackUsed = false;
 
   const privacyUrls = PRIVACY_PATHS.map((path) => (path === '/' ? `${origin}/` : `${origin}${path}`));
-  const privacyResponses = await Promise.all(
-    privacyUrls.map(async (url) => {
-      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
-      return { url, response };
-    })
-  );
-  for (const { url, response } of privacyResponses) {
+  for (let i = 0; i < privacyUrls.length; i += 1) {
+    if (i > 0) await delay(PAGE_DELAY_MS);
+    const url = privacyUrls[i];
+    const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
     if (response.ok && response.html && response.html.trim().length > 0) {
       addPage(url, response.html);
       if (!privacyPageFound) {
@@ -143,13 +141,10 @@ export async function crawlStore(storeUrl) {
   if (!privacyPageFound) {
     fallbackUsed = true;
     const fallbackUrls = FINAL_FALLBACK_PATHS.map((path) => (path === '/' ? `${origin}/` : `${origin}${path}`));
-    const fallbackResponses = await Promise.all(
-      fallbackUrls.map(async (url) => {
-        const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
-        return { url, response };
-      })
-    );
-    for (const { url, response } of fallbackResponses) {
+    for (let i = 0; i < fallbackUrls.length; i += 1) {
+      if (i > 0) await delay(PAGE_DELAY_MS);
+      const url = fallbackUrls[i];
+      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
       if (response.ok && response.html && response.html.trim().length > 0) {
         addPage(url, response.html);
       }
