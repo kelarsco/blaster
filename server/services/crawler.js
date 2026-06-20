@@ -1,38 +1,25 @@
 /**
- * Store crawler: privacy + contact/about pages (always fetch both for better email coverage).
+ * Simple store crawler: visit privacy, home, and contact pages one at a time.
  */
 import https from 'https';
 import http from 'http';
 
-const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 10000;
+const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 12000;
+const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 500;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const PRIVACY_PATHS = [
+const PAGES_TO_SCAN = [
   '/policies/privacy-policy',
-  '/policies/contact-information',
-  '/privacy-policy',
-  '/privacy',
-  '/pages/privacy-policy',
-  '/pages/privacy',
-  '/legal/privacy',
+  '/',
+  '/pages/contact',
+  '/pages/contact-us',
+  '/contact',
 ];
 
-const CONTACT_PATHS = [
-  '/pages/contact',
-  '/contact',
-  '/contact-us',
-  '/pages/contact-us',
-  '/pages/about',
-  '/pages/about-us',
-  '/about',
-  '/about-us',
-  '/support',
-  '/help',
-  '/customer-service',
-  '/impressum',
-  '/',
-];
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export function fetchHtml(url, options = {}) {
   const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
@@ -93,7 +80,6 @@ export function fetchHtml(url, options = {}) {
   });
 }
 
-/** Normalize one store URL line — use the full line, not a substring token. */
 export function normalizeStoreUrl(storeUrl) {
   const raw = (storeUrl || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
   if (!raw) return null;
@@ -108,65 +94,38 @@ export function normalizeStoreUrl(storeUrl) {
   }
 }
 
-function pathToUrl(origin, path) {
-  return path === '/' ? `${origin}/` : `${origin}${path}`;
-}
-
-async function fetchPaths(origin, paths) {
-  const urls = [...new Set(paths.map((path) => pathToUrl(origin, path)))];
-  const responses = await Promise.all(
-    urls.map(async (url) => {
-      const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
-      return { url, response };
-    })
-  );
-  return responses;
-}
-
 /**
- * Crawl one store: privacy-policy paths plus contact/about/home (always both).
+ * Crawl a store: fetch privacy, homepage, and contact pages sequentially.
  */
 export async function crawlStore(storeUrl) {
   const pages = [];
   const seenPages = new Set();
-  const addPage = (url, html) => {
-    if (!url || !html || seenPages.has(url)) return;
-    seenPages.add(url);
-    pages.push({ url, html });
-  };
-
   const normalized = normalizeStoreUrl(storeUrl);
   if (!normalized) {
     return { pages, privacyPageFound: false, privacyPageUrl: null, fallbackUsed: false };
   }
 
-  const origin = normalized;
   let privacyPageFound = false;
   let privacyPageUrl = null;
 
-  const privacyResponses = await fetchPaths(origin, PRIVACY_PATHS);
-  for (const { url, response } of privacyResponses) {
+  for (let i = 0; i < PAGES_TO_SCAN.length; i += 1) {
+    if (i > 0) await delay(DELAY_BETWEEN_PAGES_MS);
+    const path = PAGES_TO_SCAN[i];
+    const url = path === '/' ? `${normalized}/` : `${normalized}${path}`;
+    if (seenPages.has(url)) continue;
+
+    const response = await fetchHtml(url, { timeout: REQUEST_TIMEOUT_MS });
     if (response.ok && response.html && response.html.trim().length > 0) {
-      addPage(url, response.html);
-      if (!privacyPageFound) {
+      seenPages.add(url);
+      pages.push({ url, html: response.html });
+      if (!privacyPageFound && (path.includes('privacy') || path.includes('policies'))) {
         privacyPageFound = true;
         privacyPageUrl = url;
       }
     }
   }
 
-  const contactResponses = await fetchPaths(origin, CONTACT_PATHS);
-  let fallbackUsed = false;
-  for (const { url, response } of contactResponses) {
-    if (response.ok && response.html && response.html.trim().length > 0) {
-      addPage(url, response.html);
-      fallbackUsed = true;
-    }
-  }
-
-  if (!privacyPageFound && !fallbackUsed) {
-    fallbackUsed = false;
-  }
+  const fallbackUsed = pages.some((p) => !p.url.includes('privacy') && !p.url.includes('policies'));
 
   return { pages, privacyPageFound, privacyPageUrl, fallbackUsed };
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Download, Radio } from 'react-feather';
+import { Check, Download, Radio, X } from 'react-feather';
 import { exportScanResultsCsv, recipientsFromResults, storesWithExtractedData } from '../../utils/scannerUrls.js';
 import { CampaignNameModal } from './CampaignNameModal.jsx';
 import { ExportFieldsModal } from './ExportFieldsModal.jsx';
@@ -52,8 +52,8 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
           isComplete ? 'bg-emerald-50/30' : isFailed ? 'bg-red-50/20' : ''
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <div className="min-w-0">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-blaster-fg">{batch.label}</h3>
               {isComplete ? (
@@ -73,6 +73,14 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
               {batch.foundCount || 0} contact{(batch.foundCount || 0) !== 1 ? 's' : ''} found
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => onRemove(batch.id)}
+            className="shrink-0 p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-gray-100 transition"
+            aria-label={`Remove ${batch.label}`}
+          >
+            <X className="w-4 h-4" strokeWidth={2} />
+          </button>
         </div>
 
         <div className={`flex flex-col sm:flex-row gap-3 ${isComplete ? 'sm:items-center' : ''}`}>
