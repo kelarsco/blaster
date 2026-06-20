@@ -5,7 +5,7 @@ import { API } from '../api.js';
 import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
 import { ScannerLanding } from '../components/scanner/ScannerLanding.jsx';
-import { ScannerWorkspace, DEFAULT_EXTRACT_OPTIONS } from '../components/scanner/ScannerWorkspace.jsx';
+import { ScannerWorkspace } from '../components/scanner/ScannerWorkspace.jsx';
 import { ScanBatchFeed } from '../components/scanner/ScanBatchFeed.jsx';
 
 export default function ScannerPage() {
@@ -16,7 +16,6 @@ export default function ScannerPage() {
   const [phase, setPhase] = useState('landing');
   const [rawUrls, setRawUrls] = useState('');
   const [csvName, setCsvName] = useState('');
-  const [extractOptions, setExtractOptions] = useState(DEFAULT_EXTRACT_OPTIONS);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
   const [upgradeRequired, setUpgradeRequired] = useState(false);
@@ -41,10 +40,6 @@ export default function ScannerPage() {
     }
   };
 
-  const toggleExtract = (key) => {
-    setExtractOptions((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
   const startScan = async () => {
     if (isStarting) return;
     setError('');
@@ -52,7 +47,7 @@ export default function ScannerPage() {
     setIsStarting(true);
 
     try {
-      const maxConcurrentCrawlers = 1;
+      const maxConcurrentCrawlers = 2;
       const maxUrlsPerScan = 1000;
 
       const urls = parseUrls(rawUrls);
@@ -65,14 +60,14 @@ export default function ScannerPage() {
           rawUrls: urls.join('\n'),
           maxConcurrentCrawlers,
           maxUrlsPerScan,
-          extractOptions: { ...extractOptions },
         }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (res.status === 402) {
+        if (res.status === 402 || res.status === 403) {
           setUpgradeRequired(true);
+          setError(data.error || 'Upgrade required to scan more stores.');
           return;
         }
         throw new Error(data.error || `Failed to start scan (${res.status})`);
@@ -82,7 +77,7 @@ export default function ScannerPage() {
         addBatch({
           scanId: data.scanId,
           totalUrls: data.scannedUrls ?? urls.length,
-          extractOptions: { ...extractOptions },
+          extractOptions: { email: true },
           label: `Batch ${batchCounter}`,
         });
         setPhase('workspace');
@@ -99,7 +94,7 @@ export default function ScannerPage() {
   const handleStartCampaign = useCallback(
     async (batch, name) => {
       const recipients = recipientsFromResults(batch.results);
-      if (!recipients.length) throw new Error('No contacts to save');
+      if (!recipients.length) throw new Error('No emails to save');
 
       const res = await authFetch(`${API}/email-lists`, {
         method: 'POST',
@@ -138,8 +133,6 @@ export default function ScannerPage() {
         <ScannerWorkspace
           rawUrls={rawUrls}
           onUrlsChange={setRawUrls}
-          extractOptions={extractOptions}
-          onToggleExtract={toggleExtract}
           onStartScan={startScan}
           isStarting={isStarting}
           error={error}

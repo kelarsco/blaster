@@ -222,7 +222,7 @@ scanRoutes.post('/start', requireAuth, async (req, res) => {
       userId: userId || undefined,
       rawInput: limitedUrls.join('\n'),
       emailFilters: emailFilters || {},
-      extractOptions: body.extractOptions ?? body.extract_options ?? { email: true },
+      extractOptions: { email: true },
       forceRefresh: body.forceRefresh ?? body.force_refresh ?? true,
       useCache: body.useCache ?? body.use_cache ?? false,
       stealthMode: !!(body.stealthMode ?? body.stealth_mode),

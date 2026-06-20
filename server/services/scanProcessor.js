@@ -1,15 +1,14 @@
 /**
- * Scan processor: cache check, priority crawler, one-email-per-store, enrichment.
+ * Scan processor: cache check, priority crawler, one-email-per-store.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
-import { extractContactsFromPages, hasAnyContactData } from './contactExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 1, 16);
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 200;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 8);
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 600;
 const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 70000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
 function parseUrls(text) {
@@ -70,37 +69,16 @@ async function runDbQueryWithRetry(db, query, params, retries = DB_WRITE_RETRIES
   throw lastErr;
 }
 
-function normalizeExtractOptions(raw = {}) {
-  return {
-    email: raw.email !== false,
-    phone: Boolean(raw.phone || raw.whatsapp),
-    whatsapp: Boolean(raw.whatsapp),
-    instagram: Boolean(raw.instagram),
-    tiktok: Boolean(raw.tiktok),
-  };
-}
-
-function storeHasExtractedData(row, extractOptions) {
-  if (extractOptions.email && row.email) return true;
-  if (extractOptions.phone && row.phone) return true;
-  if (extractOptions.whatsapp && row.whatsapp) return true;
-  if (extractOptions.instagram && row.instagram) return true;
-  if (extractOptions.tiktok && row.tiktok) return true;
-  return false;
-}
-
 export async function processScan(payload) {
   const {
     scanId,
     rawInput,
     userId,
     emailFilters: rawEmailFilters = {},
-    extractOptions: rawExtractOptions = {},
     maxConcurrentCrawlers,
     maxUrlsPerScan,
     forceRefresh = true,
     useCache = false,
-    stealthMode = false,
   } = payload;
 
   const emailFilters = {
@@ -111,8 +89,6 @@ export async function processScan(payload) {
         : [],
     onePerStore: rawEmailFilters.onePerStore !== false,
   };
-
-  const extractOptions = normalizeExtractOptions(rawExtractOptions);
 
   const db = getDb();
   let urls = parseUrls(rawInput || '');
@@ -197,13 +173,7 @@ export async function processScan(payload) {
     const workPromise = (async () => {
       try {
         const wantAllEmails = emailFilters.onePerStore === false;
-        const needCrawl = extractOptions.email || extractOptions.phone || extractOptions.whatsapp || extractOptions.instagram || extractOptions.tiktok;
-
-        if (!needCrawl) {
-          return { storeUrl, results: [], noEmailReason: 'No extraction options selected' };
-        }
-
-        if (!wantAllEmails && extractOptions.email && !extractOptions.phone && !extractOptions.whatsapp && !extractOptions.instagram && !extractOptions.tiktok) {
+        if (!wantAllEmails) {
           const cached = await getCachedResult(storeUrl);
           if (cached) {
             const results = cached.email
@@ -214,58 +184,19 @@ export async function processScan(payload) {
         }
 
         const crawl = await crawlStore(storeUrl);
-        const contacts = extractContactsFromPages(storeUrl, crawl.pages, {
-          phone: extractOptions.phone,
-          whatsapp: extractOptions.whatsapp,
-          instagram: extractOptions.instagram,
-          tiktok: extractOptions.tiktok,
+        const results = extractEmailsFromPages(storeUrl, crawl.pages, {
+          ...emailFilters,
+          privacyPageFound: crawl.privacyPageFound,
+          fallbackUsed: crawl.fallbackUsed,
         });
-
-        let emailResults = [];
-        if (extractOptions.email) {
-          emailResults = await extractEmailsFromPages(storeUrl, crawl.pages, {
-            ...emailFilters,
-            privacyPageFound: crawl.privacyPageFound,
-            fallbackUsed: crawl.fallbackUsed,
-          });
-        }
-
-        const contactPatch = {
-          phone: contacts.phone || null,
-          whatsapp: contacts.whatsapp || null,
-          instagram: contacts.instagram || null,
-          tiktok: contacts.tiktok || null,
-        };
-
-        if (emailResults.length > 0) {
-          emailResults[0] = { ...emailResults[0], ...contactPatch };
-          const best = emailResults[0];
-          if (extractOptions.email && best.email) {
-            await setCachedResult(storeUrl, best.email, best.sourcePage, best.sourceType || null, best.platform || null);
-          }
-          return { storeUrl, results: emailResults };
-        }
-
-        if (hasAnyContactData(contacts, extractOptions)) {
-          const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
-          return {
-            storeUrl,
-            results: [{
-              email: null,
-              storeUrl,
-              sourcePage: noEmailReason,
-              sourceType: 'contact',
-              ...contactPatch,
-            }],
-            noEmailReason,
-          };
-        }
-
-        const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
-        if (extractOptions.email) {
+        const best = results[0];
+        if (best?.email) {
+          await setCachedResult(storeUrl, best.email, best.sourcePage, best.sourceType || null, best.platform || null);
+        } else {
           await setCachedResult(storeUrl, null, null, null, null);
         }
-        return { storeUrl, results: [], noEmailReason };
+        const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
+        return { storeUrl, results, noEmailReason };
       } catch (err) {
         console.error('[scanProcessor] store error:', storeUrl, err?.message || err);
         return { storeUrl, results: [], noEmailReason: 'No Email Found' };
@@ -279,10 +210,8 @@ export async function processScan(payload) {
       ? maxConcurrentCrawlers
       : DEFAULT_CONCURRENCY;
 
-  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
   for (let i = 0; i < urls.length; i += concurrency) {
-    if (i > 0) await delay(DELAY_BETWEEN_STORES_MS);
+    if (i > 0) await sleep(DELAY_BETWEEN_STORES_MS);
     const batch = urls.slice(i, i + concurrency);
     if (process.env.SCAN_DEBUG === '1') {
       console.log(`[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`);
@@ -296,79 +225,30 @@ export async function processScan(payload) {
 
     for (const { storeUrl, results, noEmailReason } of outcomes) {
       try {
-        const rowsToWrite = results.length > 0 ? results : [];
-
         if (db) {
-          if (rowsToWrite.length > 0) {
-            const storeHasData = rowsToWrite.some((r) =>
-              storeHasExtractedData(
-                {
-                  email: r.email,
-                  phone: r.phone,
-                  whatsapp: r.whatsapp,
-                  instagram: r.instagram,
-                  tiktok: r.tiktok,
-                },
-                extractOptions
-              )
-            );
-            if (storeHasData) foundCount += 1;
-            for (const r of rowsToWrite) {
-              const row = {
-                store_url: r.storeUrl,
-                email: r.email || null,
-                source_page: r.sourcePage || '',
-                phone: r.phone || null,
-                whatsapp: r.whatsapp || null,
-                instagram: r.instagram || null,
-                tiktok: r.tiktok || null,
-                has_email: storeHasExtractedData(
-                  {
-                    email: r.email,
-                    phone: r.phone,
-                    whatsapp: r.whatsapp,
-                    instagram: r.instagram,
-                    tiktok: r.tiktok,
-                  },
-                  extractOptions
-                )
-                  ? 1
-                  : 0,
-              };
-              try {
-                await runDbQueryWithRetry(
-                  db,
-                  `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email, phone, whatsapp, instagram, tiktok)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-                  [
-                    scanId,
-                    row.store_url,
-                    row.email,
-                    row.source_page,
-                    row.has_email,
-                    row.phone,
-                    row.whatsapp,
-                    row.instagram,
-                    row.tiktok,
-                  ]
-                );
-              } catch (dbInsertErr) {
-                console.warn('[scanProcessor] buffered result after DB insert failure:', row.store_url, dbInsertErr?.message || dbInsertErr);
-                memoryResults.push(row);
-                memoryStore.results.set(scanId, memoryResults);
-              }
-            }
-          } else {
-            const noEmailRow = {
-              store_url: storeUrl,
-              email: null,
-              source_page: noEmailReason || 'No Email Found',
-              phone: null,
-              whatsapp: null,
-              instagram: null,
-              tiktok: null,
-              has_email: 0,
+          if (results.length > 0) foundCount += 1;
+          for (const r of results) {
+            const row = {
+              store_url: r.storeUrl,
+              email: r.email,
+              source_page: r.sourcePage || '',
+              has_email: 1,
             };
+            try {
+              await runDbQueryWithRetry(
+                db,
+                `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email, phone, whatsapp, instagram, tiktok)
+                 VALUES ($1, $2, $3, $4, 1, NULL, NULL, NULL, NULL)`,
+                [scanId, row.store_url, row.email, row.source_page]
+              );
+            } catch (dbInsertErr) {
+              console.warn('[scanProcessor] buffered result after DB insert failure:', row.store_url, dbInsertErr?.message || dbInsertErr);
+              memoryResults.push(row);
+              memoryStore.results.set(scanId, memoryResults);
+            }
+          }
+          if (results.length === 0) {
+            const noEmailRow = { store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 };
             try {
               await runDbQueryWithRetry(
                 db,
@@ -383,55 +263,12 @@ export async function processScan(payload) {
             }
           }
         } else {
-          if (rowsToWrite.length > 0) {
-            const storeHasData = rowsToWrite.some((r) =>
-              storeHasExtractedData(
-                {
-                  email: r.email,
-                  phone: r.phone,
-                  whatsapp: r.whatsapp,
-                  instagram: r.instagram,
-                  tiktok: r.tiktok,
-                },
-                extractOptions
-              )
-            );
-            if (storeHasData) foundCount += 1;
-            for (const r of rowsToWrite) {
-              const row = {
-                store_url: r.storeUrl,
-                email: r.email || null,
-                source_page: r.sourcePage || '',
-                phone: r.phone || null,
-                whatsapp: r.whatsapp || null,
-                instagram: r.instagram || null,
-                tiktok: r.tiktok || null,
-                has_email: storeHasExtractedData(
-                  {
-                    email: r.email,
-                    phone: r.phone,
-                    whatsapp: r.whatsapp,
-                    instagram: r.instagram,
-                    tiktok: r.tiktok,
-                  },
-                  extractOptions
-                )
-                  ? 1
-                  : 0,
-              };
-              memoryResults.push(row);
-            }
-          } else {
-            memoryResults.push({
-              store_url: storeUrl,
-              email: null,
-              source_page: noEmailReason || 'No Email Found',
-              has_email: 0,
-              phone: null,
-              whatsapp: null,
-              instagram: null,
-              tiktok: null,
-            });
+          if (results.length > 0) foundCount += 1;
+          for (const r of results) {
+            memoryResults.push({ store_url: r.storeUrl, email: r.email, source_page: r.sourcePage || '', has_email: 1 });
+          }
+          if (results.length === 0) {
+            memoryResults.push({ store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 });
           }
           memoryStore.results.set(scanId, memoryResults);
         }

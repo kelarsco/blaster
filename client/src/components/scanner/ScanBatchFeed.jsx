@@ -70,7 +70,7 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
               )}
             </div>
             <p className="text-xs text-blaster-muted mt-0.5">
-              {batch.foundCount || 0} contact{(batch.foundCount || 0) !== 1 ? 's' : ''} found
+              {batch.foundCount || 0} email{(batch.foundCount || 0) !== 1 ? 's' : ''} found
             </p>
           </div>
           <button
