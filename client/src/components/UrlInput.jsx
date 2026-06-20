@@ -92,7 +92,7 @@ export function UrlInput({
     setIsScanning(true);
     
     try {
-      const maxConcurrentCrawlers = 10;
+      const maxConcurrentCrawlers = 1;
       const maxUrlsPerScan = 1000;
 
       const urls = parseUrls(rawUrls);
