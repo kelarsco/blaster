@@ -27,6 +27,7 @@ import {
 } from '../services/tokenAuth.js';
 import {
   resolveFrontendUrl,
+  resolvePostAuthRedirectBase,
   resolveGoogleCallbackURL,
   getOAuthSetupInfo,
 } from '../services/oauthUrls.js';
@@ -585,7 +586,7 @@ authRoutes.get('/google/callback', (req, res, next) => {
       const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
       const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
       setRefreshTokenCookie(res, refreshToken, expiresAt);
-      const base = resolveFrontendUrl(req);
+      const base = resolvePostAuthRedirectBase(req);
       res.redirect(302, `${base}/auth/callback`);
     } catch (e) {
       console.error('[auth google/callback]', e?.message || e);

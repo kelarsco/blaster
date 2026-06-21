@@ -1,4 +1,4 @@
-import { isRailwayDeploy } from './oauthUrls.js';
+import { isRailwayDeploy, isFlyDeploy } from './oauthUrls.js';
 
 function normalizeUrl(value) {
   return String(value || '').trim().toLowerCase();
@@ -30,8 +30,8 @@ export function getCookieSameSite() {
   if (configured === 'strict') return 'strict';
   if (configured === 'lax') return 'lax';
   if (configured === 'none') return secure ? 'none' : 'lax';
-  // Railway serves API + frontend on one host — lax keeps OAuth session state through redirects
-  if (secure && isRailwayDeploy()) return 'lax';
+  // Monolith deploys (Railway/Fly) serve API + SPA on one host — lax keeps refresh cookies working
+  if (secure && (isRailwayDeploy() || isFlyDeploy())) return 'lax';
   return secure ? 'none' : 'lax';
 }
 

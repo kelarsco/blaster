@@ -24,11 +24,14 @@ export function AuthProvider({ children }) {
 
   /** Refresh access token using refresh token from cookies. */
   const doRefresh = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch(`${API}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 403 && data.code === 'SUSPENDED') {
@@ -38,6 +41,8 @@ export function AuthProvider({ children }) {
       return { ok: true, accessToken: data.accessToken, user: data.user };
     } catch (_) {
       return { ok: false };
+    } finally {
+      clearTimeout(timeout);
     }
   }, []);
 

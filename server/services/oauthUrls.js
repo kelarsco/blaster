@@ -136,6 +136,18 @@ export function resolveFrontendUrl(req) {
   return getCanonicalPublicSiteUrl(req);
 }
 
+/** After OAuth, stay on the same host that handled the callback (fixes fly.dev vs custom domain cookies). */
+export function resolvePostAuthRedirectBase(req) {
+  if (req) {
+    const host = getPublicHost(req);
+    const proto = getPublicProto(req);
+    if (host && !isLocalHost(host)) {
+      return normalizeUrl(`${proto}://${host}`);
+    }
+  }
+  return getCanonicalPublicSiteUrl(req);
+}
+
 /** Google OAuth redirect URI — must match Google Cloud Console exactly. */
 export function resolveGoogleCallbackURL(req) {
   if (req) {

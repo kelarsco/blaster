@@ -54,10 +54,22 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+function buildAllowedOrigins() {
+  const origins = new Set(
+    (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  origins.add('https://wiblaster.com');
+  origins.add('https://www.wiblaster.com');
+  if (process.env.FLY_APP_NAME) {
+    origins.add(`https://${process.env.FLY_APP_NAME}.fly.dev`);
+  }
+  return [...origins];
+}
+
+const ALLOWED_ORIGINS = buildAllowedOrigins();
 
 // Trust first proxy (Railway, Heroku, etc.) so secure cookies and X-Forwarded-Proto work
 app.set('trust proxy', 1);
@@ -73,7 +85,8 @@ app.use((req, res, next) => {
 app.use(cors({
   origin(origin, cb) {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    cb(new Error('Not allowed by CORS'));
+    console.warn('[cors] blocked origin:', origin);
+    return cb(null, false);
   },
   credentials: true,
 }));
@@ -194,6 +207,7 @@ async function start() {
   await resumeLeadEngineOnStartup();
   syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
   const basePort = Number(process.env.PORT) || 4000;
+  const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined);
   const isDev = process.env.NODE_ENV !== 'production';
   const maxTries = isDev ? 5 : 10;
   let server = null;
@@ -201,11 +215,11 @@ async function start() {
   for (let tryPort = basePort; tryPort < basePort + maxTries; tryPort++) {
     try {
       await new Promise((resolve, reject) => {
-        server = app.listen(tryPort, () => resolve());
+        server = host ? app.listen(tryPort, host, () => resolve()) : app.listen(tryPort, () => resolve());
         server.on('error', (err) => reject(err));
       });
       boundPort = tryPort;
-      console.log(`wiblaster server running at http://localhost:${tryPort}`);
+      console.log(`wiblaster server running at http://${host || 'localhost'}:${boundPort}`);
       if (!isDev && tryPort !== basePort) {
         console.log(`(Port ${basePort} was in use. If using Vite dev, set VITE_API_PORT=${tryPort} in client .env and restart.)`);
       }
