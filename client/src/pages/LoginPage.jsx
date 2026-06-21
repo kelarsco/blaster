@@ -3,8 +3,10 @@ import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-do
 import { useAuth } from '../context/AuthContext';
 import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
+import { usePageSeo } from '../utils/seo.js';
 
 export function LoginPage() {
+  usePageSeo('login');
   const { user, loading, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { getStoredPlanId } from '../data/plans';
 import { API } from '../api.js';
 import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
+import { usePageSeo } from '../utils/seo.js';
 
 function getPostSignupPath(search) {
   const fromPricing = search && search.includes('from=pricing');
@@ -13,6 +14,7 @@ function getPostSignupPath(search) {
 }
 
 export function SignupPage() {
+  usePageSeo('signup');
   const { user, loading, signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

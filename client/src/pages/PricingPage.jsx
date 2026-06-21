@@ -13,6 +13,7 @@ import {
   getBillingPlanId,
   storeSelectedPlan,
 } from '../data/plans';
+import { usePageSeo } from '../utils/seo.js';
 
 const PLAN_INCLUDES = [
   { label: 'Store URL scanner & email extraction', Icon: Link2 },
@@ -123,6 +124,7 @@ function TrialBar({ onChoose }) {
 }
 
 export function PricingPage() {
+  usePageSeo('pricing');
   const { user } = useAuth();
   const navigate = useNavigate();
   const [billingPeriod, setBillingPeriod] = useState('monthly');

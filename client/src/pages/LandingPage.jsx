@@ -14,6 +14,7 @@ import {
   getBillingPlanId,
   storeSelectedPlan,
 } from '../data/plans.js';
+import { usePageSeo } from '../utils/seo.js';
 
 const LANDING_PRICING_PLANS = PLANS.filter((p) => p.id === 'essentials' || p.id === 'standard');
 
@@ -369,6 +370,7 @@ function StepCard({ step, title, desc, image, index }) {
 
 export function LandingPage() {
   const navigate = useNavigate();
+  usePageSeo('home');
   const [heroEmail, setHeroEmail] = useState('');
   const [heroIconVisible, setHeroIconVisible] = useState(false);
 

@@ -2,8 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
 import { MarketingFooter } from '../layout/MarketingFooter.jsx';
+import { usePageSeo } from '../utils/seo.js';
 
 export function PrivacyPolicyPage() {
+  usePageSeo('privacy');
   return (
     <div className="min-h-screen bg-blaster-bg font-poppins text-black">
       <MarketingHeader />
