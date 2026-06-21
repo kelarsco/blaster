@@ -107,17 +107,23 @@ export const authPrimaryButtonClass =
 export const authSecondaryButtonClass =
   'w-full py-2.5 rounded-xl border border-blaster-border bg-white hover:bg-blaster-bg-app text-blaster-fg font-medium text-sm transition disabled:opacity-50';
 
+export function AuthLogoMark({ className = '' }) {
+  return (
+    <img
+      src={AUTH_LOGO_SRC}
+      alt="wiblaster"
+      width={56}
+      height={56}
+      className={`w-14 h-14 rounded-full object-cover ${className}`}
+    />
+  );
+}
+
 export function AuthBrandHeader({ title, description }) {
   return (
     <div className="flex flex-col items-center text-center mb-8">
       <Link to="/" className="mb-5 shrink-0">
-        <img
-          src={AUTH_LOGO_SRC}
-          alt="wiblaster"
-          width={56}
-          height={56}
-          className="w-14 h-14 rounded-full object-cover"
-        />
+        <AuthLogoMark />
       </Link>
       {title ? <h1 className="text-2xl font-bold text-blaster-fg">{title}</h1> : null}
       {description ? (

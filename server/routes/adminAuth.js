@@ -2,6 +2,7 @@ import { Router } from 'express';
 import speakeasy from 'speakeasy';
 import jwt from 'jsonwebtoken';
 import { requireAdmin, COOKIE_NAME, ADMIN_JWT_SECRET } from '../middleware/requireAdmin.js';
+import { authRateLimit } from '../middleware/authRateLimit.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from '../services/cookiePolicy.js';
 
 const TOTP_SECRET = String(process.env.BL_ADMIN_TOTP_SECRET || '').replace(/\s+/g, '').toUpperCase(); // base32 secret for Google Authenticator
@@ -12,7 +13,7 @@ const cookieDomain = getCookieDomain();
 export const adminAuthRoutes = Router();
 
 /** POST /api/bl-admin/auth - Login with 6-digit TOTP code from Google Authenticator */
-adminAuthRoutes.post('/auth', (req, res) => {
+adminAuthRoutes.post('/auth', authRateLimit, (req, res) => {
   try {
     const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
     if (!TOTP_SECRET || TOTP_SECRET.length < 10) {
@@ -50,8 +51,8 @@ adminAuthRoutes.post('/auth', (req, res) => {
       path: '/',
       ...(cookieDomain && { domain: cookieDomain }),
     });
-    // Return token as fallback for clients that cannot persist cross-site cookies.
-    return res.json({ ok: true, token });
+    // HttpOnly cookie only — do not expose admin JWT to JavaScript.
+    return res.json({ ok: true });
   } catch (e) {
     console.error('[bl-admin auth]', e?.message || e);
     return res.status(500).json({ error: e?.message || 'Login failed. Try again.' });

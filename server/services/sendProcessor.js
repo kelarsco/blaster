@@ -187,7 +187,12 @@ export async function processSendEmail(payload) {
   if (!db) return;
   const statusRow = await db.query('SELECT status FROM campaigns WHERE id = $1', [campaignId]);
   if (!statusRow.rows[0] || statusRow.rows[0].status !== 'running') return;
-  const senderResult = await db.query('SELECT * FROM senders WHERE id = $1', [senderId]);
+  const senderResult = await db.query(
+    `SELECT s.* FROM senders s
+     JOIN campaigns c ON c.user_id = s.user_id
+     WHERE s.id = $1 AND c.id = $2`,
+    [senderId, campaignId]
+  );
   const senderRow = senderResult.rows[0];
   if (!senderRow) {
     console.error('[send] Sender not found:', senderId, '– Add the sender again in Automation Setup (with DB running).');

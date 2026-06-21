@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, TrendingUp, TrendingDown, Minus, Mail, Zap, Award, Target, Star } from 'react-feather';
+import { Check, TrendingUp, TrendingDown, Minus, Mail, Zap, Award, Target, Star, Edit } from 'react-feather';
 import { RecentActivityList } from './RecentActivityList.jsx';
 import { FeatureLockOverlay } from '../access/PlanAccessUI.jsx';
 import { MIN_DAILY_TARGET } from '../../utils/streaksAndBadges.js';
@@ -246,6 +246,57 @@ function BrandGradientIcon({ Icon, className = 'w-4 h-4' }) {
   );
 }
 
+const STREAK_TARGET_EDIT_UNLOCK = 30;
+
+function DailyTargetForm({
+  targetInput,
+  setTargetInput,
+  canSetTarget,
+  settingTarget,
+  onSave,
+  onCancel,
+  saveLabel = 'Set',
+}) {
+  return (
+    <div className="w-full max-w-sm rounded-xl border border-blaster-border bg-gray-50/80 p-3 space-y-3 animate-[fadeIn_0.2s_ease-out]">
+      <label className="block text-xs font-medium text-blaster-muted">
+        Daily emails to send (min {MIN_DAILY_TARGET})
+      </label>
+      <input
+        type="number"
+        min={MIN_DAILY_TARGET}
+        step={1}
+        value={targetInput}
+        onChange={(e) => setTargetInput(e.target.value)}
+        placeholder={`e.g. ${MIN_DAILY_TARGET}`}
+        className="w-full px-3 py-2 rounded-lg border border-blaster-border bg-white text-sm text-blaster-fg focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
+        autoFocus
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 px-3 py-2 rounded-lg text-sm font-medium border border-blaster-border text-blaster-muted hover:text-blaster-fg transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSetTarget || settingTarget}
+          className={`flex-1 px-3 py-2 rounded-xl text-sm font-medium border transition ${
+            canSetTarget
+              ? 'bg-black border-blaster-orange text-[#faf8f5] shadow-blaster-cta hover:opacity-90'
+              : 'bg-gray-100 text-gray-400 border-blaster-border cursor-not-allowed'
+          }`}
+        >
+          {settingTarget ? 'Saving…' : saveLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StreakStatValue({ children }) {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium shrink-0 bg-gray-100 text-blaster-muted">
@@ -285,6 +336,10 @@ export function StreaksAndBadgesPanel({
   const emailsSentTodayDisplay = dailyTarget
     ? Math.min(data.emailsSentToday || 0, dailyTarget)
     : data.emailsSentToday || 0;
+  const canEditTarget =
+    data.hasDailyTarget &&
+    ((data.currentStreak || 0) >= STREAK_TARGET_EDIT_UNLOCK ||
+      (data.highestStreakBadgeEarned || 0) >= STREAK_TARGET_EDIT_UNLOCK);
 
   const handleSetTarget = async () => {
     if (!canSetTarget || !onSetTarget) return;
@@ -293,6 +348,16 @@ export function StreaksAndBadgesPanel({
       setTargetOpen(false);
       setTargetInput('');
     }
+  };
+
+  const openTargetEditor = () => {
+    setTargetInput(data.dailyTarget ? String(data.dailyTarget) : '');
+    setTargetOpen(true);
+  };
+
+  const closeTargetEditor = () => {
+    setTargetOpen(false);
+    setTargetInput('');
   };
 
   return (
@@ -313,57 +378,49 @@ export function StreaksAndBadgesPanel({
                 Set target
               </button>
             ) : (
-              <div className="w-full max-w-sm rounded-xl border border-blaster-border bg-gray-50/80 p-3 space-y-3 animate-[fadeIn_0.2s_ease-out]">
-                <label className="block text-xs font-medium text-blaster-muted">
-                  Daily emails to send (min {MIN_DAILY_TARGET})
-                </label>
-                <input
-                  type="number"
-                  min={MIN_DAILY_TARGET}
-                  step={1}
-                  value={targetInput}
-                  onChange={(e) => setTargetInput(e.target.value)}
-                  placeholder={`e.g. ${MIN_DAILY_TARGET}`}
-                  className="w-full px-3 py-2 rounded-lg border border-blaster-border bg-white text-sm text-blaster-fg focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTargetOpen(false);
-                      setTargetInput('');
-                    }}
-                    className="flex-1 px-3 py-2 rounded-lg text-sm font-medium border border-blaster-border text-blaster-muted hover:text-blaster-fg transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSetTarget}
-                    disabled={!canSetTarget || settingTarget}
-                    className={`flex-1 px-3 py-2 rounded-xl text-sm font-medium border transition ${
-                      canSetTarget
-                        ? 'bg-black border-blaster-orange text-[#faf8f5] shadow-blaster-cta hover:opacity-90'
-                        : 'bg-gray-100 text-gray-400 border-blaster-border cursor-not-allowed'
-                    }`}
-                  >
-                    {settingTarget ? 'Saving…' : 'Set'}
-                  </button>
-                </div>
-              </div>
+              <DailyTargetForm
+                targetInput={targetInput}
+                setTargetInput={setTargetInput}
+                canSetTarget={canSetTarget}
+                settingTarget={settingTarget}
+                onSave={handleSetTarget}
+                onCancel={closeTargetEditor}
+              />
             )
+        ) : targetOpen && canEditTarget ? (
+          <DailyTargetForm
+            targetInput={targetInput}
+            setTargetInput={setTargetInput}
+            canSetTarget={canSetTarget}
+            settingTarget={settingTarget}
+            onSave={handleSetTarget}
+            onCancel={closeTargetEditor}
+            saveLabel="Save"
+          />
         ) : (
-          <span
-            className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border ${
-              (data.currentStreak || 0) > 0
-                ? 'bg-gradient-to-r from-blaster-orange/35 to-orange-50 border-blaster-orange/50 text-orange-800'
-                : 'bg-orange-50 border-orange-100 text-blaster-fg'
-            }`}
-          >
-            <span aria-hidden>🔥</span>
-            {data.streakLabel}
-          </span>
+          <div className="inline-flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border ${
+                (data.currentStreak || 0) > 0
+                  ? 'bg-gradient-to-r from-blaster-orange/35 to-orange-50 border-blaster-orange/50 text-orange-800'
+                  : 'bg-orange-50 border-orange-100 text-blaster-fg'
+              }`}
+            >
+              <span aria-hidden>🔥</span>
+              {data.streakLabel}
+            </span>
+            {canEditTarget ? (
+              <button
+                type="button"
+                onClick={openTargetEditor}
+                className="p-2 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-gray-100 transition"
+                aria-label="Edit daily target"
+                title="Edit daily target"
+              >
+                <Edit className="w-4 h-4" strokeWidth={2} />
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
 

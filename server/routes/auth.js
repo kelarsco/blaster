@@ -182,10 +182,10 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
 
     const existing = await db.query('SELECT id, auth_provider FROM users WHERE email = $1', [emailNorm]);
     if (existing.rows?.[0]) {
-      return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
+      return res.status(409).json({ error: 'Unable to create account. Sign in or use a different email.' });
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const id = uuidv4();
     const hash = await bcrypt.hash(password, 12);
@@ -221,7 +221,7 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
       message: 'Verification code sent. Check your email.',
     });
   } catch (e) {
-    if (e.code === '23505') return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
+    if (e.code === '23505') return res.status(409).json({ error: 'Unable to create account. Sign in or use a different email.' });
     console.error('[auth register]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Signup failed' });
   }
@@ -242,11 +242,11 @@ authRoutes.post('/resend-verification', authRateLimit, async (req, res) => {
       [emailNorm]
     );
     const row = r?.rows?.[0];
-    if (!row) return res.status(404).json({ error: 'No account found with this email.' });
-    if (row.auth_provider !== 'credentials') return res.status(400).json({ error: 'This account uses Google. Sign in with Google.' });
-    if (row.email_verified) return res.status(400).json({ error: 'Email is already verified. Sign in with your password.' });
+    if (!row || row.auth_provider !== 'credentials' || row.email_verified) {
+      return res.json({ ok: true, message: 'If an account exists, a verification code was sent.' });
+    }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await db.query(
       `UPDATE users SET verification_code = $1, verification_code_expires_at = $2, updated_at = NOW() WHERE id = $3`,
@@ -313,13 +313,10 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
     if (row.deactivated_at) return res.status(403).json({ error: 'This account has been deactivated. Contact support to reactivate.' });
     if (row.suspended_at) return res.status(403).json({ error: 'This account has been suspended. Contact support to reactivate.', code: 'SUSPENDED' });
     if (row.auth_provider !== 'credentials') {
-      return res.status(400).json({ error: 'This account uses Google. Sign in with Google instead.' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
     if (!row.email_verified) {
-      return res.status(403).json({
-        error: 'Please verify your email first. Check your inbox for the verification code.',
-        code: 'EMAIL_NOT_VERIFIED',
-      });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
     if (!row.password_hash) return res.status(401).json({ error: 'Invalid email or password' });
 
@@ -357,10 +354,13 @@ authRoutes.post('/forgot-password', authRateLimit, async (req, res) => {
       return res.status(200).json({ message: 'If an account exists with this email, you will receive a reset link.' });
     }
     if (row.auth_provider !== 'credentials') {
-      return res.status(400).json({
-        error: 'This account uses Google. You don\'t have a password to reset. Sign in with Google.',
-      });
+      return res.status(200).json({ message: 'If an account exists with this email, you will receive a reset link.' });
     }
+
+    await db.query(
+      `UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL`,
+      [row.id]
+    );
 
     const token = crypto.randomBytes(32).toString('hex');
     const tokenId = uuidv4();
@@ -412,6 +412,7 @@ authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
       `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`,
       [row.id]
     );
+    await revokeRefreshTokensForUser(row.user_id);
 
     const user = { id: row.user_id, email: row.email, name: row.name || row.email.split('@')[0] || 'User', picture: null };
     await issueTokensAndRespond(res, user);
@@ -450,7 +451,9 @@ authRoutes.post('/change-password', authRateLimit, requireAuth, async (req, res)
 
     const hash = await bcrypt.hash(newPassword, 12);
     await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, userId]);
-    res.status(200).json({ message: 'Password updated' });
+    await revokeRefreshTokensForUser(userId);
+    clearRefreshTokenCookie(res);
+    res.status(200).json({ message: 'Password updated. Please sign in again.' });
   } catch (e) {
     console.error('[auth change-password]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to change password' });
@@ -580,11 +583,10 @@ authRoutes.get('/google/callback', (req, res, next) => {
         }
       }
       const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
-      const accessToken = createAccessToken(userForToken);
       const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
       setRefreshTokenCookie(res, refreshToken, expiresAt);
       const base = resolveFrontendUrl(req);
-      res.redirect(302, `${base}/auth/callback?token=${encodeURIComponent(accessToken)}`);
+      res.redirect(302, `${base}/auth/callback`);
     } catch (e) {
       console.error('[auth google/callback]', e?.message || e);
       return res.redirect(302, loginRedirect(`error=google_failed&message=${encodeURIComponent(e?.message || 'Token issue')}`, req));

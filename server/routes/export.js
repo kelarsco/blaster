@@ -3,11 +3,16 @@ import * as XLSX from 'xlsx';
 import { getDb, memoryStore } from '../db.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { recordFilterOrExportUse } from '../services/planAccess.js';
 
 export const exportRoutes = Router();
 
 exportRoutes.get('/excel/:scanId', requireAuth, async (req, res) => {
   const scanId = req.params.scanId;
+  const use = await recordFilterOrExportUse(req.user.id);
+  if (!use.ok) {
+    return res.status(403).json({ error: use.reason || 'Export limit reached', upgradeRequired: true, status: use.status });
+  }
   const fieldsParam = (req.query.fields || '').toString();
   const fields = fieldsParam
     ? fieldsParam.split(',').map((f) => f.trim()).filter(Boolean)
@@ -37,6 +42,10 @@ exportRoutes.get('/excel/:scanId', requireAuth, async (req, res) => {
       if (!scanCheck.rows?.length) return res.status(404).json({ error: 'Scan not found' });
     }
   } else {
+    const memScan = memoryStore.scans.get(scanId);
+    if (memScan?.user_id && memScan.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
     rows = (memoryStore.results.get(scanId) || []).filter((r) => r.has_email === 1 && r.email);
   }
 

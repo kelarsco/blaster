@@ -1,30 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock } from 'react-feather';
+import { Lock, X } from 'react-feather';
 import { Logo } from '../Logo.jsx';
 import { getTrialRemainingMs } from '../../utils/trialCountdown.js';
 import { TrialCountdown } from './TrialCountdown.jsx';
 
 const UPGRADE_PATH = '/app/account/pricing';
 
-/** Routes where expired-trial users can still use the app (billing, referral, analytics, etc.). */
+/** Routes where users without a plan can go to upgrade or manage billing. */
 export function isPlanUpgradeRoute(pathname) {
   if (!pathname) return false;
-  if (
-    pathname === UPGRADE_PATH ||
-    pathname.startsWith(`${UPGRADE_PATH}/`) ||
-    pathname.startsWith('/app/account/billing') ||
-    pathname.startsWith('/app/account/settings/usage') ||
-    pathname.startsWith('/app/account/settings/manage-plan')
-  ) {
-    return true;
-  }
-  return (
-    pathname === '/app/referral' ||
-    pathname.startsWith('/app/referral/') ||
-    pathname === '/app/analytics' ||
-    pathname.startsWith('/app/analytics/')
-  );
+  if (pathname === UPGRADE_PATH || pathname.startsWith(`${UPGRADE_PATH}/`)) return true;
+  if (pathname.startsWith('/app/account/billing')) return true;
+  if (pathname.startsWith('/app/account/settings/usage')) return true;
+  if (pathname.startsWith('/app/account/settings/manage-plan')) return true;
+  return false;
+}
+
+export function isFreeUserHomeRoute(pathname) {
+  return pathname === '/app/dashboard';
+}
+
+export function isFreeUserAllowedRoute(pathname) {
+  return isFreeUserHomeRoute(pathname) || isPlanUpgradeRoute(pathname);
 }
 
 export function FeatureLockWrap({ locked, message, children, className = '' }) {
@@ -59,24 +57,49 @@ export function FeatureLockOverlay({ message, className = '', minHeight = '12rem
   );
 }
 
-export function TrialExpiredWall() {
+export function TrialUpgradeModal({ open, onUpgrade, onClose, loading = false, error = '' }) {
+  if (!open) return null;
+
   return (
-    <div className="plan-trial-wall">
-      <div className="plan-trial-wall-card">
-        <Logo className="h-8 w-auto mx-auto mb-4" />
+    <div className="plan-upgrade-modal-root" role="dialog" aria-modal="true" aria-labelledby="trial-upgrade-title">
+      <div className="plan-upgrade-modal-backdrop" aria-hidden onClick={loading ? undefined : onClose} />
+      <div className="plan-upgrade-modal-card relative">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading}
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-gray-100 transition disabled:opacity-40"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" strokeWidth={2} />
+        </button>
         <div className="plan-lock-icon-wrap mx-auto mb-4">
           <Lock className="w-6 h-6" strokeWidth={2} />
         </div>
-        <h1 className="text-xl font-semibold text-blaster-fg">Your access has ended</h1>
-        <p className="text-sm text-blaster-muted mt-2 max-w-md mx-auto">
-          Start a $1 three-day trial or choose a plan to continue using Wiblaster.
+        <h2 id="trial-upgrade-title" className="text-xl font-semibold text-blaster-fg text-center">
+          Upgrade to free trial
+        </h2>
+        <p className="text-sm text-blaster-muted mt-2 text-center max-w-md mx-auto">
+          Start your $1 three-day trial to unlock Wiblaster — full scanner, campaigns, and more.
         </p>
-        <Link to={UPGRADE_PATH} className="plan-lock-cta mt-6 inline-flex">
-          Choose a plan
-        </Link>
+        {error ? (
+          <p className="text-sm text-red-600 mt-3 text-center">{error}</p>
+        ) : null}
+        <button
+          type="button"
+          className="plan-lock-cta mt-6 w-full justify-center disabled:opacity-50"
+          onClick={onUpgrade}
+          disabled={loading}
+        >
+          {loading ? 'Redirecting to Paystack…' : 'Upgrade now'}
+        </button>
       </div>
     </div>
   );
+}
+
+export function TrialExpiredWall() {
+  return null;
 }
 
 export function TrialBanner({ trialEndsAt }) {

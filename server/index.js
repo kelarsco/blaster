@@ -45,9 +45,38 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+if (process.env.NODE_ENV === 'production') {
+  const required = ['JWT_ACCESS_SECRET', 'SESSION_SECRET', 'BL_ADMIN_JWT_SECRET'];
+  for (const key of required) {
+    if (!process.env[key]) {
+      throw new Error(`${key} is required in production`);
+    }
+  }
+}
+
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // Trust first proxy (Railway, Heroku, etc.) so secure cookies and X-Forwarded-Proto work
 app.set('trust proxy', 1);
-app.use(cors({ origin: true, credentials: true }));
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(cookieParser());
 // Paystack webhook must receive raw body for signature verification (register before express.json)
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => handlePaystackWebhook(req, res));
@@ -62,7 +91,8 @@ app.use((err, req, res, next) => {
   const msg = err?.message || String(err);
   console.error('[express error]', msg);
   if (err?.stack) console.error(err.stack);
-  res.status(500).json({ error: msg });
+  const clientMsg = process.env.NODE_ENV === 'production' ? 'Internal server error' : msg;
+  res.status(500).json({ error: clientMsg });
 });
 
 async function start() {
@@ -87,7 +117,7 @@ async function start() {
     session({
       store: sessionStore,
       name: 'wiblaster.sid',
-      secret: process.env.SESSION_SECRET || 'blaster-dev-secret-change-in-production',
+      secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'blaster-dev-secret-change-in-production'),
       resave: false,
       saveUninitialized: false,
       cookie: {
@@ -108,7 +138,6 @@ async function start() {
     const db = getDb();
     if (!db) {
       body.db = 'unavailable';
-      body.db_error = getDbUnavailableMessage();
       return res.json(body);
     }
     try {
@@ -119,11 +148,6 @@ async function start() {
       const errorMsg = e?.message || String(e);
       const isQuota = isDbQuotaError(e);
       body.db = 'error';
-      body.db_error = errorMsg;
-      body.is_neon_quota = isQuota;
-      if (isQuota) {
-        body.suggestion = 'Upgrade Neon plan or wait for quota reset';
-      }
       if (!isQuota || !app.locals.healthQuotaLoggedAt || Date.now() - app.locals.healthQuotaLoggedAt > 120000) {
         console.error('[health]', errorMsg);
         if (isQuota) app.locals.healthQuotaLoggedAt = Date.now();

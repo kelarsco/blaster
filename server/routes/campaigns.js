@@ -4,6 +4,7 @@ import { getDb } from '../db.js';
 import { addSendJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { campaignRateLimit } from '../middleware/apiRateLimit.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
 import { checkCampaignLimit } from '../services/planAccess.js';
 
@@ -146,7 +147,7 @@ campaignRoutes.get('/dashboard-metrics', requireAuth, async (req, res) => {
   }
 });
 
-campaignRoutes.post('/start', requireAuth, async (req, res) => {
+campaignRoutes.post('/start', requireAuth, campaignRateLimit, async (req, res) => {
   const db = getDb();
   const userId = req.user.id;
   if (!db) return res.status(503).json({ error: 'Database required for campaigns. Set DATABASE_URL in server/.env' });
@@ -196,6 +197,13 @@ campaignRoutes.post('/start', requireAuth, async (req, res) => {
       const senderList = (await db.query('SELECT id, email FROM senders WHERE user_id = $1 AND is_active = 1', [userId])).rows;
       senderIds = senderList.map((s) => s.id);
     } else if (senders && senders.length) {
+      const owned = await db.query(
+        'SELECT id FROM senders WHERE user_id = $1 AND id = ANY($2::text[]) AND is_active = 1',
+        [userId, senders]
+      );
+      if (owned.rows.length !== senders.length) {
+        return res.status(403).json({ error: 'Invalid sender selection' });
+      }
       senderIds = senders;
     }
     if (senderIds.length === 0) {
@@ -392,7 +400,7 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
 
 campaignRoutes.post('/:campaignId/stop', requireAuth, async (req, res) => {
   const db = getDb();
-  if (db) await db.query("UPDATE campaigns SET status = 'stopped', updated_at = NOW() WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)", [req.params.campaignId, req.user.id]);
+  if (db) await db.query("UPDATE campaigns SET status = 'stopped', updated_at = NOW() WHERE id = $1 AND user_id = $2", [req.params.campaignId, req.user.id]);
   res.json({ ok: true });
 });
 

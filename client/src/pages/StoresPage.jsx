@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import {
   emptyFilters,
-  filterLeadStores,
   exportLeadStoresCsv,
   filtersEqual,
   buildFilterTags,
+  buildStoresQuery,
 } from '../utils/storeLeadFilters.js';
 import { StoresFilterPanel } from '../components/stores/StoresFilterPanel.jsx';
 import { StoreCard } from '../components/stores/StoreCard.jsx';
@@ -21,6 +21,7 @@ import {
 } from '../components/access/PlanAccessUI.jsx';
 
 const DEFAULT_ITEMS_PER_PAGE = 50;
+const MAX_EXPORT_BATCH = 50000;
 
 export function StoresPage() {
   const { authFetch } = useAuth();
@@ -34,8 +35,10 @@ export function StoresPage() {
     openUpgradeModal,
   } = usePlanAccess();
 
-  const [allStores, setAllStores] = useState([]);
+  const [stores, setStores] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(false);
   const [filters, setFilters] = useState(emptyFilters());
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters());
   const [viewMode, setViewMode] = useState('list');
@@ -90,35 +93,45 @@ export function StoresPage() {
     openUpgradeModal,
   ]);
 
+  const fetchStoresPage = useCallback(
+    async (activeFilters, page, limit) => {
+      const qs = buildStoresQuery(activeFilters, { page, limit });
+      const res = await authFetch(`${API}/leads/stores?${qs}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    [authFetch]
+  );
+
   const loadStores = useCallback(async () => {
+    setListLoading(true);
     try {
-      const res = await authFetch(`${API}/leads/stores`);
-      if (res.ok) {
-        const data = await res.json();
-        setAllStores(Array.isArray(data.stores) ? data.stores : []);
+      const data = await fetchStoresPage(appliedFilters, currentPage, itemsPerPage);
+      if (data) {
+        setStores(Array.isArray(data.stores) ? data.stores : []);
+        setTotalCount(Number(data.total) || 0);
       }
     } catch (_) {}
     setLoading(false);
-  }, [authFetch]);
+    setListLoading(false);
+  }, [appliedFilters, currentPage, itemsPerPage, fetchStoresPage]);
 
   useEffect(() => {
+    if (basicPageBlocked || planLoading) return;
     loadStores();
-  }, [loadStores]);
+  }, [loadStores, basicPageBlocked, planLoading]);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [appliedFilters, itemsPerPage]);
 
-  const filtered = useMemo(
-    () => filterLeadStores(allStores, appliedFilters),
-    [allStores, appliedFilters]
-  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const pageStores = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(start, start + itemsPerPage);
-  }, [filtered, currentPage, itemsPerPage]);
+  const fetchAllFilteredStores = useCallback(async () => {
+    const batchLimit = Math.min(Math.max(totalCount, 1), MAX_EXPORT_BATCH);
+    const data = await fetchStoresPage(appliedFilters, 1, batchLimit);
+    return Array.isArray(data?.stores) ? data.stores : [];
+  }, [appliedFilters, fetchStoresPage, totalCount]);
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -138,7 +151,6 @@ export function StoresPage() {
     if (!promptFilterUpgrade()) return;
     if (!hasPendingFilters) return;
     setApplyingFilters(true);
-    const applyStarted = Date.now();
     try {
       const tags = buildFilterTags(filters);
       if (tags.length > 0 && (status?.tier === 0 || status?.tier === 1 || status?.tier === 2)) {
@@ -151,10 +163,6 @@ export function StoresPage() {
       setAppliedFilters(filters);
       setCurrentPage(1);
     } finally {
-      const remaining = 280 - (Date.now() - applyStarted);
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining));
-      }
       setApplyingFilters(false);
     }
   };
@@ -180,7 +188,7 @@ export function StoresPage() {
       promptFilterUpgrade();
       return;
     }
-    const urls = filtered.map((s) => s.storeUrl).filter(Boolean);
+    const urls = stores.map((s) => s.storeUrl).filter(Boolean);
     if (!urls.length) return;
     setCopying(true);
     try {
@@ -189,16 +197,16 @@ export function StoresPage() {
       await navigator.clipboard.writeText(urls.join('\n'));
     } catch (_) {}
     setCopying(false);
-  }, [filtered, exportCopyBlocked, promptFilterUpgrade, trackExportOrCopy]);
+  }, [stores, exportCopyBlocked, promptFilterUpgrade, trackExportOrCopy]);
 
   const handleExportClick = useCallback(() => {
     if (exportCopyBlocked) {
       promptFilterUpgrade();
       return;
     }
-    if (!filtered.length) return;
+    if (!totalCount) return;
     setExportModalOpen(true);
-  }, [filtered.length, exportCopyBlocked, promptFilterUpgrade]);
+  }, [totalCount, exportCopyBlocked, promptFilterUpgrade]);
 
   const handleExportConfirm = useCallback(
     async (fields) => {
@@ -207,12 +215,13 @@ export function StoresPage() {
       try {
         const tracked = await trackExportOrCopy();
         if (!tracked.ok) return;
-        exportLeadStoresCsv(filtered, fields);
+        const allFiltered = await fetchAllFilteredStores();
+        exportLeadStoresCsv(allFiltered, fields);
       } finally {
         setExporting(false);
       }
     },
-    [filtered, trackExportOrCopy]
+    [fetchAllFilteredStores, trackExportOrCopy]
   );
 
   const handlePaygConfirm = async () => {
@@ -256,17 +265,21 @@ export function StoresPage() {
         onExportCsv={handleExportClick}
         copying={copying}
         exporting={exporting}
-        canExport={filtered.length > 0 && !exportCopyBlocked}
-        hasStores={filtered.length > 0}
+        canExport={totalCount > 0 && !exportCopyBlocked}
+        hasStores={totalCount > 0}
       />
 
-      {filtered.length === 0 ? (
+      {listLoading && stores.length === 0 ? (
+        <div className="stores-glass text-center p-10">
+          <p className="text-sm text-blaster-muted animate-pulse">Loading stores…</p>
+        </div>
+      ) : totalCount === 0 ? (
         <div className="stores-glass text-center p-10">
           <p className="text-sm font-medium text-blaster-fg">
-            {allStores.length === 0 ? 'No qualified stores yet' : 'No stores match your filters'}
+            {buildFilterTags(appliedFilters).length === 0 ? 'No qualified stores yet' : 'No stores match your filters'}
           </p>
           <p className="text-sm text-blaster-muted mt-1">
-            {allStores.length === 0
+            {buildFilterTags(appliedFilters).length === 0
               ? 'Stores appear here after passing the lead engine qualification pipeline.'
               : 'Try adjusting your filters or clear them to see all stores.'}
           </p>
@@ -274,7 +287,7 @@ export function StoresPage() {
       ) : (
         <>
           <div className={viewMode === 'grid' ? 'stores-grid' : 'stores-list'}>
-            {pageStores.map((store) => (
+            {stores.map((store) => (
               <StoreCard key={store.id} store={store} viewMode={viewMode} />
             ))}
           </div>
@@ -311,7 +324,7 @@ export function StoresPage() {
           onClear={handleClearFilters}
           hasPendingFilters={hasPendingFilters}
           applying={applyingFilters}
-          resultCount={filtered.length}
+          resultCount={totalCount}
           onBlockedInteract={promptFilterUpgrade}
         />
 

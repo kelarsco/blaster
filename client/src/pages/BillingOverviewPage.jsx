@@ -35,27 +35,21 @@ export function BillingOverviewPage() {
       } catch (_) {}
     }
     if (reference && authFetch) {
-      if (isExtraCredit && typeof sessionStorage !== 'undefined') {
-        try {
-          const amountCents = sessionStorage.getItem('paystack-extra-amount');
-          if (amountCents) {
-            sessionStorage.removeItem('paystack-extra-amount');
-            authFetch(`${API}/billing/extra-credit/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ reference, amountCents: Number(amountCents) }),
-            })
-              .then((r) => r.json().catch(() => ({})))
-              .then((data) => {
-                if (data.ok) {
-                  setSearchParams({}, { replace: true });
-                  setTimeout(() => fetchOverview(), 100);
-                }
-              })
-              .finally(() => {});
-            return;
-          }
-        } catch (_) {}
+      if (isExtraCredit) {
+        authFetch(`${API}/billing/extra-credit/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference }),
+        })
+          .then((r) => r.json().catch(() => ({})))
+          .then((data) => {
+            if (data.ok) {
+              setSearchParams({}, { replace: true });
+              setTimeout(() => fetchOverview(), 100);
+            }
+          })
+          .finally(() => {});
+        return;
       }
       authFetch(`${API}/billing/verify-payment`, {
         method: 'POST',

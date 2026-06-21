@@ -72,6 +72,7 @@ export async function getPlanLimitsForUser(userId) {
      FROM subscriptions s
      JOIN plans p ON p.id = s.plan_id
      WHERE s.user_id = $1 AND s.status IN ('active', 'trialing')
+       AND s.current_period_end > NOW()
      ORDER BY s.current_period_end DESC NULLS LAST
      LIMIT 1`,
     [userId]
@@ -175,6 +176,7 @@ export async function getSenderLimitForUser(userId) {
      FROM subscriptions s
      JOIN plans p ON p.id = s.plan_id
      WHERE s.user_id = $1 AND s.status IN ('active', 'trialing')
+       AND s.current_period_end > NOW()
      ORDER BY s.current_period_end DESC NULLS LAST
      LIMIT 1`,
     [userId]
@@ -209,6 +211,7 @@ export async function getDomainLimitForUser(userId) {
      FROM subscriptions s
      JOIN plans p ON p.id = s.plan_id
      WHERE s.user_id = $1 AND s.status IN ('active', 'trialing')
+       AND s.current_period_end > NOW()
      ORDER BY s.current_period_end DESC NULLS LAST
      LIMIT 1`,
     [userId]

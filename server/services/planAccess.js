@@ -95,6 +95,16 @@ async function ensureUsageRow(db, userId, periodStart, periodEnd) {
   return row;
 }
 
+function tierLimitsForTier(tier) {
+  const limits = {
+    [TIER_TRIAL]: { sendersMax: 3, groupsMax: 1, campaignsActiveMax: 1 },
+    [TIER_BASIC]: { sendersMax: 5, groupsMax: 3, campaignsActiveMax: 3 },
+    [TIER_GROWTH]: { sendersMax: 15, groupsMax: 10, campaignsActiveMax: 10 },
+    [TIER_PRO]: { sendersMax: 999999, groupsMax: 999999, campaignsActiveMax: 999999 },
+  };
+  return limits[tier] || { sendersMax: 0, groupsMax: 0, campaignsActiveMax: 0 };
+}
+
 function buildAccessFlags(tier, hasAccess) {
   if (!hasAccess) {
     return {
@@ -116,6 +126,7 @@ function buildAccessFlags(tier, hasAccess) {
   }
 
   const filterLimit = filterLimitForTier(tier);
+  const tierLimits = tierLimitsForTier(tier);
   const fullAccess = {
     trialExpired: false,
     storesPage: 'full',
@@ -124,9 +135,9 @@ function buildAccessFlags(tier, hasAccess) {
     analytics: false,
     referral: false,
     streak: false,
-    sendersMax: 999999,
-    groupsMax: 999999,
-    campaignsActiveMax: 999999,
+    sendersMax: tierLimits.sendersMax,
+    groupsMax: tierLimits.groupsMax,
+    campaignsActiveMax: tierLimits.campaignsActiveMax,
     filterLimit,
     filtersBlocked: false,
     exportCopyBlocked: false,
@@ -280,16 +291,35 @@ export async function recordFilterOrExportUse(userId) {
     return { ok: false, reason: 'payg_cap', status };
   }
 
-  const newUses = uses + 1;
-  let newCharges = paygCharges;
-  if (newUses > filterLimit && paygActive) {
-    newCharges += PAYG_PER_USE_CENTS;
-  }
-
-  await db.query(
-    `UPDATE user_plan_usage SET filter_uses = $2, payg_filter_charges_cents = $3, payg_pending_invoice_cents = $3, updated_at = NOW() WHERE user_id = $1`,
-    [userId, newUses, newCharges]
+  const result = await db.query(
+    `UPDATE user_plan_usage SET
+       filter_uses = filter_uses + 1,
+       payg_filter_charges_cents = CASE
+         WHEN payg_filters_active = 1 AND filter_uses + 1 > $3
+         THEN payg_filter_charges_cents + $4
+         ELSE payg_filter_charges_cents
+       END,
+       payg_pending_invoice_cents = CASE
+         WHEN payg_filters_active = 1 AND filter_uses + 1 > $3
+         THEN payg_pending_invoice_cents + $4
+         ELSE payg_pending_invoice_cents
+       END,
+       updated_at = NOW()
+     WHERE user_id = $1
+       AND (
+         filter_uses < $2
+         OR (payg_filters_active = 1 AND payg_filter_charges_cents < $5)
+       )
+     RETURNING filter_uses, payg_filter_charges_cents`,
+    [userId, filterLimit, filterLimit, PAYG_PER_USE_CENTS, PAYG_FILTER_CAP_CENTS]
   );
+
+  if (!result.rows?.length) {
+    if (paygActive && paygCharges >= PAYG_FILTER_CAP_CENTS) {
+      return { ok: false, reason: 'payg_cap', status };
+    }
+    return { ok: false, reason: 'filter_limit', status };
+  }
 
   const updated = await getPlanStatusForUser(userId);
   return { ok: true, status: updated };

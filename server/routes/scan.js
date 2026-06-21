@@ -4,6 +4,7 @@ import { getDb, memoryStore } from '../db.js';
 import { addScanJob } from '../services/queue.js';
 import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { scanRateLimit } from '../middleware/apiRateLimit.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
 import { normalizeStoreUrl } from '../services/crawler.js';
 
@@ -104,7 +105,7 @@ scanRoutes.get('/analytics', requireAuth, async (req, res) => {
   }
 });
 
-scanRoutes.post('/start', requireAuth, async (req, res) => {
+scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
   try {
     const body = req.body || {};
     let rawUrls = body.rawUrls ?? body.raw_urls;
@@ -291,7 +292,7 @@ scanRoutes.get('/status/:scanId', requireAuth, async (req, res) => {
     const db = getDb();
     if (db) {
       try {
-        const result = await db.query('SELECT * FROM scans WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [scanId, req.user.id]);
+        const result = await db.query('SELECT * FROM scans WHERE id = $1 AND user_id = $2', [scanId, req.user.id]);
         const row = result?.rows?.[0];
         if (row) {
           const merged = mergeScanStatus(row, memoryRow);
@@ -301,7 +302,9 @@ scanRoutes.get('/status/:scanId', requireAuth, async (req, res) => {
         console.warn('[scan status] DB read failed, falling back to memory:', dbErr?.message || dbErr);
       }
     }
-    if (!memoryRow) return res.status(404).json({ error: 'Scan not found' });
+    if (!memoryRow || (memoryRow.user_id && memoryRow.user_id !== req.user.id)) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
     res.json({
       scanId,
       status: memoryRow.status ?? 'unknown',
@@ -392,6 +395,10 @@ scanRoutes.get('/results/:scanId', requireAuth, async (req, res) => {
       }
     }
     const rows = memoryStore.results.get(req.params.scanId) ?? [];
+    const memScan = memoryStore.scans.get(req.params.scanId);
+    if (memScan?.user_id && memScan.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
     res.json({ results: buildStoresFromRows(rows) });
   } catch (e) {
     console.error('[scan results]', e?.message || e);

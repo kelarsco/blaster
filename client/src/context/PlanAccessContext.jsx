@@ -1,8 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from './AuthContext.jsx';
-import { UpgradeActionModal } from '../components/access/PlanAccessUI.jsx';
+import { UpgradeActionModal, TrialUpgradeModal, isFreeUserAllowedRoute } from '../components/access/PlanAccessUI.jsx';
 import '../styles/plan-access.css';
 
 const PlanAccessContext = createContext(null);
@@ -20,10 +20,15 @@ const DEFAULT_UPGRADE = {
 export function PlanAccessProvider({ children }) {
   const { user, authFetch } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState([]);
   const [upgradeModal, setUpgradeModal] = useState(DEFAULT_UPGRADE);
+  const [trialUpgradeOpen, setTrialUpgradeOpen] = useState(false);
+  const [trialUpgrading, setTrialUpgrading] = useState(false);
+  const [trialUpgradeError, setTrialUpgradeError] = useState('');
+  const shownInitialRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!user || !authFetch) {
@@ -53,6 +58,68 @@ export function PlanAccessProvider({ children }) {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
+
+  const trialExpired = status?.trialExpired ?? false;
+
+  const openTrialUpgradeModal = useCallback(() => {
+    setTrialUpgradeError('');
+    setTrialUpgradeOpen(true);
+  }, []);
+
+  const closeTrialUpgradeModal = useCallback(() => {
+    if (trialUpgrading) return;
+    setTrialUpgradeOpen(false);
+    setTrialUpgradeError('');
+  }, [trialUpgrading]);
+
+  const goTrialUpgrade = useCallback(async () => {
+    if (!authFetch || trialUpgrading) return;
+    setTrialUpgradeError('');
+    setTrialUpgrading(true);
+    try {
+      const res = await authFetch(`${API}/billing/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: 'trial_3day' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.authorizationUrl) {
+        if (data.reference) {
+          try {
+            sessionStorage.setItem('paystack-pending-reference', data.reference);
+          } catch (_) {}
+        }
+        window.location.href = data.authorizationUrl;
+        return;
+      }
+      throw new Error(data.error || 'Could not start payment');
+    } catch (err) {
+      setTrialUpgradeError(err?.message || 'Failed to start payment. Please try again.');
+      setTrialUpgrading(false);
+    }
+  }, [authFetch, trialUpgrading]);
+
+  useEffect(() => {
+    if (loading || !trialExpired) return;
+
+    if (!isFreeUserAllowedRoute(location.pathname)) {
+      openTrialUpgradeModal();
+      navigate('/app/dashboard', { replace: true });
+      return;
+    }
+
+    if (location.pathname === '/app/dashboard' && !shownInitialRef.current) {
+      shownInitialRef.current = true;
+      openTrialUpgradeModal();
+    }
+  }, [loading, trialExpired, location.pathname, navigate, openTrialUpgradeModal]);
+
+  useEffect(() => {
+    if (!trialExpired) {
+      shownInitialRef.current = false;
+      setTrialUpgradeOpen(false);
+    }
+  }, [trialExpired]);
 
   const showToast = useCallback((message) => {
     const id = Date.now();
@@ -114,18 +181,27 @@ export function PlanAccessProvider({ children }) {
       refresh,
       showToast,
       openUpgradeModal,
+      openTrialUpgradeModal,
+      closeTrialUpgradeModal,
       recordFilterUse,
       activatePayg,
       tier: status?.tier ?? 0,
-      trialExpired: status?.trialExpired ?? false,
+      trialExpired,
       access: status?.access ?? null,
     }),
-    [status, loading, refresh, showToast, openUpgradeModal, recordFilterUse, activatePayg]
+    [status, loading, refresh, showToast, openUpgradeModal, openTrialUpgradeModal, closeTrialUpgradeModal, recordFilterUse, activatePayg, trialExpired]
   );
 
   return (
     <PlanAccessContext.Provider value={value}>
       {children}
+      <TrialUpgradeModal
+        open={trialUpgradeOpen}
+        onUpgrade={goTrialUpgrade}
+        onClose={closeTrialUpgradeModal}
+        loading={trialUpgrading}
+        error={trialUpgradeError}
+      />
       <UpgradeActionModal
         open={upgradeModal.open}
         title={upgradeModal.title}

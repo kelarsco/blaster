@@ -27,9 +27,6 @@ export function ScannerWorkspace({
             {urlCount} valid URL{urlCount !== 1 ? 's' : ''} detected
             {csvName ? ` · ${csvName}` : ''}
           </p>
-          <p className="text-xs text-blaster-muted mt-1">
-            Scans privacy policy, contact, and homepage for store emails.
-          </p>
         </div>
         <textarea
           value={rawUrls}

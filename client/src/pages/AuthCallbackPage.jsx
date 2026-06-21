@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
 import { handleOAuthPopupResult } from '../utils/oauth.js';
 
-/** Handles OAuth callback: ?token=ACCESS_TOKEN from backend redirect. Sets token, fetches user, redirects to app. */
+/** Handles OAuth callback: refresh cookie auth, fetch user, redirect to app. */
 export function AuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const { setAccessToken, setUser } = useAuth();
@@ -15,32 +15,48 @@ export function AuthCallbackPage() {
   const isPopup = Boolean(hasOpener || popupByName);
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    if (!token) {
-      setError('Missing token');
-      return;
-    }
+    const legacyToken = searchParams.get('token');
 
     if (isPopup) {
-      handleOAuthPopupResult(token);
+      if (legacyToken) {
+        handleOAuthPopupResult(legacyToken);
+      } else {
+        handleOAuthPopupResult(null);
+      }
       return;
     }
 
-    // Normal full-page callback flow
-    setAccessToken(token);
-    fetch(`${API}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'include',
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error('Invalid token');
-        return r.json();
-      })
-      .then((data) => {
-        setUser(data);
+    const finish = async () => {
+      try {
+        if (legacyToken) {
+          const meRes = await fetch(`${API}/auth/me`, {
+            headers: { Authorization: `Bearer ${legacyToken}` },
+            credentials: 'include',
+          });
+          if (!meRes.ok) throw new Error('Invalid token');
+          const userData = await meRes.json();
+          setAccessToken(legacyToken, userData);
+          navigate('/app/dashboard', { replace: true });
+          return;
+        }
+
+        const refreshRes = await fetch(`${API}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await refreshRes.json().catch(() => ({}));
+        if (!refreshRes.ok || !data.accessToken) {
+          throw new Error('Sign-in failed');
+        }
+        setAccessToken(data.accessToken, data.user);
         navigate('/app/dashboard', { replace: true });
-      })
-      .catch(() => setError('Sign-in failed. Please try again.'));
+      } catch {
+        setError('Sign-in failed. Please try again.');
+      }
+    };
+
+    finish();
   }, [searchParams, setAccessToken, setUser, navigate, isPopup]);
 
   if (error) {

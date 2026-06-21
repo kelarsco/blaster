@@ -269,6 +269,21 @@ function storeMatchesProductRanges(count, ranges) {
   });
 }
 
+export function buildStoresQuery(filters, { page = 1, limit = 50 } = {}) {
+  const params = new URLSearchParams();
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+  if (filters.platforms?.length) params.set('platforms', filters.platforms.join(','));
+  if (filters.countries?.length) params.set('countries', filters.countries.join(','));
+  if (filters.currencies?.length) params.set('currencies', filters.currencies.join(','));
+  if (filters.storeTags?.length) params.set('storeTags', filters.storeTags.join(','));
+  if (filters.productRanges?.length) params.set('productRanges', filters.productRanges.join(','));
+  const range = getDateRangeFromPreset(filters.datePreset, filters.dateFrom, filters.dateTo);
+  if (range?.from) params.set('dateFrom', range.from.toISOString());
+  if (range?.to) params.set('dateTo', range.to.toISOString());
+  return params.toString();
+}
+
 export function filterLeadStores(stores, filters) {
   const range = getDateRangeFromPreset(filters.datePreset, filters.dateFrom, filters.dateTo);
   return stores.filter((store) => {

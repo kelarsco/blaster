@@ -6,7 +6,7 @@ import { HelpPanel } from '../components/HelpPanel';
 import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
-import { TrialBanner, TrialExpiredWall, isPlanUpgradeRoute } from '../components/access/PlanAccessUI.jsx';
+import { TrialBanner } from '../components/access/PlanAccessUI.jsx';
 
 const LAYOUT_SKELETON_MS = 1500;
 const SCROLL_THRESHOLD = 10;
@@ -38,7 +38,7 @@ function MobileNavToggle({ open, visible, onToggle }) {
 
 export function AppLayout() {
   const location = useLocation();
-  const { status, trialExpired } = usePlanAccess();
+  const { status } = usePlanAccess();
   const [showHelp, setShowHelp] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [layoutLoading, setLayoutLoading] = useState(true);
@@ -61,13 +61,11 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // When route changes, scroll main content to top so the new page is visible
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
     setTrialBannerHidden(false);
   }, [location.pathname]);
 
-  // Scroll: hide nav toggle / trial banner when scrolling down; show when at top or scrolling up.
   useEffect(() => {
     const getScrollTop = () => {
       const el = mainRef.current;
@@ -102,14 +100,11 @@ export function AppLayout() {
     };
   }, []);
 
-  const showTrialBanner = status?.trialActive && !trialExpired;
+  const showTrialBanner = status?.trialActive && !status?.trialExpired;
   const trialBannerDocked = showTrialBanner && !trialBannerHidden;
-
-  const showTrialExpiredWall = trialExpired && !isPlanUpgradeRoute(location.pathname);
 
   return (
     <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
-      {showTrialExpiredWall && <TrialExpiredWall />}
       {showTrialBanner && (
         <div className={`plan-trial-banner-fixed${trialBannerHidden ? ' plan-trial-banner-fixed--hidden' : ''}`}>
           <TrialBanner trialEndsAt={status.trialEndsAt} />
@@ -120,7 +115,6 @@ export function AppLayout() {
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
       />
-      {/* Mobile nav toggle: fixed bottom-left; tap opens menu */}
       <MobileNavToggle
         open={sidebarOpen}
         visible={navToggleVisible && !sidebarOpen}

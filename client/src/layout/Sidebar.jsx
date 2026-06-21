@@ -7,6 +7,7 @@ import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 import { getTrialRemainingMs } from '../utils/trialCountdown.js';
 import { TrialCountdown } from '../components/access/TrialCountdown.jsx';
+import { isFreeUserAllowedRoute } from '../components/access/PlanAccessUI.jsx';
 import { Logo } from '../components/Logo.jsx';
 import { SidebarReferralPromo } from '../components/referral/SidebarReferralPromo.jsx';
 
@@ -137,7 +138,7 @@ function daysUntilDate(endDate) {
 
 export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
   const { user, authFetch } = useAuth();
-  const { status: planStatus } = usePlanAccess();
+  const { status: planStatus, openTrialUpgradeModal } = usePlanAccess();
   const [subscription, setSubscription] = useState(null);
   const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
@@ -222,6 +223,16 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
     return 'Plans from $29/month';
   })();
 
+  const handleNavClick = (e, to) => {
+    if (planStatus?.trialExpired && !isFreeUserAllowedRoute(to)) {
+      e.preventDefault();
+      openTrialUpgradeModal();
+      onMobileClose?.();
+    } else {
+      onMobileClose?.();
+    }
+  };
+
   return (
     <>
       {/* Backdrop when sidebar is open on mobile */}
@@ -286,7 +297,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
                   to === '/app/senders' ||
                   to === '/app/resources'
                 }
-                onClick={onMobileClose}
+                onClick={(e) => handleNavClick(e, to)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive

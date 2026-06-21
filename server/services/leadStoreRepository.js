@@ -104,45 +104,198 @@ export async function listLeadStores({ qualifiedOnly = false, limit = 500, inclu
 }
 
 /** Slim query for Store Leads page — avoids loading large phase_data JSON blobs. */
-export async function listQualifiedStoresForClient(limit = 5000) {
+const QUALIFIED_STORE_SELECT = `
+  SELECT id, store_url, platform, country_code, currency, product_count,
+         qualified_at, created_at,
+         facebook_ads, google_ads, tiktok_ads, pinterest_ads,
+         dropshipping_score, pod_score, shopify_plus, shopify_plus_confidence,
+         phase_data->'tags' AS tag_blob,
+         phase_data->>'tagsClassifiedAt' AS tags_classified_at
+`;
+
+const PLATFORM_TO_DB = {
+  Shopify: 'shopify',
+  WooCommerce: 'woocommerce',
+  Wix: 'wix',
+  WordPress: 'wordpress',
+};
+
+const PRODUCT_COUNT_RANGES = [
+  { id: '1-9', min: 1, max: 9 },
+  { id: '10-39', min: 10, max: 39 },
+  { id: '40-99', min: 40, max: 99 },
+  { id: '100-149', min: 100, max: 149 },
+  { id: '150-199', min: 150, max: 199 },
+  { id: '200-249', min: 200, max: 249 },
+  { id: '250-299', min: 250, max: 299 },
+  { id: '300-399', min: 300, max: 399 },
+  { id: '400-499', min: 400, max: 499 },
+  { id: '500-999', min: 500, max: 999 },
+  { id: '1000-1999', min: 1000, max: 1999 },
+  { id: '2000-2999', min: 2000, max: 2999 },
+];
+
+function mapQualifiedStoreRow(row) {
+  return leadStoreToClientFormat({
+    id: row.id,
+    storeUrl: row.store_url,
+    platform: row.platform,
+    countryCode: row.country_code,
+    currency: row.currency,
+    productCount: row.product_count,
+    qualifiedAt: row.qualified_at,
+    createdAt: row.created_at,
+    facebookAds: row.facebook_ads,
+    googleAds: row.google_ads,
+    tiktokAds: row.tiktok_ads,
+    pinterestAds: row.pinterest_ads,
+    dropshippingScore: row.dropshipping_score,
+    podScore: row.pod_score,
+    shopifyPlus: row.shopify_plus,
+    shopifyPlusConfidence: row.shopify_plus_confidence,
+    phaseData: row.tag_blob
+      ? { tags: row.tag_blob, tagsClassifiedAt: row.tags_classified_at }
+      : {},
+  });
+}
+
+function storeTagSql(tag) {
+  switch (tag) {
+    case 'dropshipping':
+      return `(dropshipping_score >= 71
+        OR COALESCE(phase_data->'tags'->'tag_summary', '[]'::jsonb) @> '["dropshipping"]'::jsonb
+        OR ((phase_data->>'tagsClassifiedAt') IS NOT NULL
+            AND jsonb_array_length(COALESCE(phase_data->'tags'->'tag_summary', '[]'::jsonb)) = 0))`;
+    case 'print_on_demand':
+      return `(pod_score >= 61
+        OR COALESCE(phase_data->'tags'->'tag_summary', '[]'::jsonb) @> '["print_on_demand"]'::jsonb)`;
+    case 'shopify_plus':
+      return `(shopify_plus = true OR shopify_plus_confidence >= 70
+        OR COALESCE(phase_data->'tags'->'tag_summary', '[]'::jsonb) @> '["shopify_plus"]'::jsonb)`;
+    case 'has_ads':
+      return `(facebook_ads = true OR google_ads = true OR tiktok_ads = true OR pinterest_ads = true
+        OR (phase_data->'tags'->'has_ads_running'->>'detected') = 'true'
+        OR COALESCE(phase_data->'tags'->'tag_summary', '[]'::jsonb) @> '["has_ads"]'::jsonb)`;
+    default:
+      return 'TRUE';
+  }
+}
+
+export function parseQualifiedStoreFilters(query = {}) {
+  const split = (v) => (typeof v === 'string' && v.trim() ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
+  return {
+    platforms: split(query.platforms),
+    countries: split(query.countries),
+    currencies: split(query.currencies),
+    storeTags: split(query.storeTags),
+    productRanges: split(query.productRanges),
+    dateFrom: query.dateFrom || null,
+    dateTo: query.dateTo || null,
+  };
+}
+
+function buildQualifiedStoresWhere(filters = {}) {
+  const clauses = ['qualified = true'];
+  const params = [];
+  let i = 1;
+
+  if (filters.platforms?.length) {
+    const dbPlatforms = filters.platforms.map((p) => PLATFORM_TO_DB[p] || String(p).toLowerCase());
+    clauses.push(`LOWER(platform) = ANY($${i++}::text[])`);
+    params.push(dbPlatforms);
+  }
+
+  if (filters.countries?.length) {
+    clauses.push(`country_code = ANY($${i++}::text[])`);
+    params.push(filters.countries);
+  }
+
+  if (filters.currencies?.length) {
+    clauses.push(`currency = ANY($${i++}::text[])`);
+    params.push(filters.currencies);
+  }
+
+  if (filters.storeTags?.length) {
+    const tagParts = filters.storeTags.map((tag) => storeTagSql(tag));
+    clauses.push(`(${tagParts.join(' OR ')})`);
+  }
+
+  if (filters.productRanges?.length) {
+    const rangeParts = [];
+    for (const id of filters.productRanges) {
+      const range = PRODUCT_COUNT_RANGES.find((r) => r.id === id);
+      if (range) {
+        rangeParts.push(`(product_count >= $${i} AND product_count <= $${i + 1})`);
+        params.push(range.min, range.max);
+        i += 2;
+      }
+    }
+    if (rangeParts.length) clauses.push(`(${rangeParts.join(' OR ')})`);
+  }
+
+  if (filters.dateFrom) {
+    clauses.push(`COALESCE(qualified_at, created_at) >= $${i++}::timestamptz`);
+    params.push(filters.dateFrom);
+  }
+
+  if (filters.dateTo) {
+    clauses.push(`COALESCE(qualified_at, created_at) <= $${i++}::timestamptz`);
+    params.push(filters.dateTo);
+  }
+
+  return { where: clauses.join(' AND '), params };
+}
+
+export async function queryQualifiedStoresForClient({
+  filters = {},
+  page = 1,
+  limit = 50,
+} = {}) {
+  const db = getDb();
+  const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
+  const safeLimit = Math.min(200, Math.max(1, Number.parseInt(limit, 10) || 50));
+  const offset = (safePage - 1) * safeLimit;
+
+  if (!db) {
+    const all = (await listLeadStores({ qualifiedOnly: true, limit: 50000 })).map(leadStoreToClientFormat);
+    const total = all.length;
+    return { stores: all.slice(offset, offset + safeLimit), total, page: safePage, limit: safeLimit };
+  }
+
+  const { where, params } = buildQualifiedStoresWhere(filters);
+  const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM lead_stores WHERE ${where}`, params);
+  const total = countRes.rows[0]?.total || 0;
+
+  const listParams = [...params, safeLimit, offset];
+  const res = await db.query(
+    `${QUALIFIED_STORE_SELECT}
+     FROM lead_stores WHERE ${where}
+     ORDER BY updated_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    listParams
+  );
+
+  return {
+    stores: res.rows.map(mapQualifiedStoreRow),
+    total,
+    page: safePage,
+    limit: safeLimit,
+  };
+}
+
+/** @deprecated Use queryQualifiedStoresForClient for paginated loads. */
+export async function listQualifiedStoresForClient(limit = 50000) {
   const db = getDb();
   if (!db) {
     return listLeadStores({ qualifiedOnly: true, limit }).map(leadStoreToClientFormat);
   }
   const res = await db.query(
-    `SELECT id, store_url, platform, country_code, currency, product_count,
-            qualified_at, created_at,
-            facebook_ads, google_ads, tiktok_ads, pinterest_ads,
-            dropshipping_score, pod_score, shopify_plus, shopify_plus_confidence,
-            phase_data->'tags' AS tag_blob,
-            phase_data->>'tagsClassifiedAt' AS tags_classified_at
+    `${QUALIFIED_STORE_SELECT}
      FROM lead_stores WHERE qualified = true
      ORDER BY updated_at DESC LIMIT $1`,
     [limit]
   );
-  return res.rows.map((row) =>
-    leadStoreToClientFormat({
-      id: row.id,
-      storeUrl: row.store_url,
-      platform: row.platform,
-      countryCode: row.country_code,
-      currency: row.currency,
-      productCount: row.product_count,
-      qualifiedAt: row.qualified_at,
-      createdAt: row.created_at,
-      facebookAds: row.facebook_ads,
-      googleAds: row.google_ads,
-      tiktokAds: row.tiktok_ads,
-      pinterestAds: row.pinterest_ads,
-      dropshippingScore: row.dropshipping_score,
-      podScore: row.pod_score,
-      shopifyPlus: row.shopify_plus,
-      shopifyPlusConfidence: row.shopify_plus_confidence,
-      phaseData: row.tag_blob
-        ? { tags: row.tag_blob, tagsClassifiedAt: row.tags_classified_at }
-        : {},
-    })
-  );
+  return res.rows.map(mapQualifiedStoreRow);
 }
 
 export async function getLeadStoreByUrl(storeUrl) {

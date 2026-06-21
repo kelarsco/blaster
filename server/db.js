@@ -614,6 +614,7 @@ async function runSchema(p) {
       );
       CREATE INDEX IF NOT EXISTS idx_lead_stores_status ON lead_stores(status);
       CREATE INDEX IF NOT EXISTS idx_lead_stores_qualified ON lead_stores(qualified);
+      CREATE INDEX IF NOT EXISTS idx_lead_stores_qualified_updated ON lead_stores(updated_at DESC) WHERE qualified = true;
 
       CREATE TABLE IF NOT EXISTS lead_scrape_jobs (
         id TEXT PRIMARY KEY,
@@ -636,6 +637,7 @@ async function runSchema(p) {
     await migrateSendersGmailOAuth(p);
     await migrateManualCampaigns(p);
     await migrateReferralCodes(p);
+    await migrateProcessedPayments(p);
   } finally {
     client.release();
   }
@@ -800,5 +802,21 @@ async function migrateReferralCodes(pool) {
     }
   } catch (e) {
     console.warn('[migrateReferralCodes]', e?.message || e);
+  }
+}
+
+async function migrateProcessedPayments(pool) {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS processed_payments (
+        reference TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'extra_credit',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  } catch (e) {
+    console.warn('[migrateProcessedPayments]', e?.message || e);
   }
 }

@@ -18,11 +18,7 @@ export function AuthProvider({ children }) {
 
   const persistAccessToken = useCallback((token) => {
     try {
-      if (token) {
-        localStorage.setItem('accessToken', token);
-      } else {
-        localStorage.removeItem('accessToken');
-      }
+      localStorage.removeItem('accessToken');
     } catch (_) {}
   }, []);
 
@@ -48,23 +44,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const storedToken = localStorage.getItem('accessToken');
-        if (storedToken) {
-          const res = await fetch(`${API}/auth/me`, {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${storedToken}`,
-            },
-            credentials: 'include',
-          });
-
-          if (res.ok) {
-            const userData = await res.json();
-            setUser(userData);
-            setAccessTokenState(storedToken);
-            return;
-          }
-        }
+        localStorage.removeItem('accessToken');
 
         const refreshResult = await doRefresh();
         if (refreshResult?.suspended) {
@@ -76,7 +56,6 @@ export function AuthProvider({ children }) {
         if (refreshResult?.ok && refreshResult.accessToken) {
           setUser(refreshResult.user);
           setAccessTokenState(refreshResult.accessToken);
-          persistAccessToken(refreshResult.accessToken);
           return;
         }
 
@@ -111,7 +90,6 @@ export function AuthProvider({ children }) {
       if (refreshResult?.ok && refreshResult.accessToken) {
         setUser(refreshResult.user);
         setAccessTokenState(refreshResult.accessToken);
-        persistAccessToken(refreshResult.accessToken);
         const retryHeaders = { ...options.headers, Authorization: `Bearer ${refreshResult.accessToken}` };
         res = await fetch(url, { ...options, credentials: 'include', headers: retryHeaders });
       }
@@ -122,9 +100,8 @@ export function AuthProvider({ children }) {
   /** Set access token and optionally user (e.g. after Google OAuth callback). */
   const setAccessToken = useCallback((token, userData = null) => {
     setAccessTokenState(token);
-    persistAccessToken(token);
     if (userData) setUser(userData);
-  }, [persistAccessToken]);
+  }, []);
 
   /** Google OAuth — full-page redirect (Vite /api proxy in dev, or VITE_API_URL in production). */
   const loginWithGoogle = useCallback(() => {
@@ -177,7 +154,6 @@ export function AuthProvider({ children }) {
 
     if (data.accessToken) {
       setAccessTokenState(data.accessToken);
-      persistAccessToken(data.accessToken);
       setUser(data.user);
     }
 

@@ -1,6 +1,5 @@
 /**
  * Token-based auth: short-lived access JWT + long-lived refresh token (DB, HttpOnly cookie).
- * Access token in response body; refresh token in cookie only.
  */
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -8,8 +7,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './cookiePolicy.js';
 
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-access-secret';
-const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC) || 15 * 60; // 15 min
+function resolveAccessSecret() {
+  const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_ACCESS_SECRET is required in production');
+  }
+  return secret || process.env.SESSION_SECRET || 'dev-access-secret';
+}
+
+const ACCESS_SECRET = resolveAccessSecret();
+const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC) || 15 * 60;
 const REFRESH_TTL_DAYS = Number(process.env.JWT_REFRESH_TTL_DAYS) || 7;
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || 'wiblaster_rt';
 
@@ -17,9 +24,6 @@ function hashRefreshToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-/**
- * Create access JWT for user. Payload: { sub: userId, email, type: 'access' }.
- */
 export function createAccessToken(user) {
   return jwt.sign(
     {
@@ -29,13 +33,10 @@ export function createAccessToken(user) {
       type: 'access',
     },
     ACCESS_SECRET,
-    { expiresIn: ACCESS_TTL_SEC }
+    { expiresIn: ACCESS_TTL_SEC, algorithm: 'HS256' }
   );
 }
 
-/**
- * Create refresh token: random string, store hash in DB, return plain token for cookie.
- */
 export async function createRefreshToken(userId) {
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = hashRefreshToken(token);
@@ -51,17 +52,14 @@ export async function createRefreshToken(userId) {
   return { token, expiresAt };
 }
 
-/**
- * Verify access JWT; returns payload or throws.
- */
 export function verifyAccessToken(token) {
-  return jwt.verify(token, ACCESS_SECRET);
+  const payload = jwt.verify(token, ACCESS_SECRET, { algorithms: ['HS256'] });
+  if (payload?.type !== 'access' || !payload?.sub) {
+    throw new Error('Invalid access token');
+  }
+  return payload;
 }
 
-/**
- * Find refresh token by plain token (hash and lookup), ensure not revoked/expired.
- * Returns { id, user_id } or null.
- */
 export async function findRefreshTokenByToken(plainToken) {
   const db = getDb();
   if (!db) return null;
@@ -74,27 +72,18 @@ export async function findRefreshTokenByToken(plainToken) {
   return row ? { id: row.id, user_id: row.user_id } : null;
 }
 
-/**
- * Revoke a refresh token by its DB id.
- */
 export async function revokeRefreshTokenById(tokenId) {
   const db = getDb();
   if (!db) return;
   await db.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`, [tokenId]);
 }
 
-/**
- * Revoke all refresh tokens for a user (e.g. logout all devices, password reset).
- */
 export async function revokeRefreshTokensForUser(userId) {
   const db = getDb();
   if (!db) return;
   await db.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1`, [userId]);
 }
 
-/**
- * Set refresh token in response cookie (HttpOnly, Secure in prod, SameSite).
- */
 export function setRefreshTokenCookie(res, token, expiresAt) {
   const secure = shouldUseSecureCookies();
   const sameSite = getCookieSameSite();
@@ -109,9 +98,6 @@ export function setRefreshTokenCookie(res, token, expiresAt) {
   });
 }
 
-/**
- * Clear refresh token cookie.
- */
 export function clearRefreshTokenCookie(res) {
   const secure = shouldUseSecureCookies();
   const sameSite = getCookieSameSite();

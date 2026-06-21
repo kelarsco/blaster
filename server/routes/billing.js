@@ -501,6 +501,7 @@ billingRoutes.post('/extra-credit/initialize', requireAuth, async (req, res) => 
       return res.status(400).json({ error: 'amountCents must be 1000 ($10), 3000 ($30), 5000 ($50), or 10000 ($100)' });
     }
     const email = req.user.email;
+    const userId = req.user.id;
     const callbackUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/app/account/settings/usage?paystack=success&extra=1';
     const reference = `extra_${uuidv4().replace(/-/g, '')}`;
     const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'NGN';
@@ -516,6 +517,7 @@ billingRoutes.post('/extra-credit/initialize', requireAuth, async (req, res) => 
         currency: PAYSTACK_CURRENCY,
         reference,
         callback_url: callbackUrl,
+        metadata: { amount_cents: String(amountCents), user_id: userId },
       }),
     });
     const data = await response.json();
@@ -529,15 +531,14 @@ billingRoutes.post('/extra-credit/initialize', requireAuth, async (req, res) => 
   }
 });
 
-/** Verify extra-credit payment and add to user balance. Body: { reference, amountCents }. */
+/** Verify extra-credit payment and add to user balance. Body: { reference }. */
 billingRoutes.post('/extra-credit/verify', requireAuth, async (req, res) => {
   try {
-    const { reference, amountCents } = req.body || {};
+    const { reference } = req.body || {};
     if (!reference || typeof reference !== 'string') return res.status(400).json({ error: 'reference is required' });
-    const cents = Math.max(0, Math.floor(Number(amountCents) || 0));
-    if (cents === 0) return res.status(400).json({ error: 'amountCents is required' });
     if (!PAYSTACK_SECRET) return res.status(503).json({ error: 'Paystack is not configured' });
-    const resPayload = await fetch(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(reference.trim())}`, {
+    const ref = reference.trim();
+    const resPayload = await fetch(`${PAYSTACK_BASE}/transaction/verify/${encodeURIComponent(ref)}`, {
       method: 'GET',
       headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET },
     });
@@ -545,15 +546,36 @@ billingRoutes.post('/extra-credit/verify', requireAuth, async (req, res) => {
     if (!data.status || !data.data || data.data.status !== 'success') {
       return res.status(400).json({ error: data.message || 'Transaction not found or invalid' });
     }
+    const tx = data.data;
+    const allowed = [1000, 3000, 5000, 10000];
+    const metaCents = Number(tx.metadata?.amount_cents || tx.metadata?.amountCents || 0);
+    if (!allowed.includes(metaCents)) {
+      return res.status(400).json({ error: 'Payment amount mismatch' });
+    }
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
     const userId = req.user.id;
-    await db.query(
-      `INSERT INTO user_extra_credit (user_id, paid_cents, updated_at) VALUES ($1, $2, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET paid_cents = user_extra_credit.paid_cents + $2, updated_at = NOW()`,
-      [userId, cents]
-    );
-    res.json({ ok: true, paidCents: cents });
+    const dup = await db.query('SELECT 1 FROM processed_payments WHERE reference = $1', [ref]);
+    if (dup.rows?.length) {
+      return res.json({ ok: true, alreadyProcessed: true, paidCents: metaCents });
+    }
+    await db.query('BEGIN');
+    try {
+      await db.query(
+        `INSERT INTO processed_payments (reference, user_id, amount_cents, kind) VALUES ($1, $2, $3, 'extra_credit')`,
+        [ref, userId, metaCents]
+      );
+      await db.query(
+        `INSERT INTO user_extra_credit (user_id, paid_cents, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET paid_cents = user_extra_credit.paid_cents + $2, updated_at = NOW()`,
+        [userId, metaCents]
+      );
+      await db.query('COMMIT');
+    } catch (txErr) {
+      await db.query('ROLLBACK');
+      throw txErr;
+    }
+    res.json({ ok: true, paidCents: metaCents });
   } catch (e) {
     console.error('[billing extra-credit verify]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Verification failed' });

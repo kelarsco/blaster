@@ -18,10 +18,95 @@ function yesterdayDateKey() {
   return d.toISOString().slice(0, 10);
 }
 
+/** Normalize pg DATE columns (string or Date) to YYYY-MM-DD in UTC. */
+function normalizeDateKey(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return null;
+}
+
 function streakIsBroken(lastQualifyingDate, today = todayDateKey()) {
-  if (!lastQualifyingDate) return false;
+  const last = normalizeDateKey(lastQualifyingDate);
+  if (!last) return false;
   const yesterday = yesterdayDateKey();
-  return lastQualifyingDate < yesterday;
+  return last < yesterday;
+}
+
+async function getDailySendCountsMap(db, userId, sinceDateKey) {
+  const result = await db.query(
+    `SELECT day::text AS day, SUM(count)::int AS count
+     FROM (
+       SELECT DATE(mse.sent_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS count
+       FROM manual_send_events mse
+       JOIN manual_campaign_runs mcr ON mcr.id = mse.run_id
+       WHERE mcr.user_id = $1 AND DATE(mse.sent_at AT TIME ZONE 'UTC') >= $2::date
+       GROUP BY 1
+       UNION ALL
+       SELECT DATE(cs.sent_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS count
+       FROM campaign_sends cs
+       JOIN campaigns c ON c.id = cs.campaign_id
+       WHERE c.user_id = $1 AND cs.status = 'sent' AND DATE(cs.sent_at AT TIME ZONE 'UTC') >= $2::date
+       GROUP BY 1
+       UNION ALL
+       SELECT DATE(dcs.sent_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS count
+       FROM domain_campaign_sends dcs
+       JOIN domain_campaigns dc ON dc.id = dcs.campaign_id
+       WHERE dc.user_id = $1 AND dcs.status = 'sent' AND DATE(dcs.sent_at AT TIME ZONE 'UTC') >= $2::date
+       GROUP BY 1
+     ) daily
+     GROUP BY day`,
+    [userId, sinceDateKey]
+  );
+
+  const map = new Map();
+  for (const row of result.rows) {
+    const key = normalizeDateKey(row.day);
+    if (key) map.set(key, Number(row.count) || 0);
+  }
+  return map;
+}
+
+async function computeStreakFromHistory(db, userId, dailyTarget) {
+  const target = Number(dailyTarget);
+  if (!target || target < MIN_DAILY_TARGET) {
+    return { streak: 0, lastQualifyingDate: null };
+  }
+
+  const today = todayDateKey();
+  const since = new Date(`${today}T00:00:00.000Z`);
+  since.setUTCDate(since.getUTCDate() - 366);
+  const countsByDay = await getDailySendCountsMap(db, userId, since.toISOString().slice(0, 10));
+
+  let streak = 0;
+  let lastQualifyingDate = null;
+  let d = new Date(`${today}T00:00:00.000Z`);
+  let skippedToday = false;
+
+  for (let i = 0; i < 366; i++) {
+    const key = d.toISOString().slice(0, 10);
+    const sent = countsByDay.get(key) || 0;
+
+    if (sent < target) {
+      if (!skippedToday && key === today) {
+        skippedToday = true;
+        d.setUTCDate(d.getUTCDate() - 1);
+        continue;
+      }
+      break;
+    }
+
+    streak += 1;
+    lastQualifyingDate = key;
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+
+  return { streak, lastQualifyingDate };
 }
 
 async function countTotalEmailsSent(db, userId) {
@@ -138,7 +223,7 @@ function rowToState(row) {
     highestStreakBadgeEarned: highestBadge,
     totalEmailsSent: totalEmails,
     emailsSentToday,
-    lastQualifyingDate: row.last_qualifying_date || null,
+    lastQualifyingDate: normalizeDateKey(row.last_qualifying_date),
     streakLabel,
     thisWeekEmails: row._thisWeekEmails ?? 0,
     allTimeEmails: totalEmails,
@@ -190,14 +275,11 @@ async function reconcileStreakRow(db, row) {
   highestBadge = Number(highestBadge) || 0;
   totalEmails = Number(totalEmails) || 0;
   emailsSentToday = Number(emailsSentToday) || 0;
-  lastQualifyingDate = lastQualifyingDate
-    ? String(lastQualifyingDate).slice(0, 10)
-    : null;
+  lastQualifyingDate = normalizeDateKey(lastQualifyingDate);
+  emailsTodayDate = normalizeDateKey(emailsTodayDate) || today;
 
-  if (emailsTodayDate && String(emailsTodayDate).slice(0, 10) !== today) {
+  if (emailsTodayDate !== today) {
     emailsSentToday = 0;
-    emailsTodayDate = today;
-  } else if (!emailsTodayDate) {
     emailsTodayDate = today;
   }
 
@@ -206,18 +288,24 @@ async function reconcileStreakRow(db, row) {
     emailsSentToday = dbTodayCount;
   }
 
-  if (dailyTarget && streakIsBroken(lastQualifyingDate, today)) {
+  if (dailyTarget) {
+    const computed = await computeStreakFromHistory(db, row.user_id, dailyTarget);
+    currentStreak = computed.streak;
+    lastQualifyingDate = computed.lastQualifyingDate;
+  } else if (streakIsBroken(lastQualifyingDate, today)) {
     currentStreak = 0;
+    lastQualifyingDate = null;
   }
 
   await db.query(
     `UPDATE user_streaks SET
       current_streak_days = $2,
-      emails_sent_today = $3,
-      emails_today_date = $4,
+      last_qualifying_date = $3,
+      emails_sent_today = $4,
+      emails_today_date = $5,
       updated_at = NOW()
      WHERE user_id = $1`,
-    [row.user_id, currentStreak, emailsSentToday, emailsTodayDate]
+    [row.user_id, currentStreak, lastQualifyingDate, emailsSentToday, emailsTodayDate]
   );
 
   return {
@@ -267,55 +355,17 @@ async function qualifyDayIfNeeded(db, userId, row, userEmail, userName) {
   if (!dailyTarget || dailyTarget < MIN_DAILY_TARGET) return row;
 
   const today = todayDateKey();
-  const yesterday = yesterdayDateKey();
-  let currentStreak = Number(row.current_streak_days) || 0;
-  let lastQualifyingDate = row.last_qualifying_date
-    ? String(row.last_qualifying_date).slice(0, 10)
-    : null;
-
   const emailsSentToday = await countEmailsSentOnDate(db, userId, today);
 
-  if (emailsSentToday < dailyTarget) {
-    if (emailsSentToday !== Number(row.emails_sent_today || 0)) {
-      await db.query(
-        `UPDATE user_streaks SET emails_sent_today = $2, emails_today_date = $3, updated_at = NOW() WHERE user_id = $1`,
-        [userId, emailsSentToday, today]
-      );
-    }
-    return { ...row, emails_sent_today: emailsSentToday, emails_today_date: today };
+  if (emailsSentToday !== Number(row.emails_sent_today || 0)) {
+    await db.query(
+      `UPDATE user_streaks SET emails_sent_today = $2, emails_today_date = $3, updated_at = NOW() WHERE user_id = $1`,
+      [userId, emailsSentToday, today]
+    );
+    row = { ...row, emails_sent_today: emailsSentToday, emails_today_date: today };
   }
 
-  if (lastQualifyingDate === today) {
-    return { ...row, emails_sent_today: emailsSentToday, emails_today_date: today };
-  }
-
-  if (lastQualifyingDate === yesterday) {
-    currentStreak += 1;
-  } else {
-    currentStreak = 1;
-  }
-  lastQualifyingDate = today;
-
-  await db.query(
-    `UPDATE user_streaks SET
-      current_streak_days = $2,
-      last_qualifying_date = $3,
-      emails_sent_today = $4,
-      emails_today_date = $5,
-      updated_at = NOW()
-     WHERE user_id = $1`,
-    [userId, currentStreak, lastQualifyingDate, emailsSentToday, today]
-  );
-
-  const updated = {
-    ...row,
-    current_streak_days: currentStreak,
-    last_qualifying_date: lastQualifyingDate,
-    emails_sent_today: emailsSentToday,
-    emails_today_date: today,
-  };
-
-  return maybeUnlockStreakBadges(db, userId, updated, userEmail, userName);
+  return maybeUnlockStreakBadges(db, userId, row, userEmail, userName);
 }
 
 export async function getStreakState(userId, { userEmail, userName } = {}) {
@@ -368,15 +418,33 @@ export async function setDailyTarget(userId, dailyTarget, { userEmail, userName 
   }
 
   await ensureUserStreakRow(db, userId);
-  await db.query(
-    `UPDATE user_streaks SET
-      daily_target = $2,
-      current_streak_days = 0,
-      last_qualifying_date = NULL,
-      updated_at = NOW()
-     WHERE user_id = $1`,
-    [userId, Math.floor(target)]
-  );
+  const existing = await db.query('SELECT daily_target, current_streak_days, highest_streak_badge_earned FROM user_streaks WHERE user_id = $1', [userId]);
+  const row = existing.rows[0] || {};
+  const hasTarget = row.daily_target != null;
+  const highestBadge = Number(row.highest_streak_badge_earned) || 0;
+  const currentStreak = Number(row.current_streak_days) || 0;
+  const canEditTarget = hasTarget && (highestBadge >= 30 || currentStreak >= 30);
+
+  if (hasTarget && canEditTarget) {
+    await db.query(
+      `UPDATE user_streaks SET daily_target = $2, updated_at = NOW() WHERE user_id = $1`,
+      [userId, Math.floor(target)]
+    );
+  } else if (hasTarget) {
+    const err = new Error('Reach a 30-day streak to change your daily target');
+    err.status = 403;
+    throw err;
+  } else {
+    await db.query(
+      `UPDATE user_streaks SET
+        daily_target = $2,
+        current_streak_days = 0,
+        last_qualifying_date = NULL,
+        updated_at = NOW()
+       WHERE user_id = $1`,
+      [userId, Math.floor(target)]
+    );
+  }
 
   return getStreakState(userId, { userEmail, userName });
 }
@@ -391,7 +459,7 @@ export async function recordEmailSent(userId, count = 1) {
 
     const today = todayDateKey();
     let emailsSentToday = Number(row.emails_sent_today) || 0;
-    if (String(row.emails_today_date || '').slice(0, 10) !== today) {
+    if (normalizeDateKey(row.emails_today_date) !== today) {
       emailsSentToday = 0;
     }
     emailsSentToday += count;
