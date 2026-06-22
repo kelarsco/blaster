@@ -68,6 +68,38 @@ async function markScrapeRunComplete() {
 
 const MAX_RUNNING_MS = 25 * 60 * 1000;
 
+function runDiscoveryForJob(jobId, trigger, resumeFrom = null) {
+  return runScrapeDiscoverySession(async (patch) => {
+    await updateScrapeJobSession(jobId, { ...patch, trigger }, 'running');
+  }, resumeFrom ? { resumeFrom } : undefined)
+    .then(async (session) => {
+      await completeScrapeJob(jobId, {
+        urlsFound: session.totalGenerated,
+        storesAdded: 0,
+        status: 'ready',
+        session: { ...session, trigger },
+      });
+      await markScrapeRunComplete();
+    })
+    .catch(async (e) => {
+      const job = await getScrapeJobById(jobId);
+      const partial = job?.session || {};
+      await completeScrapeJob(jobId, {
+        urlsFound: partial.linksFound ?? partial.totalGenerated ?? partial.checkpoint?.confirmedHits?.length ?? 0,
+        storesAdded: 0,
+        errorMessage: e?.message || 'Scrape failed',
+        status: 'failed',
+        session: {
+          ...partial,
+          phase: 'failed',
+          statusLabel: 'Scrape failed — partial results saved',
+          failedAt: new Date().toISOString(),
+        },
+      });
+      await markScrapeRunComplete();
+    });
+}
+
 export async function ensureScrapeJobFresh(job) {
   if (!job || job.status !== 'running') return job;
   const startedMs = new Date(job.startedAt || job.session?.startedAt || 0).getTime();
@@ -136,29 +168,54 @@ export async function startLeadScrapeSession({ trigger = 'manual' } = {}) {
     'running'
   );
 
-  runScrapeDiscoverySession(async (patch) => {
-    await updateScrapeJobSession(jobId, { ...patch, trigger }, 'running');
-  })
-    .then(async (session) => {
-      await completeScrapeJob(jobId, {
-        urlsFound: session.totalGenerated,
-        storesAdded: 0,
-        status: 'ready',
-        session: { ...session, trigger },
-      });
-      await markScrapeRunComplete();
-    })
-    .catch(async (e) => {
-      await completeScrapeJob(jobId, {
-        urlsFound: 0,
-        storesAdded: 0,
-        errorMessage: e?.message || 'Scrape failed',
-        status: 'failed',
-      });
-      await markScrapeRunComplete();
-    });
+  runDiscoveryForJob(jobId, trigger);
 
   return { ok: true, jobId, message: 'Scrape session started' };
+}
+
+/** Continue a failed session from the last checkpoint (skips Google if already done). */
+export async function resumeLeadScrapeSession(jobId) {
+  const job = await getScrapeJobById(jobId);
+  if (!job) return { ok: false, error: 'Scrape session not found' };
+  if (job.status === 'running') {
+    return { ok: true, jobId: job.id, scrapeJob: job, message: 'Scrape already in progress' };
+  }
+  if (job.status !== 'failed') {
+    return { ok: false, error: 'Only failed sessions can be resumed' };
+  }
+
+  const checkpoint = job.session?.checkpoint;
+  const canResume =
+    checkpoint?.dorkComplete &&
+    (checkpoint.candidateUrls?.length > 0 || checkpoint.confirmedHits?.length > 0);
+
+  if (!canResume) {
+    return { ok: false, error: 'No checkpoint to resume — start a fresh scrape instead' };
+  }
+
+  const latest = await getLatestScrapeJob();
+  if (latest && latest.status === 'running' && latest.id !== jobId) {
+    const stale = await ensureScrapeJobFresh(latest);
+    if (stale?.status === 'running') {
+      return { ok: false, error: 'Another scrape is already in progress' };
+    }
+  }
+
+  await updateScrapeJobSession(
+    jobId,
+    {
+      phase: 'resuming',
+      progressPercent: job.session?.progressPercent ?? 55,
+      statusLabel: 'Resuming scrape session…',
+      errorMessage: null,
+      startedAt: job.session?.startedAt || job.startedAt,
+    },
+    'running'
+  );
+
+  runDiscoveryForJob(jobId, 'resume', job.session);
+
+  return { ok: true, jobId, message: 'Scrape session resumed' };
 }
 
 export async function applyScrapeScheduleSettings({ enabled, intervalMinutes }) {

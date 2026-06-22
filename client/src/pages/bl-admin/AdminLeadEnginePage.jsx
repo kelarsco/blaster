@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Play, RefreshCw } from 'react-feather';
+import { Plus, Play, RefreshCw, Trash2 } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
 
 function statusBadge(status) {
@@ -20,6 +20,7 @@ export function AdminLeadEnginePage() {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [requeueing, setRequeueing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -85,6 +86,38 @@ export function AdminLeadEnginePage() {
       setMessage(e.message || 'Re-check failed');
     }
     setRequeueing(false);
+  };
+
+  const deleteByStatus = async (status) => {
+    const count = status === 'rejected' ? (stats?.rejected ?? 0) : (stats?.failed ?? 0);
+    if (count === 0) return;
+    const label = status === 'rejected' ? 'rejected' : 'failed';
+    const confirmed = window.confirm(
+      `Permanently delete ${count.toLocaleString()} ${label} store${count === 1 ? '' : 's'} from the database? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setMessage('');
+    try {
+      const res = await adminFetch('/lead-engine/stores/delete-by-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed to delete ${label} stores`);
+      const removed = data.deleted ?? 0;
+      setMessage(
+        removed > 0
+          ? `Deleted ${removed.toLocaleString()} ${label} store${removed === 1 ? '' : 's'}.`
+          : `No ${label} stores to delete.`
+      );
+      load();
+    } catch (e) {
+      setMessage(e.message || 'Delete failed');
+    }
+    setDeleting(false);
   };
 
   if (loading) {
@@ -182,22 +215,54 @@ export function AdminLeadEnginePage() {
               {statusFilter === 'qualified'
                 ? ' · shown on the public Leads page when qualified'
                 : statusFilter === 'rejected'
-                  ? ' · re-check to confirm inactive stores were not wrongly rejected'
-                  : statusFilter !== 'all'
+                  ? ' · re-check or delete rejected stores'
+                  : statusFilter === 'failed'
+                    ? ' · delete failed stores to clear pipeline errors'
+                    : statusFilter !== 'all'
                     ? ` · ${activeCard?.label}`
                     : ' · click a stat above to filter'}
             </p>
           </div>
           {statusFilter === 'rejected' ? (
-            <button
-              type="button"
-              onClick={requeueRejected}
-              disabled={requeueing || (stats?.rejected ?? 0) === 0}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${requeueing ? 'animate-spin' : ''}`} />
-              {requeueing ? 'Re-checking…' : 'Re-check rejected'}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={requeueRejected}
+                disabled={requeueing || deleting || (stats?.rejected ?? 0) === 0}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${requeueing ? 'animate-spin' : ''}`} />
+                {requeueing ? 'Re-checking…' : 'Re-check rejected'}
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteByStatus('rejected')}
+                disabled={deleting || requeueing || (stats?.rejected ?? 0) === 0}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? 'Deleting…' : 'Delete rejected'}
+              </button>
+            </div>
+          ) : statusFilter === 'failed' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => deleteByStatus('failed')}
+                disabled={deleting || (stats?.failed ?? 0) === 0}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? 'Deleting…' : 'Delete failed'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
+              >
+                Show all
+              </button>
+            </div>
           ) : statusFilter !== 'all' ? (
             <button
               type="button"

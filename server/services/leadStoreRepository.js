@@ -374,6 +374,28 @@ export async function requeueRejectedLeadStores() {
   return { requeued: res.rowCount || 0 };
 }
 
+const DELETABLE_LEAD_STATUSES = new Set(['rejected', 'failed']);
+
+/** Permanently remove lead_stores rows with rejected or failed status. */
+export async function deleteLeadStoresByStatus(statuses) {
+  const allowed = [...new Set((statuses || []).map((s) => String(s).toLowerCase()))].filter((s) =>
+    DELETABLE_LEAD_STATUSES.has(s)
+  );
+  if (!allowed.length) {
+    return { deleted: 0, statuses: [] };
+  }
+
+  const db = getDb();
+  if (!db) {
+    const before = memoryStore.leadStores.length;
+    memoryStore.leadStores = memoryStore.leadStores.filter((s) => !allowed.includes(s.status));
+    return { deleted: before - memoryStore.leadStores.length, statuses: allowed };
+  }
+
+  const res = await db.query(`DELETE FROM lead_stores WHERE status = ANY($1::text[])`, [allowed]);
+  return { deleted: res.rowCount || 0, statuses: allowed };
+}
+
 export async function getNextPendingLeadStore() {
   const db = getDb();
   if (!db) {
@@ -526,23 +548,38 @@ export async function completeScrapeJob(id, { urlsFound, storesAdded, errorMessa
   );
 }
 
-export async function updateScrapeJobSession(id, session, status = 'running') {
+function mergeScrapeSessionPatch(prev = {}, patch = {}) {
+  const next = { ...prev, ...patch };
+  if (patch.modules) next.modules = { ...(prev.modules || {}), ...patch.modules };
+  if (patch.validation) next.validation = { ...(prev.validation || {}), ...patch.validation };
+  if (patch.checkpoint) next.checkpoint = { ...(prev.checkpoint || {}), ...patch.checkpoint };
+  if (!patch.verifiedLeads && prev.verifiedLeads) next.verifiedLeads = prev.verifiedLeads;
+  if (!patch.sources && prev.sources) next.sources = prev.sources;
+  if (!patch.startedAt && prev.startedAt) next.startedAt = prev.startedAt;
+  return next;
+}
+
+export async function updateScrapeJobSession(id, sessionPatch, status = 'running') {
+  const existing = await getScrapeJobById(id);
+  const merged = mergeScrapeSessionPatch(existing?.session || {}, sessionPatch);
   const db = getDb();
-  const sessionJson = JSON.stringify(session);
+  const sessionJson = JSON.stringify(merged);
   if (!db) {
     const job = memoryStore.leadScrapeJobs.find((j) => j.id === id);
     if (job) {
       job.status = status;
       job.session_json = sessionJson;
-      if (session.totalGenerated != null) job.urls_found = session.totalGenerated;
+      const links = merged.linksFound ?? merged.totalGenerated;
+      if (links != null) job.urls_found = links;
     }
-    return;
+    return merged;
   }
   await db.query(
     `UPDATE lead_scrape_jobs SET status = $2, session_json = $3,
      urls_found = COALESCE($4, urls_found) WHERE id = $1`,
-    [id, status, sessionJson, session.totalGenerated ?? null]
+    [id, status, sessionJson, merged.linksFound ?? merged.totalGenerated ?? null]
   );
+  return merged;
 }
 
 function mapScrapeJobRow(row) {

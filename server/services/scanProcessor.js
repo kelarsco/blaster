@@ -4,6 +4,7 @@
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
+import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
   Number(process.env.SCAN_CONCURRENCY) || (process.env.NODE_ENV === 'production' ? 3 : 5),
@@ -93,6 +94,15 @@ async function insertScanResultsBatch(db, scanId, rows) {
 }
 
 export async function processScan(payload) {
+  registerUserWorkload('scan');
+  try {
+    await processScanWork(payload);
+  } finally {
+    unregisterUserWorkload('scan');
+  }
+}
+
+async function processScanWork(payload) {
   const {
     scanId,
     rawInput,

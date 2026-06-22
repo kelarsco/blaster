@@ -5,11 +5,16 @@ import {
 } from './leadStoreRepository.js';
 import { runLeadStorePipeline } from './leadStorePipeline.js';
 import { isLeadEngineEnabled } from './leadEngineGate.js';
+import { isUserWorkloadActive } from './resourceCoordinator.js';
 
 let processing = false;
 let scheduled = false;
 
 async function processOne() {
+  if (isUserWorkloadActive()) {
+    setTimeout(processOne, 3000);
+    return;
+  }
   const store = await getNextPendingLeadStore();
   if (!store) {
     processing = false;

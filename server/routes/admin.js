@@ -9,6 +9,7 @@ import {
   listLeadStores,
   enqueueLeadStores,
   requeueRejectedLeadStores,
+  deleteLeadStoresByStatus,
   completeScrapeJob,
   getLatestScrapeJob,
   getScrapeJobById,
@@ -16,7 +17,7 @@ import {
   countQualifiedStoresNeedingTagRefresh,
   clearTagClassificationForAllQualified,
 } from '../services/leadStoreRepository.js';
-import { startLeadScrapeSession, applyScrapeScheduleSettings, ensureScrapeJobFresh } from '../services/scrapeScheduler.js';
+import { startLeadScrapeSession, applyScrapeScheduleSettings, ensureScrapeJobFresh, resumeLeadScrapeSession } from '../services/scrapeScheduler.js';
 import { getSerpQuotaStatus, resetSerpDailyQuota } from '../services/serpQuota.js';
 import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
 import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
@@ -628,6 +629,25 @@ adminRoutes.post('/lead-engine/stores/requeue-rejected', async (req, res) => {
   }
 });
 
+adminRoutes.post('/lead-engine/stores/delete-by-status', async (req, res) => {
+  try {
+    const raw = req.body?.statuses ?? req.body?.status;
+    const statuses = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    if (!statuses.length) {
+      return res.status(400).json({ error: 'Provide status or statuses (rejected, failed)' });
+    }
+    const invalid = statuses.filter((s) => !['rejected', 'failed'].includes(String(s).toLowerCase()));
+    if (invalid.length) {
+      return res.status(400).json({ error: 'Only rejected and failed stores can be deleted' });
+    }
+    const { deleted, statuses: removed } = await deleteLeadStoresByStatus(statuses);
+    res.json({ deleted, statuses: removed });
+  } catch (e) {
+    console.error('[lead-engine delete-by-status]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to delete stores' });
+  }
+});
+
 /** Re-run tag classifier on all qualified stores (for Store Leads filter tags). */
 adminRoutes.post('/lead-engine/stores/reclassify-tags', async (req, res) => {
   try {
@@ -713,6 +733,19 @@ adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
   } catch (e) {
     console.error('[lead-engine scrape]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to start scrape' });
+  }
+});
+
+adminRoutes.post('/lead-engine/scrape/resume', async (req, res) => {
+  try {
+    const jobId = String(req.body?.jobId || '').trim();
+    if (!jobId) return res.status(400).json({ error: 'jobId is required' });
+    const result = await resumeLeadScrapeSession(jobId);
+    if (!result.ok) return res.status(400).json({ error: result.error || 'Cannot resume session' });
+    res.json(result);
+  } catch (e) {
+    console.error('[lead-engine scrape resume]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to resume scrape' });
   }
 });
 

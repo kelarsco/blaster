@@ -17,8 +17,8 @@ const SOURCE_STYLES = {
   TikTok: 'border-gray-800 bg-gray-900 text-white',
   LinkedIn: 'border-sky-200 bg-sky-50',
   Twitter: 'border-slate-200 bg-slate-50',
-  'Google Ads': 'border-emerald-200 bg-emerald-50',
   'Google Dork': 'border-emerald-200 bg-emerald-50',
+  'Shopify API': 'border-violet-200 bg-violet-50',
 };
 
 const INTERVAL_OPTIONS = [
@@ -140,6 +140,7 @@ export function AdminScrapeDashboardPage() {
   );
   const [loading, setLoading] = useState(!initialScrapeCache?.job);
   const [starting, setStarting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [resettingQuota, setResettingQuota] = useState(false);
   const [accepting, setAccepting] = useState(false);
@@ -259,6 +260,29 @@ export function AdminScrapeDashboardPage() {
     setStarting(false);
   };
 
+  const resumeScrape = async () => {
+    if (!job?.id) return;
+    setResuming(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await adminFetch('/lead-engine/scrape/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to resume scrape');
+      writeScrapeJobId(job.id);
+      await loadStatus(job.id);
+      setMessage(data.message || 'Scrape session resumed');
+      await loadSettings();
+    } catch (e) {
+      setError(e.message || 'Failed to resume');
+    }
+    setResuming(false);
+  };
+
   const saveSchedule = async () => {
     setSavingSchedule(true);
     setError('');
@@ -347,13 +371,18 @@ export function AdminScrapeDashboardPage() {
   const progress = session?.progressPercent ?? (isRunning ? 12 : isReady || isAccepted ? 100 : 0);
   const validation = session?.validation ?? {};
   const verifiedCount = validation.verifiedCount ?? 0;
-  const googleAds = session?.modules?.googleAds || session?.modules?.googleDork;
-  const quota = googleAds?.quota || serpQuota;
+  const googleDork = session?.modules?.googleDork || session?.modules?.googleAds;
+  const shopifyModule = session?.modules?.shopifyEndpointCrawler;
+  const quota = googleDork?.quota || serpQuota;
 
-  const adsStep =
-    session?.adsQueryIndex && session?.adsQueryTotal
-      ? `${session.adsQueryIndex} / ${session.adsQueryTotal}`
-      : null;
+  const serpStep =
+    session?.dorkQueryIndex && session?.dorkQueryTotal
+      ? `Search ${session.dorkQueryIndex} / ${session.dorkQueryTotal}`
+      : session?.shopifyCheckIndex && session?.shopifyCheckTotal
+        ? `Shopify confirm ${session.shopifyCheckIndex} / ${session.shopifyCheckTotal}`
+        : session?.adsQueryIndex && session?.adsQueryTotal
+          ? `${session.adsQueryIndex} / ${session.adsQueryTotal}`
+          : null;
 
   const statusLabel = useMemo(() => {
     if (isFailed) return 'Scrape failed';
@@ -364,6 +393,18 @@ export function AdminScrapeDashboardPage() {
   }, [isFailed, isAccepted, isReady, isRunning, session?.statusLabel]);
 
   const automationOn = settings.enabled && settings.intervalMinutes > 0;
+  const checkpoint = session?.checkpoint;
+  const canResumeFailed =
+    isFailed &&
+    checkpoint?.dorkComplete &&
+    ((checkpoint.candidateUrls?.length ?? 0) > 0 || (checkpoint.confirmedHits?.length ?? 0) > 0);
+  const partialLinksOnFailure =
+    isFailed &&
+    (session?.linksFound ??
+      checkpoint?.confirmedHits?.length ??
+      session?.totalGenerated ??
+      job?.urlsFound ??
+      0);
 
   if (loading && !job) {
     return <p className="text-sm text-blaster-muted">Loading scraping dashboard…</p>;
@@ -384,10 +425,26 @@ export function AdminScrapeDashboardPage() {
           </Link>
           <h1 className="text-xl font-semibold text-blaster-fg">Internet Scraping Dashboard</h1>
           <p className="text-sm text-blaster-muted mt-1">
-            One daily run uses 15 Google Ads Transparency Center searches to find active ecommerce storefronts
-            (past 24h + past 6 days), then validates against your database.
+            Two-step pipeline runs automatically: (1) 15 Shopify Google searches, then (2) Shopify API
+            confirmation on every candidate. This discovers store URLs — not emails. Accept leads to queue them
+            for the Lead Engine pipeline. Scraping pauses while users run store scans.
           </p>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-blaster-border bg-blaster-sidebar/40 px-4 py-3 text-xs text-blaster-muted">
+        <p className="font-medium text-blaster-fg mb-1">How the two scrapers work</p>
+        <ol className="list-decimal list-inside space-y-1">
+          <li>
+            <strong>Google search</strong> — finds Shopify candidates (prioritizes <code className="text-[11px]">*.myshopify.com</code>
+            ). Progress shows as Search 1/15 … 15/15.
+          </li>
+          <li>
+            <strong>Shopify API</strong> — starts automatically after Google finishes. Confirms each domain via{' '}
+            <code className="text-[11px]">/products.json</code>. Progress shows as Shopify confirm N/M. No separate
+            button needed.
+          </li>
+        </ol>
       </div>
 
       {/* Automation + manual run controls */}
@@ -470,10 +527,10 @@ export function AdminScrapeDashboardPage() {
             </button>
           </div>
         ) : null}
-        {googleAds?.skipped && !isRunning ? (
+        {googleDork?.skipped && !isRunning ? (
           <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Google Ads scraper skipped — set <code className="text-[11px]">SERPAPI_KEY</code> to your SerpApi private
-            key (not a URL). {googleAds.reason ? `(${googleAds.reason})` : ''}
+            Google search scraper skipped — set <code className="text-[11px]">SERPAPI_KEY</code> to your SerpApi private
+            key (not a URL). {googleDork.reason ? `(${googleDork.reason})` : ''}
           </p>
         ) : null}
       </div>
@@ -491,7 +548,7 @@ export function AdminScrapeDashboardPage() {
           <p className="text-sm font-medium text-blaster-fg">Ready to scrape</p>
           <p className="text-xs text-blaster-muted mt-1 max-w-md mx-auto">
             Set automation to <strong>Every 24 hours</strong>, save, then click <strong>Run scrape now</strong>. Each
-            daily run uses 15 Google Ads searches (Shopping + Search, 24h and 6-day windows).
+            daily run uses 15 Shopify-focused Google searches, then confirms candidates via /products.json.
           </p>
         </div>
       ) : (
@@ -551,9 +608,9 @@ export function AdminScrapeDashboardPage() {
                     <Loader className="w-4 h-4 animate-spin" />
                     Live scrape
                   </span>
-                  {adsStep ? (
+                  {serpStep ? (
                     <span className="text-emerald-800">
-                      SerpAPI search <strong>{adsStep}</strong>
+                      Step <strong>{serpStep}</strong>
                     </span>
                   ) : null}
                   <span className="text-emerald-800">
@@ -565,7 +622,8 @@ export function AdminScrapeDashboardPage() {
                 </div>
                 <p className="text-xs text-emerald-900/80 mt-2">{statusLabel}</p>
                 <p className="text-[11px] text-emerald-900/60 mt-1">
-                  Each SerpAPI call can take 15–45s. Progress updates every few seconds — not frozen.
+                  Each SerpAPI call can take 15–45s. Shopify confirmation runs at 1 domain / 3s and yields to active
+                  user scans.
                 </p>
               </div>
             ) : null}
@@ -593,10 +651,21 @@ export function AdminScrapeDashboardPage() {
               {isRunning ? <Loader className="w-3.5 h-3.5 animate-spin" /> : null}
               {isFailed && job?.errorMessage ? job.errorMessage : statusLabel}
             </p>
-            {googleAds && !googleAds.skipped && googleAds.stats ? (
+            {googleDork && !googleDork.skipped && googleDork.stats ? (
               <p className="text-[11px] text-blaster-muted mt-2">
-                Google Ads ({googleAds.mode || 'daily'}): {googleAds.stats.uniqueHits?.toLocaleString() ?? 0} store
-                domains · {googleAds.stats.serpRequestsUsed ?? 0}/15 SerpAPI searches · windows: 24h + 6 days
+                Google search ({googleDork.mode || 'daily'}): {googleDork.stats.uniqueHits?.toLocaleString() ?? 0}{' '}
+                Shopify candidates · {googleDork.stats.serpRequestsUsed ?? 0}/15 SerpAPI searches · windows: 24h +
+                week
+                {shopifyModule?.stats ? (
+                  <>
+                    {' '}
+                    · confirmed {shopifyModule.stats.confirmed ?? 0}/{shopifyModule.stats.candidates ?? 0} via Shopify
+                    API
+                    {(shopifyModule.stats.skippedBigBrand ?? 0) > 0
+                      ? ` · ${shopifyModule.stats.skippedBigBrand} big brands skipped`
+                      : ''}
+                  </>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -704,15 +773,43 @@ export function AdminScrapeDashboardPage() {
           )}
 
           {isFailed ? (
-            <button
-              type="button"
-              onClick={startScrape}
-              disabled={starting}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar"
-            >
-              <Play className="w-4 h-4" />
-              Retry scraping session
-            </button>
+            <div className="space-y-3">
+              {partialLinksOnFailure > 0 ? (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  Partial results saved: {partialLinksOnFailure.toLocaleString()} confirmed store
+                  {partialLinksOnFailure === 1 ? '' : 's'} before failure.
+                  {canResumeFailed
+                    ? ' Use Resume to continue Shopify confirmation without re-running Google (no extra SerpAPI calls).'
+                    : ' Start a fresh scrape to try again.'}
+                </p>
+              ) : (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  Session failed before stores were confirmed. Start a fresh scrape to try again.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {canResumeFailed ? (
+                  <button
+                    type="button"
+                    onClick={resumeScrape}
+                    disabled={resuming || starting}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blaster-fg text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Play className="w-4 h-4" />
+                    {resuming ? 'Resuming…' : 'Resume session'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={startScrape}
+                  disabled={starting || resuming || isRunning}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar disabled:opacity-50"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {starting ? 'Starting…' : 'Start fresh scrape'}
+                </button>
+              </div>
+            </div>
           ) : null}
         </>
       )}

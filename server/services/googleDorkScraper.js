@@ -1,24 +1,30 @@
 /**
- * google_dork_scraper — discover store URLs via search engine dork queries (SerpAPI / ValueSERP).
+ * google_dork_scraper — discover Shopify store URLs via global Google search (SerpAPI / ValueSERP).
  *
- * Default mode (SERPAPI_MODE=daily): one budget-conscious daily run (~8 requests for 250/mo plan).
- * Uses Google time filters (past 24h + past week) to surface stores indexed in the last 24–144h window.
+ * Default mode (SERPAPI_MODE=daily): one budget-conscious daily run (~15 requests for 250/mo plan).
+ * Shopify-only queries; *.myshopify.com domains are prioritized in results.
  */
 import { normalizeStoreUrl } from './crawler.js';
 import { isBlockedBrandDomain } from './brandBlocklist.js';
 import { getSerpBudgetConfig, getSerpQuotaStatus, reserveSerpRequests } from './serpQuota.js';
+import { yieldToUserWorkload } from './resourceCoordinator.js';
 
-export const DORK_QUERIES = [
-  '"powered by shopify" -site:shopify.com',
-  'site:myshopify.com -inurl:admin',
-  '"built with woocommerce"',
-  'inurl:"/collections/" inurl:"/products/" -site:shopify.com',
-  '"cdn.shopify.com" -site:shopify.com',
-  '"woocommerce" inurl:shop',
-  '"bigcommerce" inurl:store -site:bigcommerce.com',
-  '"prestashop" inurl:products',
-  '"opencart" inurl:route=product',
+/** Shopify-only dork queries — override via SERPAPI_DORK_QUERIES (comma-separated). */
+export const SHOPIFY_DORK_QUERIES = [
+  'site:myshopify.com -inurl:admin -inurl:password',
+  'inurl:myshopify.com -inurl:admin',
+  '"powered by shopify" -site:shopify.com -site:help.shopify.com',
+  '"cdn.shopify.com" -site:shopify.com -site:cdn.shopify.com',
+  'inurl:"/collections/" inurl:"/products/" "shopify" -site:shopify.com',
+  '"shop now" "powered by shopify" -site:shopify.com',
+  'site:myshopify.com collections products -inurl:admin',
+  '"myshopify.com" store -inurl:admin -inurl:login',
+  'inurl:myshopify.com "add to cart"',
+  '"shopify theme" inurl:products -site:shopify.com',
 ];
+
+/** @deprecated use SHOPIFY_DORK_QUERIES */
+export const DORK_QUERIES = SHOPIFY_DORK_QUERIES;
 
 const TRACKING_PARAM_PREFIXES = ['utm_', 'fbclid', 'gclid', 'msclkid', 'mc_cid', 'mc_eid', 'ref', '_ga'];
 const RATE_LIMIT_MS = 1000;
@@ -55,22 +61,36 @@ function nextApiKey(keys) {
   return key;
 }
 
-function platformHintFromQuery(query) {
-  const q = query.toLowerCase();
-  if (q.includes('shopify') || q.includes('myshopify')) return 'shopify';
-  if (q.includes('woocommerce')) return 'woocommerce';
-  if (q.includes('bigcommerce')) return 'bigcommerce';
-  if (q.includes('prestashop')) return 'prestashop';
-  if (q.includes('opencart')) return 'opencart';
-  return null;
+function getDorkQueries() {
+  const custom = (process.env.SERPAPI_DORK_QUERIES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return custom.length ? custom : SHOPIFY_DORK_QUERIES;
 }
 
-/** Day-of-year rotation so all 9 dorks get coverage across the month. */
+function myshopifyPriority(url) {
+  try {
+    const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase();
+    if (host.endsWith('.myshopify.com')) return 0;
+    if (host.includes('shopify')) return 1;
+    return 2;
+  } catch {
+    return 3;
+  }
+}
+
+function platformHintFromQuery() {
+  return 'shopify';
+}
+
+/** Day-of-year rotation so all Shopify dorks get coverage across the month. */
 function dayRotationIndex(date = new Date()) {
+  const queries = getDorkQueries();
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = date - start;
   const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-  return dayOfYear % DORK_QUERIES.length;
+  return dayOfYear % queries.length;
 }
 
 /**
@@ -78,13 +98,14 @@ function dayRotationIndex(date = new Date()) {
  * @returns {{ query: string, tbs: string, timeLabel: string, platformHint: string|null }[]}
  */
 export function buildDailySearchPlan({ dailyBudget, rotationOffset = 0 } = {}) {
+  const queries = getDorkQueries();
   const budget = Math.max(1, dailyBudget || getSerpBudgetConfig().dailyBudget);
   const freshCount = Math.ceil(budget / 2);
   const weekCount = budget - freshCount;
   const plan = [];
 
   for (let i = 0; i < freshCount; i += 1) {
-    const query = DORK_QUERIES[(rotationOffset + i) % DORK_QUERIES.length];
+    const query = queries[(rotationOffset + i) % queries.length];
     plan.push({
       query,
       tbs: TBS_LAST_24H,
@@ -93,7 +114,7 @@ export function buildDailySearchPlan({ dailyBudget, rotationOffset = 0 } = {}) {
     });
   }
   for (let i = 0; i < weekCount; i += 1) {
-    const query = DORK_QUERIES[(rotationOffset + freshCount + i) % DORK_QUERIES.length];
+    const query = queries[(rotationOffset + freshCount + i) % queries.length];
     plan.push({
       query,
       tbs: TBS_LAST_WEEK,
@@ -140,15 +161,34 @@ function hitFromResult(result, query, platformHint, timeLabel) {
   if (!link || shouldSkipRawUrl(link)) return null;
   const normalized = normalizeStoreUrl(link);
   if (!normalized || isBlockedBrandDomain(normalized)) return null;
+
+  const snippet = [result?.snippet, result?.title].filter(Boolean).join(' ').toLowerCase();
+  const host = (() => {
+    try {
+      return new URL(normalized).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  const isMyshopify = host.endsWith('.myshopify.com');
+  const looksShopify =
+    isMyshopify ||
+    snippet.includes('shopify') ||
+    snippet.includes('myshopify') ||
+    snippet.includes('cdn.shopify.com') ||
+    /\/collections\/|\/products\//i.test(normalized);
+  if (!looksShopify) return null;
+
   const rawSignal = [result?.snippet, result?.title, timeLabel ? `indexed: ${timeLabel}` : '']
     .filter(Boolean)
     .join(' — ')
     .slice(0, 280);
   return {
     url: normalized,
-    platform_hint: platformHint,
+    platform_hint: platformHint || 'shopify',
     source: 'google_dork',
     raw_signal: rawSignal || query,
+    myshopify: isMyshopify,
   };
 }
 
@@ -248,12 +288,13 @@ export async function runGoogleDorkScraper(onProgress) {
 
   const isDailyMode = mode !== 'full';
   const rotationOffset = dayRotationIndex();
+  const dorkQueries = getDorkQueries();
   const searchPlan = isDailyMode
     ? buildDailySearchPlan({
         dailyBudget: Math.min(dailyBudget, quotaBefore.remainingToday, quotaBefore.remainingMonth),
         rotationOffset,
       })
-    : DORK_QUERIES.flatMap((query) =>
+    : dorkQueries.flatMap((query) =>
         Array.from({ length: FULL_MODE_MAX_PAGES }, (_, page) => ({
           query,
           tbs: null,
@@ -273,6 +314,7 @@ export async function runGoogleDorkScraper(onProgress) {
   let step = 0;
 
   for (let i = 0; i < searchPlan.length; i += 1) {
+    await yieldToUserWorkload();
     const item = searchPlan[i];
     const { query, tbs, timeLabel, platformHint } = item;
 
@@ -336,13 +378,22 @@ export async function runGoogleDorkScraper(onProgress) {
     await sleep(RATE_LIMIT_MS);
   }
 
+  hits.sort((a, b) => {
+    const pa = myshopifyPriority(a.url);
+    const pb = myshopifyPriority(b.url);
+    if (pa !== pb) return pa - pb;
+    return a.url.localeCompare(b.url);
+  });
+
   const quotaAfter = await getSerpQuotaStatus();
 
   return {
     hits,
     skipped: false,
     provider: useValueSerp ? 'valueserp' : 'serpapi',
+    engine: 'google',
     mode: isDailyMode ? 'daily' : 'full',
+    focus: 'shopify',
     stats: {
       queriesRun: searchPlan.length,
       pagesFetched,
