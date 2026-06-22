@@ -16,7 +16,7 @@ import {
   countQualifiedStoresNeedingTagRefresh,
   clearTagClassificationForAllQualified,
 } from '../services/leadStoreRepository.js';
-import { startLeadScrapeSession, applyScrapeScheduleSettings } from '../services/scrapeScheduler.js';
+import { startLeadScrapeSession, applyScrapeScheduleSettings, ensureScrapeJobFresh } from '../services/scrapeScheduler.js';
 import { getSerpQuotaStatus, resetSerpDailyQuota } from '../services/serpQuota.js';
 import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
 import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
@@ -719,7 +719,8 @@ adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
 adminRoutes.get('/lead-engine/scrape/status', async (req, res) => {
   try {
     const jobId = String(req.query.jobId || '').trim();
-    const scrapeJob = jobId ? await getScrapeJobById(jobId) : await getLatestScrapeJob();
+    let scrapeJob = jobId ? await getScrapeJobById(jobId) : await getLatestScrapeJob();
+    if (scrapeJob) scrapeJob = await ensureScrapeJobFresh(scrapeJob);
     res.json({ scrapeJob });
   } catch (e) {
     res.status(500).json({ error: e?.message || 'Failed to load scrape status' });

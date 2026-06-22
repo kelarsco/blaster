@@ -1,5 +1,6 @@
 /**
- * Simple email extraction: known providers or store domain emails (info@, support@, etc).
+ * Read store HTML and pick one legitimate contact email per store when available.
+ * Crawls multiple pages, collects every visible address, then ranks to the best contact.
  */
 import { load } from 'cheerio';
 
@@ -170,6 +171,62 @@ export function getEmailType(email) {
   return 'other';
 }
 
+function walkJsonLdEmails(node, sink) {
+  if (node == null) return;
+  if (Array.isArray(node)) {
+    for (const item of node) walkJsonLdEmails(item, sink);
+    return;
+  }
+  if (typeof node !== 'object') return;
+  if (typeof node.email === 'string') sink(node.email);
+  if (Array.isArray(node.email)) node.email.forEach((e) => typeof e === 'string' && sink(e));
+  if (node.contactPoint) walkJsonLdEmails(node.contactPoint, sink);
+  if (node['@graph']) walkJsonLdEmails(node['@graph'], sink);
+  for (const value of Object.values(node)) {
+    if (value && typeof value === 'object') walkJsonLdEmails(value, sink);
+  }
+}
+
+const NON_CONTACT_LOCAL = /^(noreply|no-reply|donotreply|do-not-reply|mailer-daemon|bounce|newsletter|marketing|promo|unsubscribe|privacy|abuse|postmaster|webmaster|admin|test|demo|example)@/i;
+
+function contactPageBoost(url) {
+  const u = (url || '').toLowerCase();
+  if (/contact|get-in-touch/.test(u)) return 55;
+  if (/privacy|policies/.test(u)) return 45;
+  if (/about|faq|terms|refund/.test(u)) return 25;
+  return 0;
+}
+
+function scoreEmailCandidate(candidate, storeHost) {
+  let score = 0;
+  const email = candidate.email || '';
+  const domain = email.split('@')[1] || '';
+  const local = email.split('@')[0] || '';
+
+  if (NON_CONTACT_LOCAL.test(email)) score -= 150;
+
+  if (candidate.sourceType === 'mailto') score += 120;
+  else if (candidate.sourceType === 'schema') score += 70;
+  else if (candidate.sourceType === 'footer') score += 50;
+  else if (candidate.sourceType === 'contact') score += 45;
+  else if (candidate.sourceType === 'data') score += 40;
+
+  score += contactPageBoost(candidate.sourcePage);
+
+  const onStoreDomain = storeHost && (domain === storeHost || domain.endsWith(`.${storeHost}`));
+  if (onStoreDomain) score += 90;
+  if (/^(support|info|contact|hello|sales|help|team|customerservice|customer|enquiries|inquiry|service)@/i.test(email)) {
+    score += 55;
+  }
+  if (ALLOWED_PROVIDERS.has(domain)) score += onStoreDomain ? 10 : 25;
+  if (local.length > 40) score -= 20;
+  return score;
+}
+
+function rankEmailCandidates(list, storeHost) {
+  return [...list].sort((a, b) => scoreEmailCandidate(b, storeHost) - scoreEmailCandidate(a, storeHost));
+}
+
 function detectPlatform(html) {
   if (!html || typeof html !== 'string') return null;
   if (/shopify|cdn\.shopify\.com|shopify\.com\/shop/i.test(html)) return 'Shopify';
@@ -226,6 +283,36 @@ function extractFromPage(url, html) {
     });
   });
 
+  $('input[type="email"][value], input[name*="email" i][value]').each((_, el) => {
+    const val = $(el).attr('value') || '';
+    extractFromText(val).forEach((e) => {
+      const row = add(e, 'data');
+      if (row) out.push(row);
+    });
+  });
+
+  $('meta[name="contact"], meta[property="business:contact_data:email"], meta[name="email"]').each((_, el) => {
+    const val = $(el).attr('content') || '';
+    extractFromText(val).forEach((e) => {
+      const row = add(e, 'data');
+      if (row) out.push(row);
+    });
+  });
+
+  const contactText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"], .contact, #contact, [class*="contact"], [id*="contact"]').text();
+  extractFromText(contactText).forEach((e) => {
+    const row = add(e, 'contact');
+    if (row) out.push(row);
+  });
+
+  const mailtoInHtml = html.match(/mailto:([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[^\s"'<>]+)/gi) || [];
+  for (const token of mailtoInHtml) {
+    extractFromText(token.replace(/^mailto:/i, '')).forEach((e) => {
+      const row = add(e, 'mailto');
+      if (row) out.push(row);
+    });
+  }
+
   const bodyText = $('body').text();
   extractFromText(bodyText).forEach((e) => {
     const row = add(e, 'text');
@@ -244,6 +331,12 @@ function extractFromPage(url, html) {
       const raw = tag.replace(/<script[^>]*>([\s\S]*)<\/script>/i, '$1').replace(/<!--[\s\S]*?-->/g, '').trim();
       try {
         const obj = JSON.parse(raw);
+        walkJsonLdEmails(obj, (email) => {
+          extractFromText(email).forEach((e) => {
+            const row = add(e, 'schema');
+            if (row) out.push(row);
+          });
+        });
         const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
         extractFromText(str).forEach((e) => {
           const row = add(e, 'schema');
@@ -270,10 +363,11 @@ export function collectEmailsFromHtml(url, html) {
 }
 
 /**
- * Extract emails from crawled pages. Returns one best email per store by default.
+ * Extract the single best contact email from crawled HTML pages (one per store).
  */
 export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const onePerStore = options.onePerStore !== false;
+  const maxEmails = Math.max(1, Number(options.maxEmails) || 8);
   const privacyPageFound = options.privacyPageFound !== false;
 
   const byEmail = new Map();
@@ -289,42 +383,18 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
     } catch (_) {}
   }
 
-  const list = [...byEmail.values()];
+  const storeHost = getStoreHost(storeUrl);
+  const list = rankEmailCandidates([...byEmail.values()], storeHost);
   if (list.length === 0) return [];
 
-  if (!onePerStore) {
-    return list.map((c) => ({
-      email: c.email,
-      storeUrl: c.storeUrl,
-      sourcePage: c.sourcePage,
-      sourceType: c.sourceType,
-      platform,
-    }));
-  }
-
-  const storeHost = getStoreHost(storeUrl);
-  const domain = (e) => (e.email || '').split('@')[1] || '';
-  const isStoreDomain = (e) => {
-    const d = domain(e);
-    return storeHost && (d === storeHost || d.endsWith(`.${storeHost}`));
-  };
-  const isProvider = (e) => ALLOWED_PROVIDERS.has(domain(e));
-
-  const byMailto = list.find((x) => x.sourceType === 'mailto');
-  const byStoreDomain = list.find(isStoreDomain);
-  const byProvider = list.find(isProvider);
-  const preferred = byMailto || byStoreDomain || byProvider || list[0];
-
-  const sourcePage = !privacyPageFound
-    ? `Privacy Page Not Found | ${preferred.sourcePage}`
-    : preferred.sourcePage;
-
-  return [{
-    email: preferred.email,
-    storeUrl: preferred.storeUrl,
-    sourcePage,
-    sourceType: preferred.sourceType,
+  return selected.map((row) => ({
+    email: row.email,
+    storeUrl: row.storeUrl,
+    sourcePage: !privacyPageFound
+      ? `Privacy Page Not Found | ${row.sourcePage || ''}`
+      : row.sourcePage,
+    sourceType: row.sourceType,
     platform,
     storeHost,
-  }];
+  }));
 }

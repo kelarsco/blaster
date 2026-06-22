@@ -73,7 +73,7 @@ export async function runScrapeDiscoverySession(onProgress) {
     if (typeof onProgress === 'function') await onProgress(patch);
   };
 
-  await report({ phase: 'google_ads', progressPercent: 8, statusLabel: 'Scraping Google Ads for ecommerce stores…', etaSeconds: 20 });
+  await report({ phase: 'google_ads', progressPercent: 8, statusLabel: 'Scraping Google Ads for ecommerce stores…', etaSeconds: 15 * 18, linksFound: 0 });
 
   const sourceBuckets = [];
 

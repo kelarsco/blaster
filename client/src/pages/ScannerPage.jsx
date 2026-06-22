@@ -47,7 +47,7 @@ export default function ScannerPage() {
     setIsStarting(true);
 
     try {
-      const maxConcurrentCrawlers = 3;
+      const maxConcurrentCrawlers = 5;
       const maxUrlsPerScan = 500;
 
       const urls = parseUrls(rawUrls);

@@ -2,6 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Check, ChevronDown, ChevronUp, Loader, Clock, RefreshCw, X } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
+import {
+  readScrapeSessionCache,
+  writeScrapeSessionCache,
+  readScrapeJobId,
+  writeScrapeJobId,
+} from '../../utils/scrapeSessionCache.js';
+
+const initialScrapeCache = readScrapeSessionCache();
 
 const SOURCE_STYLES = {
   Reddit: 'border-orange-200 bg-orange-50',
@@ -122,11 +130,15 @@ function SourceLinksModal({ source, onClose }) {
 
 export function AdminScrapeDashboardPage() {
   const { adminFetch } = useAdmin();
-  const [job, setJob] = useState(null);
-  const [settings, setSettings] = useState({ enabled: false, intervalMinutes: 0, lastRunAt: null, nextRunAt: null });
-  const [serpQuota, setSerpQuota] = useState(null);
-  const [intervalDraft, setIntervalDraft] = useState(1440);
-  const [loading, setLoading] = useState(true);
+  const [job, setJob] = useState(initialScrapeCache?.job ?? null);
+  const [settings, setSettings] = useState(
+    initialScrapeCache?.settings ?? { enabled: false, intervalMinutes: 0, lastRunAt: null, nextRunAt: null }
+  );
+  const [serpQuota, setSerpQuota] = useState(initialScrapeCache?.serpQuota ?? null);
+  const [intervalDraft, setIntervalDraft] = useState(
+    initialScrapeCache?.settings?.intervalMinutes ?? 1440
+  );
+  const [loading, setLoading] = useState(!initialScrapeCache?.job);
   const [starting, setStarting] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [resettingQuota, setResettingQuota] = useState(false);
@@ -143,21 +155,23 @@ export function AdminScrapeDashboardPage() {
   const isAccepted = job?.status === 'accepted';
   const isFailed = job?.status === 'failed';
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (preferredJobId) => {
+    const jobId = preferredJobId || job?.id || readScrapeJobId() || '';
+    const query = jobId ? `?jobId=${encodeURIComponent(jobId)}` : '';
     try {
-      const query = job?.id ? `?jobId=${encodeURIComponent(job.id)}` : '';
       const res = await adminFetch(`/lead-engine/scrape/status${query}`);
       if (res.ok) {
         const data = await res.json();
         if (data.scrapeJob) {
-          setJob(data.scrapeJob);
           if (data.scrapeJob.session?.etaSeconds != null) {
             setEtaSeconds(data.scrapeJob.session.etaSeconds);
           }
+          setJob(data.scrapeJob);
+          return data.scrapeJob;
         }
       }
     } catch (_) {}
-    setLoading(false);
+    return null;
   }, [adminFetch, job?.id]);
 
   const loadSettings = useCallback(async () => {
@@ -175,15 +189,40 @@ export function AdminScrapeDashboardPage() {
   }, [adminFetch]);
 
   useEffect(() => {
-    loadStatus();
-    loadSettings();
+    if (!job) return;
+    writeScrapeJobId(job.id);
+    writeScrapeSessionCache({ job, serpQuota, settings });
+  }, [job, serpQuota, settings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const storedJobId = readScrapeJobId();
+      await loadStatus(storedJobId || undefined);
+      if (!cancelled) await loadSettings();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!isRunning) return undefined;
-    const poll = setInterval(loadStatus, 2000);
+    if (!isRunning && !starting) return undefined;
+    loadStatus();
+    const poll = setInterval(() => loadStatus(), 2000);
     return () => clearInterval(poll);
-  }, [isRunning, loadStatus]);
+  }, [isRunning, starting, loadStatus]);
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!isRunning && !starting) return undefined;
+    const startMs = new Date(job?.startedAt || session?.startedAt || Date.now()).getTime();
+    const tick = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, starting, job?.startedAt, session?.startedAt]);
 
   useEffect(() => {
     if (!isRunning) return undefined;
@@ -201,8 +240,9 @@ export function AdminScrapeDashboardPage() {
       const res = await adminFetch('/lead-engine/scrape/start', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to start scrape');
-      setEtaSeconds(120);
+      setEtaSeconds(15 * 18);
       if (data.jobId) {
+        writeScrapeJobId(data.jobId);
         const statusRes = await adminFetch(`/lead-engine/scrape/status?jobId=${encodeURIComponent(data.jobId)}`);
         const statusData = await statusRes.json().catch(() => ({}));
         if (statusData.scrapeJob) setJob(statusData.scrapeJob);
@@ -297,17 +337,23 @@ export function AdminScrapeDashboardPage() {
   }, [session?.sources, session?.verifiedLeads]);
 
   const scrapedTotal = useMemo(() => {
+    if (isRunning && session?.linksFound != null) return session.linksFound;
     if (sources.length > 0) return sources.reduce((sum, s) => sum + (s.count || 0), 0);
     const all = (session?.sources ?? []).filter((s) => s.name !== 'Seed list' && s.id !== 'seed');
     if (all.length) return all.reduce((sum, s) => sum + (s.count || 0), 0);
     return session?.totalGenerated ?? job?.urlsFound ?? 0;
-  }, [sources, session?.sources, session?.totalGenerated, job?.urlsFound]);
+  }, [isRunning, session?.linksFound, sources, session?.sources, session?.totalGenerated, job?.urlsFound]);
 
   const progress = session?.progressPercent ?? (isRunning ? 12 : isReady || isAccepted ? 100 : 0);
   const validation = session?.validation ?? {};
   const verifiedCount = validation.verifiedCount ?? 0;
   const googleAds = session?.modules?.googleAds || session?.modules?.googleDork;
   const quota = googleAds?.quota || serpQuota;
+
+  const adsStep =
+    session?.adsQueryIndex && session?.adsQueryTotal
+      ? `${session.adsQueryIndex} / ${session.adsQueryTotal}`
+      : null;
 
   const statusLabel = useMemo(() => {
     if (isFailed) return 'Scrape failed';
@@ -323,7 +369,7 @@ export function AdminScrapeDashboardPage() {
     return <p className="text-sm text-blaster-muted">Loading scraping dashboard…</p>;
   }
 
-  const showEmpty = !job || (!isRunning && !isReady && !isAccepted && !isFailed);
+  const showEmpty = !job || (!isRunning && !isReady && !isAccepted && !isFailed && !starting);
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -498,6 +544,31 @@ export function AdminScrapeDashboardPage() {
           ) : null}
 
           <div className="rounded-2xl border border-blaster-border bg-white p-5 sm:p-6">
+            {isRunning ? (
+              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="inline-flex items-center gap-2 font-medium text-emerald-900">
+                    <Loader className="w-4 h-4 animate-spin" />
+                    Live scrape
+                  </span>
+                  {adsStep ? (
+                    <span className="text-emerald-800">
+                      SerpAPI search <strong>{adsStep}</strong>
+                    </span>
+                  ) : null}
+                  <span className="text-emerald-800">
+                    Elapsed <strong>{formatDuration(elapsedSeconds)}</strong>
+                  </span>
+                  <span className="text-emerald-800">
+                    Links so far <strong>{(session?.linksFound ?? 0).toLocaleString()}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-900/80 mt-2">{statusLabel}</p>
+                <p className="text-[11px] text-emerald-900/60 mt-1">
+                  Each SerpAPI call can take 15–45s. Progress updates every few seconds — not frozen.
+                </p>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
               <div>
                 <p className="text-xs text-blaster-muted">Time remaining (estimate)</p>

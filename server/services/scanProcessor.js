@@ -1,13 +1,13 @@
 /**
- * Scan processor: crawl stores, extract one email per store, write results.
+ * Scan processor: crawl each store, extract one contact email when available, write results.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 3, 8);
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 500;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 5, 10);
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 200;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 45000;
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
@@ -67,6 +67,26 @@ async function runDbQueryWithRetry(db, query, params, retries = DB_WRITE_RETRIES
     }
   }
   throw lastErr;
+}
+
+async function insertScanResultsBatch(db, scanId, rows) {
+  if (!rows.length) return;
+  const params = [scanId];
+  const valueClauses = [];
+  let paramIndex = 2;
+  for (const row of rows) {
+    valueClauses.push(
+      `($1, $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, NULL, NULL, NULL, NULL)`
+    );
+    params.push(row.store_url, row.email, row.source_page, row.has_email);
+    paramIndex += 4;
+  }
+  await runDbQueryWithRetry(
+    db,
+    `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email, phone, whatsapp, instagram, tiktok)
+     VALUES ${valueClauses.join(', ')}`,
+    params
+  );
 }
 
 export async function processScan(payload) {
@@ -167,10 +187,12 @@ export async function processScan(payload) {
       return { storeUrl: batch[idx], results: [] };
     });
 
+    const dbRows = [];
+
     for (const { storeUrl, results, noEmailReason } of outcomes) {
       try {
-        if (db) {
-          if (results.length > 0) foundCount += 1;
+        if (results.length > 0) foundCount += 1;
+        if (results.length > 0) {
           for (const r of results) {
             const row = {
               store_url: r.storeUrl,
@@ -178,48 +200,34 @@ export async function processScan(payload) {
               source_page: r.sourcePage || '',
               has_email: 1,
             };
-            try {
-              await runDbQueryWithRetry(
-                db,
-                `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email, phone, whatsapp, instagram, tiktok)
-                 VALUES ($1, $2, $3, $4, 1, NULL, NULL, NULL, NULL)`,
-                [scanId, row.store_url, row.email, row.source_page]
-              );
-            } catch (dbInsertErr) {
-              console.warn('[scanProcessor] buffered result after DB insert failure:', row.store_url, dbInsertErr?.message || dbInsertErr);
-              memoryResults.push(row);
-              memoryStore.results.set(scanId, memoryResults);
-            }
-          }
-          if (results.length === 0) {
-            const noEmailRow = { store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 };
-            try {
-              await runDbQueryWithRetry(
-                db,
-                `INSERT INTO scan_results (scan_id, store_url, email, source_page, has_email, phone, whatsapp, instagram, tiktok)
-                 VALUES ($1, $2, NULL, $3, 0, NULL, NULL, NULL, NULL)`,
-                [scanId, noEmailRow.store_url, noEmailRow.source_page]
-              );
-            } catch (dbInsertErr) {
-              console.warn('[scanProcessor] buffered no-email row after DB insert failure:', storeUrl, dbInsertErr?.message || dbInsertErr);
-              memoryResults.push(noEmailRow);
-              memoryStore.results.set(scanId, memoryResults);
-            }
+            if (db) dbRows.push(row);
+            else memoryResults.push(row);
           }
         } else {
-          if (results.length > 0) foundCount += 1;
-          for (const r of results) {
-            memoryResults.push({ store_url: r.storeUrl, email: r.email, source_page: r.sourcePage || '', has_email: 1 });
-          }
-          if (results.length === 0) {
-            memoryResults.push({ store_url: storeUrl, email: null, source_page: noEmailReason || 'No Email Found', has_email: 0 });
-          }
-          memoryStore.results.set(scanId, memoryResults);
+          const noEmailRow = {
+            store_url: storeUrl,
+            email: null,
+            source_page: noEmailReason || 'No Email Found',
+            has_email: 0,
+          };
+          if (db) dbRows.push(noEmailRow);
+          else memoryResults.push(noEmailRow);
         }
+        if (!db) memoryStore.results.set(scanId, memoryResults);
       } catch (dbErr) {
-        console.error('[scanProcessor] DB write error:', storeUrl, dbErr?.message || dbErr);
+        console.error('[scanProcessor] result assembly error:', storeUrl, dbErr?.message || dbErr);
       }
       processed++;
+    }
+
+    if (db && dbRows.length) {
+      try {
+        await insertScanResultsBatch(db, scanId, dbRows);
+      } catch (dbInsertErr) {
+        console.warn('[scanProcessor] batch insert failed, buffering rows:', dbInsertErr?.message || dbInsertErr);
+        memoryResults.push(...dbRows);
+        memoryStore.results.set(scanId, memoryResults);
+      }
     }
 
     try {

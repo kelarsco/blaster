@@ -8,39 +8,74 @@ import { normalizeStoreUrl } from './crawler.js';
 import { isBlockedBrandDomain } from './brandBlocklist.js';
 import { getSerpBudgetConfig, getSerpQuotaStatus, reserveSerpRequests } from './serpQuota.js';
 
-/** Text searches that surface independent ecommerce advertisers in Transparency Center */
-export const ECOMMERCE_ADS_QUERIES = [
-  'shopify store',
-  'woocommerce shop',
-  'online boutique',
-  'free shipping shop now',
-  'handmade shop online',
-  'small business store',
-  'direct to consumer brand',
-  'limited edition drop',
-  'organic skincare shop',
-  'custom jewelry store',
-  'streetwear brand shop',
-  'home decor store online',
-  'pet supplies shop',
-  'fitness apparel store',
-  'artisan coffee shop',
-  'candle shop online',
-  'sustainable fashion brand',
-  'vegan beauty shop',
-  'art prints store',
-  'baby products boutique',
-  'activewear brand',
-  'supplements store',
-  'phone case shop',
-  'watch brand shop',
-  'lingerie boutique',
-  'outdoor gear shop',
-  'plant shop online',
-  'snack brand shop',
-  'eyewear store',
-  'nail polish brand',
+/**
+ * DTC store ad phrases — primary CTAs, offers, and trust copy small brands use in Google Ads.
+ * Rotated daily (15 searches/day). Override via SERPAPI_ADS_QUERIES=comma-separated.
+ */
+export const ECOMMERCE_ADS_QUERY_DEFS = [
+  // Primary CTAs
+  { text: 'shop now', platform: 'SHOPPING', category: 'cta' },
+  { text: 'shop the collection', platform: 'SHOPPING', category: 'cta' },
+  { text: 'shop our store', platform: 'SHOPPING', category: 'cta' },
+  { text: 'buy now', platform: 'SHOPPING', category: 'cta' },
+  { text: 'order now', platform: 'SHOPPING', category: 'cta' },
+  { text: 'get yours today', platform: 'SHOPPING', category: 'cta' },
+  { text: 'grab yours', platform: 'SHOPPING', category: 'cta' },
+  { text: 'add to cart', platform: 'SHOPPING', category: 'cta' },
+  { text: 'check out our store', platform: 'SEARCH', category: 'cta' },
+  { text: 'visit our store', platform: 'SEARCH', category: 'cta' },
+  { text: 'explore our collection', platform: 'SEARCH', category: 'cta' },
+  { text: 'browse the store', platform: 'SEARCH', category: 'cta' },
+  // Discount / offer CTAs
+  { text: 'get 10% off your first order', platform: 'SHOPPING', category: 'offer' },
+  { text: 'first order discount', platform: 'SHOPPING', category: 'offer' },
+  { text: 'welcome discount', platform: 'SHOPPING', category: 'offer' },
+  { text: 'new customer offer', platform: 'SHOPPING', category: 'offer' },
+  { text: 'use code for', platform: 'SEARCH', category: 'offer' },
+  { text: 'flash sale', platform: 'SHOPPING', category: 'offer' },
+  { text: 'weekend sale', platform: 'SHOPPING', category: 'offer' },
+  { text: 'sitewide sale', platform: 'SHOPPING', category: 'offer' },
+  { text: 'clearance sale', platform: 'SHOPPING', category: 'offer' },
+  { text: 'free shipping', platform: 'SHOPPING', category: 'offer' },
+  // Trust signals (Search — surfaces indie brand landing pages)
+  { text: '5 star reviews', platform: 'SEARCH', category: 'trust' },
+  { text: 'happy customers', platform: 'SEARCH', category: 'trust' },
+  { text: 'as seen in', platform: 'SEARCH', category: 'trust' },
+  { text: 'featured in', platform: 'SEARCH', category: 'trust' },
+  { text: 'money back guarantee', platform: 'SEARCH', category: 'trust' },
+  { text: '30 day returns', platform: 'SEARCH', category: 'trust' },
+  { text: 'satisfaction guaranteed', platform: 'SEARCH', category: 'trust' },
+  { text: 'authenticity guaranteed', platform: 'SEARCH', category: 'trust' },
+  // Platform fingerprints (still useful for Shopify/Woo indie stores)
+  { text: 'powered by shopify', platform: 'SEARCH', category: 'platform' },
+  { text: 'built with woocommerce', platform: 'SEARCH', category: 'platform' },
 ];
+
+/** @deprecated use ECOMMERCE_ADS_QUERY_DEFS */
+export const ECOMMERCE_ADS_QUERIES = ECOMMERCE_ADS_QUERY_DEFS.map((q) => q.text);
+
+const NON_STORE_TARGET_SUFFIXES = [
+  'play.google.com',
+  'apps.apple.com',
+  'itunes.apple.com',
+  'youtube.com',
+  'youtu.be',
+  'linktr.ee',
+  'lnk.bio',
+  'bit.ly',
+  'goo.gl',
+];
+
+function getAdsQueryDefs() {
+  const custom = (process.env.SERPAPI_ADS_QUERIES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (custom.length) {
+    return custom.map((text) => ({ text, platform: 'SHOPPING', category: 'custom' }));
+  }
+  return ECOMMERCE_ADS_QUERY_DEFS;
+}
 
 const RATE_LIMIT_MS = 1000;
 const QUOTA_RETRY_MS = 60_000;
@@ -106,9 +141,29 @@ function dateRangeForWindow(window) {
 }
 
 function dayRotationIndex(date = new Date()) {
+  const queries = getAdsQueryDefs();
   const start = new Date(date.getFullYear(), 0, 0);
   const dayOfYear = Math.floor((date - start) / (1000 * 60 * 60 * 24));
-  return dayOfYear % ECOMMERCE_ADS_QUERIES.length;
+  return dayOfYear % queries.length;
+}
+
+function isNonStoreTargetDomain(domain) {
+  const host = String(domain || '').toLowerCase().replace(/^www\./, '');
+  if (!host) return true;
+  if (isBlockedBrandDomain(host)) return true;
+  return NON_STORE_TARGET_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`));
+}
+
+function resolveAdStoreDomain(ad) {
+  if (ad?.target_domain) return ad.target_domain;
+  if (ad?.details_link) {
+    try {
+      const u = new URL(ad.details_link);
+      const fromQuery = u.searchParams.get('domain');
+      if (fromQuery) return fromQuery;
+    } catch (_) {}
+  }
+  return null;
 }
 
 function platformHintFromDomain(domain) {
@@ -124,27 +179,28 @@ function platformHintFromDomain(domain) {
  * Build daily plan: up to `dailyBudget` searches split across fresh (24h) and recent (6d) windows.
  */
 export function buildDailyAdsSearchPlan({ dailyBudget, rotationOffset = 0 } = {}) {
+  const queries = getAdsQueryDefs();
   const budget = Math.max(1, dailyBudget || getSerpBudgetConfig().dailyBudget);
   const freshCount = Math.ceil(budget / 2);
   const recentCount = budget - freshCount;
   const plan = [];
 
   for (let i = 0; i < freshCount; i += 1) {
-    const text = ECOMMERCE_ADS_QUERIES[(rotationOffset + i) % ECOMMERCE_ADS_QUERIES.length];
-    const range = dateRangeForWindow('24h');
+    const def = queries[(rotationOffset + i) % queries.length];
     plan.push({
-      text,
-      ...range,
-      platform: i % 2 === 0 ? 'SHOPPING' : null,
+      text: def.text,
+      platform: def.platform || null,
+      category: def.category,
+      ...dateRangeForWindow('24h'),
     });
   }
   for (let i = 0; i < recentCount; i += 1) {
-    const text = ECOMMERCE_ADS_QUERIES[(rotationOffset + freshCount + i) % ECOMMERCE_ADS_QUERIES.length];
-    const range = dateRangeForWindow('6d');
+    const def = queries[(rotationOffset + freshCount + i) % queries.length];
     plan.push({
-      text,
-      ...range,
-      platform: i % 2 === 0 ? 'SHOPPING' : null,
+      text: def.text,
+      platform: def.platform || null,
+      category: def.category,
+      ...dateRangeForWindow('6d'),
     });
   }
 
@@ -152,10 +208,10 @@ export function buildDailyAdsSearchPlan({ dailyBudget, rotationOffset = 0 } = {}
 }
 
 function hitFromAdCreative(ad, query, timeLabel) {
-  const domain = ad?.target_domain;
-  if (!domain) return null;
+  const domain = resolveAdStoreDomain(ad);
+  if (!domain || isNonStoreTargetDomain(domain)) return null;
   const normalized = normalizeStoreUrl(domain.includes('://') ? domain : `https://${domain}`);
-  if (!normalized || isBlockedBrandDomain(normalized)) return null;
+  if (!normalized || isNonStoreTargetDomain(normalized)) return null;
 
   const rawSignal = [
     ad.advertiser,
@@ -187,7 +243,7 @@ async function fetchJson(url) {
   return { res, data, text };
 }
 
-async function withQuotaRetry(fetchOnce) {
+async function withQuotaRetry(fetchOnce, onWaiting) {
   let result = await fetchOnce();
   if (result.res.ok) return result;
   const isQuota =
@@ -195,11 +251,12 @@ async function withQuotaRetry(fetchOnce) {
     result.res.status === 402 ||
     /quota|rate.?limit|too many/i.test(result.text || '');
   if (!isQuota) return result;
+  if (typeof onWaiting === 'function') await onWaiting();
   await sleep(QUOTA_RETRY_MS);
   return fetchOnce();
 }
 
-async function fetchGoogleAdsTransparencyPage({ text, startDate, endDate, apiKey, platform }) {
+async function fetchGoogleAdsTransparencyPage({ text, startDate, endDate, apiKey, platform, onWaiting }) {
   const params = new URLSearchParams({
     engine: 'google_ads_transparency_center',
     api_key: apiKey,
@@ -211,7 +268,7 @@ async function fetchGoogleAdsTransparencyPage({ text, startDate, endDate, apiKey
   if (platform) params.set('platform', platform);
 
   const url = `https://serpapi.com/search.json?${params}`;
-  const { res, data, text: body } = await withQuotaRetry(() => fetchJson(url));
+  const { res, data, text: body } = await withQuotaRetry(() => fetchJson(url), onWaiting);
   if (!res.ok) {
     return {
       ok: false,
@@ -259,10 +316,11 @@ export async function runGoogleAdsScraper(onProgress) {
   const rotationOffset = dayRotationIndex();
   const searchPlan =
     mode === 'full'
-      ? ECOMMERCE_ADS_QUERIES.map((text) => ({
-          text,
+      ? getAdsQueryDefs().map((def) => ({
+          text: def.text,
+          platform: def.platform || 'SHOPPING',
+          category: def.category,
           ...dateRangeForWindow('6d'),
-          platform: 'SHOPPING',
         }))
       : buildDailyAdsSearchPlan({
           dailyBudget: Math.min(dailyBudget, quotaBefore.remainingToday, quotaBefore.remainingMonth),
@@ -278,6 +336,18 @@ export async function runGoogleAdsScraper(onProgress) {
 
   for (let i = 0; i < searchPlan.length; i += 1) {
     const item = searchPlan[i];
+    const stepEta = Math.max(0, (totalSteps - i) * 18);
+
+    await report({
+      phase: 'google_ads',
+      adsQuery: item.text,
+      adsQueryIndex: i + 1,
+      adsQueryTotal: searchPlan.length,
+      linksFound: hits.length,
+      progressPercent: 10 + Math.round((i / totalSteps) * 50),
+      statusLabel: `Google Ads: ${i + 1}/${searchPlan.length} — querying SerpAPI ("${item.text}")…`,
+      etaSeconds: stepEta,
+    });
 
     const reserve = await reserveSerpRequests(1);
     if (reserve.reserved < 1) {
@@ -293,6 +363,18 @@ export async function runGoogleAdsScraper(onProgress) {
       endDate: item.endDate,
       apiKey,
       platform: item.platform,
+      onWaiting: async () => {
+        await report({
+          phase: 'google_ads',
+          adsQuery: item.text,
+          adsQueryIndex: i + 1,
+          adsQueryTotal: searchPlan.length,
+          linksFound: hits.length,
+          progressPercent: 10 + Math.round((i / totalSteps) * 50),
+          statusLabel: `Google Ads: rate limited — retrying in 60s… (${i + 1}/${searchPlan.length})`,
+          etaSeconds: stepEta + 60,
+        });
+      },
     });
 
     if (!pageResult.ok) {

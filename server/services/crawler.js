@@ -1,13 +1,13 @@
 /**
- * Simple store crawler: privacy policy → contact → homepage (sequential).
- * Stops as soon as emails are found on any page.
+ * Store crawler: fetches privacy, contact, and homepage paths in parallel waves.
+ * Visits every configured path (not just the first that loads) for fuller email coverage.
  */
 import https from 'https';
 import http from 'http';
-import { collectEmailsFromHtml } from './emailExtractor.js';
 
-const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 12000;
-const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 450;
+const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 10000;
+const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 0;
+const PARALLEL_PAGES = Math.min(Math.max(Number(process.env.CRAWL_PARALLEL_PAGES) || 6, 1), 12);
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -21,9 +21,31 @@ const PRIVACY_PATHS = [
   '/privacy',
 ];
 
-const CONTACT_PATHS = ['/contact', '/contact-us', '/pages/contact', '/pages/contact-us'];
+const CONTACT_PATHS = [
+  '/contact',
+  '/contact-us',
+  '/pages/contact',
+  '/pages/contact-us',
+  '/pages/get-in-touch',
+  '/get-in-touch',
+];
+
+const EXTRA_PATHS = [
+  '/about',
+  '/about-us',
+  '/pages/about',
+  '/pages/about-us',
+  '/policies/refund-policy',
+  '/policies/terms-of-service',
+  '/pages/terms-of-service',
+  '/terms',
+  '/faq',
+  '/pages/faq',
+];
 
 const HOME_PATHS = ['/', '/home'];
+
+const PRIVACY_URL_HINTS = /privacy|policies/i;
 
 const URL_TOKEN_REGEX =
   /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
@@ -118,71 +140,53 @@ async function fetchPage(url) {
   return null;
 }
 
+async function fetchPathsWave(origin, paths, seen) {
+  const queue = [];
+  for (const path of paths) {
+    const url = pageUrl(origin, path);
+    if (seen.has(url)) continue;
+    seen.add(url);
+    queue.push(url);
+  }
+  if (!queue.length) return [];
+
+  const pages = [];
+  for (let i = 0; i < queue.length; i += PARALLEL_PAGES) {
+    if (i > 0 && DELAY_BETWEEN_PAGES_MS > 0) await delay(DELAY_BETWEEN_PAGES_MS);
+    const chunk = queue.slice(i, i + PARALLEL_PAGES);
+    const fetched = await Promise.all(chunk.map((url) => fetchPage(url)));
+    for (const page of fetched) {
+      if (page) pages.push(page);
+    }
+  }
+  return pages;
+}
+
 /**
- * Crawl a store in order: privacy policy paths → contact → homepage.
- * Stops as soon as any page yields at least one valid email.
+ * Crawl privacy → contact → extra → homepage paths. All paths in each wave are fetched.
  */
 export async function crawlStore(storeUrl) {
-  const pages = [];
   const seen = new Set();
   const normalized = normalizeStoreUrl(storeUrl);
 
   if (!normalized) {
-    return { pages, privacyPageFound: false, fallbackUsed: false };
+    return { pages: [], privacyPageFound: false, fallbackUsed: false };
   }
 
-  let privacyPageFound = false;
-  let requestCount = 0;
+  const pages = [];
+  const waves = [PRIVACY_PATHS, CONTACT_PATHS, EXTRA_PATHS, HOME_PATHS];
 
-  async function visit(path) {
-    const url = pageUrl(normalized, path);
-    if (seen.has(url)) return null;
-    seen.add(url);
-    if (requestCount > 0) await delay(DELAY_BETWEEN_PAGES_MS);
-    requestCount += 1;
-    const page = await fetchPage(url);
-    if (page) pages.push(page);
-    return page;
+  for (const paths of waves) {
+    const wavePages = await fetchPathsWave(normalized, paths, seen);
+    pages.push(...wavePages);
   }
 
-  function pageHasEmails(page) {
-    if (!page) return false;
-    const emails = collectEmailsFromHtml(page.url, page.html);
-    if (emails.length > 0 && process.env.SCAN_DEBUG === '1') {
-      console.log(`[crawler] ${normalized} — found ${emails.length} email(s) on ${page.url}`);
-    }
-    return emails.length > 0;
+  const privacyPageFound = pages.some((p) => PRIVACY_URL_HINTS.test(p.url));
+  const fallbackUsed = pages.some((p) => !PRIVACY_URL_HINTS.test(p.url));
+
+  if (process.env.SCAN_DEBUG === '1') {
+    console.log(`[crawler] ${normalized} — fetched ${pages.length} page(s)`);
   }
 
-  for (const path of PRIVACY_PATHS) {
-    const page = await visit(path);
-    if (!page) continue;
-    privacyPageFound = true;
-    if (pageHasEmails(page)) {
-      return { pages, privacyPageFound, fallbackUsed: false };
-    }
-    break;
-  }
-
-  for (const path of CONTACT_PATHS) {
-    const page = await visit(path);
-    if (!page) continue;
-    if (pageHasEmails(page)) {
-      return { pages, privacyPageFound, fallbackUsed: true };
-    }
-    break;
-  }
-
-  for (const path of HOME_PATHS) {
-    const page = await visit(path);
-    if (page && pageHasEmails(page)) {
-      return { pages, privacyPageFound, fallbackUsed: true };
-    }
-  }
-
-  return {
-    pages,
-    privacyPageFound,
-    fallbackUsed: pages.some((p) => !p.url.includes('privacy') && !p.url.includes('policies')),
-  };
+  return { pages, privacyPageFound, fallbackUsed };
 }

@@ -6,6 +6,7 @@ import {
   updateScrapeJobSession,
   completeScrapeJob,
   getLatestScrapeJob,
+  getScrapeJobById,
   getScrapeSettings,
   saveScrapeSettings,
 } from './leadStoreRepository.js';
@@ -65,13 +66,76 @@ async function markScrapeRunComplete() {
   }
 }
 
+const MAX_RUNNING_MS = 25 * 60 * 1000;
+
+export async function ensureScrapeJobFresh(job) {
+  if (!job || job.status !== 'running') return job;
+  const startedMs = new Date(job.startedAt || job.session?.startedAt || 0).getTime();
+  if (!Number.isFinite(startedMs) || Date.now() - startedMs < MAX_RUNNING_MS) return job;
+
+  await completeScrapeJob(job.id, {
+    urlsFound: job.session?.totalGenerated ?? job.urlsFound ?? 0,
+    storesAdded: 0,
+    status: 'failed',
+    errorMessage: 'Scrape timed out after 25 minutes. Run again or check SerpAPI key/quota.',
+    session: job.session,
+  });
+  return getScrapeJobById(job.id);
+}
+
+/** Fail jobs left in `running` after server restart (in-process work is lost). */
+export async function recoverInterruptedScrapeJobs() {
+  const { getDb, memoryStore } = await import('../db.js');
+  const db = getDb();
+  if (!db) {
+    for (const job of memoryStore.leadScrapeJobs.filter((j) => j.status === 'running')) {
+      const full = await getScrapeJobById(job.id);
+      await completeScrapeJob(job.id, {
+        urlsFound: full?.session?.totalGenerated ?? 0,
+        storesAdded: 0,
+        status: 'failed',
+        errorMessage: 'Scrape interrupted — server restarted. Run again.',
+        session: full?.session,
+      });
+    }
+    return;
+  }
+  const res = await db.query(`SELECT id FROM lead_scrape_jobs WHERE status = 'running'`);
+  for (const row of res.rows || []) {
+    const job = await getScrapeJobById(row.id);
+    await completeScrapeJob(row.id, {
+      urlsFound: job?.session?.totalGenerated ?? job?.urlsFound ?? 0,
+      storesAdded: 0,
+      status: 'failed',
+      errorMessage: 'Scrape interrupted — server restarted. Click Run scrape now to try again.',
+      session: job?.session,
+    });
+  }
+}
+
 export async function startLeadScrapeSession({ trigger = 'manual' } = {}) {
   const latest = await getLatestScrapeJob();
   if (latest && latest.status === 'running') {
-    return { ok: true, jobId: latest.id, scrapeJob: latest, message: 'Scrape already in progress' };
+    const stale = await ensureScrapeJobFresh(latest);
+    if (stale?.status === 'running') {
+      return { ok: true, jobId: stale.id, scrapeJob: stale, message: 'Scrape already in progress' };
+    }
   }
 
   const jobId = await createScrapeJob();
+  await updateScrapeJobSession(
+    jobId,
+    {
+      phase: 'starting',
+      progressPercent: 2,
+      statusLabel: 'Starting scrape session…',
+      etaSeconds: 15 * 18,
+      linksFound: 0,
+      startedAt: new Date().toISOString(),
+    },
+    'running'
+  );
+
   runScrapeDiscoverySession(async (patch) => {
     await updateScrapeJobSession(jobId, { ...patch, trigger }, 'running');
   })
