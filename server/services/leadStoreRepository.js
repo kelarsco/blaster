@@ -491,6 +491,7 @@ export async function createScrapeJob() {
       status: 'running',
       urls_found: 0,
       stores_added: 0,
+      session_json: null,
       started_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     });
@@ -503,8 +504,9 @@ export async function createScrapeJob() {
   return id;
 }
 
-export async function completeScrapeJob(id, { urlsFound, storesAdded, errorMessage, status = 'completed' }) {
+export async function completeScrapeJob(id, { urlsFound, storesAdded, errorMessage, status = 'completed', session = null }) {
   const db = getDb();
+  const sessionJson = session ? JSON.stringify(session) : null;
   if (!db) {
     const job = memoryStore.leadScrapeJobs.find((j) => j.id === id);
     if (job) {
@@ -512,37 +514,43 @@ export async function completeScrapeJob(id, { urlsFound, storesAdded, errorMessa
       job.urls_found = urlsFound;
       job.stores_added = storesAdded;
       job.error_message = errorMessage;
+      job.session_json = sessionJson;
       job.completed_at = new Date().toISOString();
     }
     return;
   }
   await db.query(
     `UPDATE lead_scrape_jobs SET status = $2, urls_found = $3, stores_added = $4,
-     error_message = $5, completed_at = NOW() WHERE id = $1`,
-    [id, status, urlsFound, storesAdded, errorMessage]
+     error_message = $5, completed_at = NOW(), session_json = COALESCE($6, session_json) WHERE id = $1`,
+    [id, status, urlsFound, storesAdded, errorMessage, sessionJson]
   );
 }
 
-export async function getLatestScrapeJob() {
+export async function updateScrapeJobSession(id, session, status = 'running') {
   const db = getDb();
+  const sessionJson = JSON.stringify(session);
   if (!db) {
-    const job = memoryStore.leadScrapeJobs[0];
-    if (!job) return null;
-    return {
-      id: job.id,
-      status: job.status,
-      urlsFound: job.urls_found,
-      storesAdded: job.stores_added,
-      errorMessage: job.error_message,
-      startedAt: job.started_at,
-      completedAt: job.completed_at,
-    };
+    const job = memoryStore.leadScrapeJobs.find((j) => j.id === id);
+    if (job) {
+      job.status = status;
+      job.session_json = sessionJson;
+      if (session.totalGenerated != null) job.urls_found = session.totalGenerated;
+    }
+    return;
   }
-  const res = await db.query(
-    `SELECT * FROM lead_scrape_jobs ORDER BY created_at DESC LIMIT 1`
+  await db.query(
+    `UPDATE lead_scrape_jobs SET status = $2, session_json = $3,
+     urls_found = COALESCE($4, urls_found) WHERE id = $1`,
+    [id, status, sessionJson, session.totalGenerated ?? null]
   );
-  const row = res.rows[0];
+}
+
+function mapScrapeJobRow(row) {
   if (!row) return null;
+  let session = null;
+  try {
+    session = row.session_json ? JSON.parse(row.session_json) : null;
+  } catch (_) {}
   return {
     id: row.id,
     status: row.status,
@@ -551,7 +559,70 @@ export async function getLatestScrapeJob() {
     errorMessage: row.error_message,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+    session,
   };
+}
+
+export async function getScrapeJobById(id) {
+  const db = getDb();
+  if (!db) {
+    const job = memoryStore.leadScrapeJobs.find((j) => j.id === id);
+    if (!job) return null;
+    return mapScrapeJobRow(job);
+  }
+  const res = await db.query(`SELECT * FROM lead_scrape_jobs WHERE id = $1`, [id]);
+  return mapScrapeJobRow(res.rows[0]);
+}
+
+/** URLs that exist in lead_stores (any age). */
+export async function findUrlsExistingInDb(urls) {
+  const list = [...new Set((urls || []).filter(Boolean))];
+  if (!list.length) return new Set();
+  const db = getDb();
+  if (!db) {
+    const set = new Set();
+    for (const u of list) {
+      if (memoryStore.leadStores.some((s) => s.store_url === u)) set.add(u);
+    }
+    return set;
+  }
+  const res = await db.query(`SELECT store_url FROM lead_stores WHERE store_url = ANY($1::text[])`, [list]);
+  return new Set((res.rows || []).map((r) => r.store_url));
+}
+
+/** URLs added to lead_stores within the last N days. */
+export async function findUrlsInDbSince(urls, days = 7) {
+  const list = [...new Set((urls || []).filter(Boolean))];
+  if (!list.length) return new Set();
+  const db = getDb();
+  if (!db) {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const set = new Set();
+    for (const u of list) {
+      const row = memoryStore.leadStores.find((s) => s.store_url === u);
+      if (row && new Date(row.created_at).getTime() >= cutoff) set.add(u);
+    }
+    return set;
+  }
+  const res = await db.query(
+    `SELECT store_url FROM lead_stores
+     WHERE store_url = ANY($1::text[])
+       AND created_at >= NOW() - ($2::int || ' days')::interval`,
+    [list, days]
+  );
+  return new Set((res.rows || []).map((r) => r.store_url));
+}
+
+export async function getLatestScrapeJob() {
+  const db = getDb();
+  if (!db) {
+    const job = memoryStore.leadScrapeJobs[0];
+    return mapScrapeJobRow(job);
+  }
+  const res = await db.query(
+    `SELECT * FROM lead_scrape_jobs ORDER BY created_at DESC LIMIT 1`
+  );
+  return mapScrapeJobRow(res.rows[0]);
 }
 
 export async function updateLeadStoreTags(id, data) {

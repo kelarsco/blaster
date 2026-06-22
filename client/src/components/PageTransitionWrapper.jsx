@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import { hasRouteCache } from '../utils/pageCache.js';
 import { PagePreloader } from './PagePreloader';
 import { PageSkeleton } from './PageSkeleton';
 
@@ -9,6 +11,7 @@ const SKELETON_MS_NAV = 150;
 
 export function PageTransitionWrapper({ children }) {
   const location = useLocation();
+  const { user } = useAuth();
   const [showPreloader, setShowPreloader] = useState(true);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const prevPathRef = useRef(null);
@@ -18,20 +21,29 @@ export function PageTransitionWrapper({ children }) {
     const isRouteChange = prevPathRef.current !== null && location.pathname !== prevPathRef.current;
     prevPathRef.current = location.pathname;
 
+    const hasCache = hasRouteCache(user?.id, location.pathname);
+
     if (isFirstLoad || isRouteChange) {
-      setShowPreloader(true);
-      setShowSkeleton(true);
+      if (hasCache) {
+        setShowPreloader(false);
+        setShowSkeleton(false);
+      } else {
+        setShowPreloader(true);
+        setShowSkeleton(true);
+      }
     }
 
-    const preloaderTimer = setTimeout(() => setShowPreloader(false), PRELOADER_MS);
+    if (hasCache) return undefined;
+
+    const preloaderTimer = window.setTimeout(() => setShowPreloader(false), PRELOADER_MS);
     const skeletonMs = isFirstLoad ? SKELETON_MS_FIRST : SKELETON_MS_NAV;
-    const skeletonTimer = setTimeout(() => setShowSkeleton(false), skeletonMs);
+    const skeletonTimer = window.setTimeout(() => setShowSkeleton(false), skeletonMs);
 
     return () => {
-      clearTimeout(preloaderTimer);
-      clearTimeout(skeletonTimer);
+      window.clearTimeout(preloaderTimer);
+      window.clearTimeout(skeletonTimer);
     };
-  }, [location.pathname]);
+  }, [location.pathname, user?.id]);
 
   return (
     <>
@@ -41,7 +53,9 @@ export function PageTransitionWrapper({ children }) {
           <PageSkeleton />
         </div>
       )}
-      {children}
+      <div className={showSkeleton ? 'opacity-0' : 'opacity-100 transition-opacity duration-150'}>
+        {children}
+      </div>
     </>
   );
 }

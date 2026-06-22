@@ -1,33 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { FileText, Trash2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
 import { useConfirm } from '../context/ConfirmDialogContext.jsx';
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 
 export function TemplatesPage() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const confirm = useConfirm();
-  const [presets, setPresets] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('{{store_url}}');
   const [body, setBody] = useState('Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards');
 
-  const fetchPresets = useCallback(() => {
-    if (!authFetch) return;
-    setLoading(true);
-    authFetch(`${API}/automation/presets`)
-      .then((r) => (r.ok ? r.json() : { presets: [] }))
-      .then((data) => setPresets(Array.isArray(data?.presets) ? data.presets : []))
-      .catch(() => setPresets([]))
-      .finally(() => setLoading(false));
+  const fetchPresets = useCallback(async () => {
+    const res = await authFetch(`${API}/automation/presets`);
+    if (!res.ok) return { presets: [] };
+    const data = await res.json().catch(() => ({}));
+    return { presets: Array.isArray(data?.presets) ? data.presets : [] };
   }, [authFetch]);
 
-  useEffect(() => {
-    fetchPresets();
-  }, [fetchPresets]);
+  const { data, loading, refetch: refetchPresets } = useStaleWhileRevalidate('templates', fetchPresets, {
+    userId: user?.id,
+    enabled: Boolean(authFetch),
+  });
+
+  const presets = data?.presets ?? [];
 
   const saveTemplate = async (e) => {
     e.preventDefault();
@@ -51,7 +50,7 @@ export function TemplatesPage() {
       setName('');
       setSubject('{{store_url}}');
       setBody('Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards');
-      fetchPresets();
+      refetchPresets();
     } catch (err) {
       setError(err?.message || 'Failed to save template');
     } finally {
@@ -75,7 +74,7 @@ export function TemplatesPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to delete template');
       }
-      setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+      refetchPresets();
     } catch (err) {
       setError(err?.message || 'Failed to delete template');
     }

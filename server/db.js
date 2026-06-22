@@ -638,6 +638,7 @@ async function runSchema(p) {
     await migrateManualCampaigns(p);
     await migrateReferralCodes(p);
     await migrateProcessedPayments(p);
+    await migrateLeadScrapeJobSession(p);
   } finally {
     client.release();
   }
@@ -818,5 +819,15 @@ async function migrateProcessedPayments(pool) {
     `);
   } catch (e) {
     console.warn('[migrateProcessedPayments]', e?.message || e);
+  }
+}
+
+async function migrateLeadScrapeJobSession(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE lead_scrape_jobs ADD COLUMN IF NOT EXISTS session_json TEXT;
+    `);
+  } catch (e) {
+    console.warn('[migrateLeadScrapeJobSession]', e?.message || e);
   }
 }

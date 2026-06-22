@@ -18,24 +18,10 @@ export function AdminLeadEnginePage() {
   const { adminFetch } = useAdmin();
   const [stats, setStats] = useState(null);
   const [stores, setStores] = useState([]);
-  const [scrapeJob, setScrapeJob] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [scraping, setScraping] = useState(false);
   const [requeueing, setRequeueing] = useState(false);
-  const [reclassifyingTags, setReclassifyingTags] = useState(false);
-  const [tagRefreshPending, setTagRefreshPending] = useState(0);
   const [message, setMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-
-  const loadTagStatus = useCallback(async () => {
-    try {
-      const res = await adminFetch('/lead-engine/stores/tag-refresh-status');
-      if (res.ok) {
-        const data = await res.json();
-        setTagRefreshPending(data.pending ?? 0);
-      }
-    } catch (_) {}
-  }, [adminFetch]);
 
   const load = useCallback(async () => {
     let failed = false;
@@ -48,7 +34,6 @@ export function AdminLeadEnginePage() {
       if (statsRes.ok) {
         const data = await statsRes.json();
         setStats(data.stats);
-        setScrapeJob(data.scrapeJob);
       }
       if (storesRes.ok) {
         const data = await storesRes.json();
@@ -75,28 +60,12 @@ export function AdminLeadEnginePage() {
       if (!cancelled) schedule(failed ? 120000 : 60000);
     };
 
-    loadTagStatus();
     run();
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [load, loadTagStatus]);
-
-  const startScrape = async () => {
-    setScraping(true);
-    setMessage('');
-    try {
-      const res = await adminFetch('/lead-engine/scrape/start', { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to start scrape');
-      setMessage('Scrape job started. New URLs will be discovered and queued for qualification.');
-      load();
-    } catch (e) {
-      setMessage(e.message || 'Scrape failed');
-    }
-    setScraping(false);
-  };
+  }, [load]);
 
   const requeueRejected = async () => {
     setRequeueing(true);
@@ -108,7 +77,7 @@ export function AdminLeadEnginePage() {
       const count = data.requeued ?? 0;
       setMessage(
         count > 0
-          ? `${count.toLocaleString()} rejected store${count === 1 ? '' : 's'} queued for re-checking. They will move to pending/processing as the pipeline runs.`
+          ? `${count.toLocaleString()} rejected store${count === 1 ? '' : 's'} queued for re-checking.`
           : 'No rejected stores to re-check.'
       );
       load();
@@ -116,24 +85,6 @@ export function AdminLeadEnginePage() {
       setMessage(e.message || 'Re-check failed');
     }
     setRequeueing(false);
-  };
-
-  const reclassifyAllTags = async () => {
-    setReclassifyingTags(true);
-    setMessage('');
-    try {
-      const res = await adminFetch('/lead-engine/stores/reclassify-tags', {
-        method: 'POST',
-        body: JSON.stringify({ force: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to refresh store tags');
-      setMessage(data.message || 'Refreshing store tags in the background. Store Leads filters will update as each store is processed.');
-      setTagRefreshPending(data.pending ?? 0);
-    } catch (e) {
-      setMessage(e.message || 'Tag refresh failed');
-    }
-    setReclassifyingTags(false);
   };
 
   if (loading) {
@@ -144,7 +95,6 @@ export function AdminLeadEnginePage() {
     { id: 'all', label: 'Total tracked', value: stats?.total ?? 0 },
     { id: 'qualified', label: 'Qualified (on Leads page)', value: stats?.qualified ?? 0 },
     { id: 'pending', label: 'Pending pipeline', value: stats?.pending ?? 0 },
-    { id: 'processing', label: 'Processing', value: stats?.processing ?? 0 },
     { id: 'rejected', label: 'Rejected', value: stats?.rejected ?? 0 },
     { id: 'failed', label: 'Failed', value: stats?.failed ?? 0 },
   ];
@@ -175,24 +125,13 @@ export function AdminLeadEnginePage() {
             <Plus className="w-4 h-4" />
             Add leads
           </Link>
-          <button
-            type="button"
-            onClick={reclassifyAllTags}
-            disabled={reclassifyingTags}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${reclassifyingTags ? 'animate-spin' : ''}`} />
-            {reclassifyingTags ? 'Refreshing tags…' : 'Refresh store tags'}
-          </button>
-          <button
-            type="button"
-            onClick={startScrape}
-            disabled={scraping || scrapeJob?.status === 'running'}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar disabled:opacity-50"
+          <Link
+            to="/bl-admin/lead-engine/scrape"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar"
           >
             <Play className="w-4 h-4" />
-            {scraping ? 'Starting…' : 'Start scraping'}
-          </button>
+            Start scraping
+          </Link>
           <button
             type="button"
             onClick={load}
@@ -204,27 +143,14 @@ export function AdminLeadEnginePage() {
         </div>
       </div>
 
-      {message && (
+      {message ? (
         <p className="text-sm text-blaster-muted bg-blaster-sidebar border border-blaster-border rounded-lg px-4 py-3">
           {message}
         </p>
-      )}
-
-      {scrapeJob && (
-        <p className="text-xs text-blaster-muted">
-          Last scrape: {scrapeJob.status} — {scrapeJob.urlsFound ?? 0} URLs found, {scrapeJob.storesAdded ?? 0} queued
-          {scrapeJob.errorMessage && ` (${scrapeJob.errorMessage})`}
-        </p>
-      )}
-
-      {tagRefreshPending > 0 && (
-        <p className="text-xs text-blaster-muted">
-          Tag refresh: {tagRefreshPending.toLocaleString()} qualified store{tagRefreshPending === 1 ? '' : 's'} remaining — Store Leads filters update as each finishes.
-        </p>
-      )}
+      ) : null}
 
       <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y divide-blaster-border">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y divide-blaster-border">
           {cards.map((c) => {
             const isActive = statusFilter === c.id;
             return (

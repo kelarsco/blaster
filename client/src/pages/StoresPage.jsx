@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
+import { readPageCache, writePageCache } from '../utils/pageCache.js';
 import {
   emptyFilters,
   exportLeadStoresCsv,
@@ -22,9 +23,14 @@ import {
 
 const DEFAULT_ITEMS_PER_PAGE = 50;
 const MAX_EXPORT_BATCH = 50000;
+const STORES_ROUTE_CACHE = 'stores-list';
+
+function storesListCacheKey(filters, page, limit) {
+  return `${STORES_ROUTE_CACHE}:${JSON.stringify(filters)}:${page}:${limit}`;
+}
 
 export function StoresPage() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const {
     status,
     loading: planLoading,
@@ -35,9 +41,14 @@ export function StoresPage() {
     openUpgradeModal,
   } = usePlanAccess();
 
-  const [stores, setStores] = useState([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const initialFilters = emptyFilters();
+  const initialCacheKey = storesListCacheKey(initialFilters, 1, DEFAULT_ITEMS_PER_PAGE);
+  const initialCache = user?.id ? readPageCache(user.id, initialCacheKey) : null;
+  const hadCacheRef = useRef(Boolean(initialCache));
+
+  const [stores, setStores] = useState(initialCache?.stores ?? []);
+  const [totalCount, setTotalCount] = useState(initialCache?.totalCount ?? 0);
+  const [loading, setLoading] = useState(!initialCache);
   const [listLoading, setListLoading] = useState(false);
   const [filters, setFilters] = useState(emptyFilters());
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters());
@@ -104,22 +115,43 @@ export function StoresPage() {
   );
 
   const loadStores = useCallback(async () => {
-    setListLoading(true);
+    const hadCache = hadCacheRef.current;
+    if (hadCache) {
+      setListLoading(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const data = await fetchStoresPage(appliedFilters, currentPage, itemsPerPage);
       if (data) {
-        setStores(Array.isArray(data.stores) ? data.stores : []);
-        setTotalCount(Number(data.total) || 0);
+        const nextStores = Array.isArray(data.stores) ? data.stores : [];
+        const nextTotal = Number(data.total) || 0;
+        setStores(nextStores);
+        setTotalCount(nextTotal);
+        if (user?.id) {
+          writePageCache(user.id, storesListCacheKey(appliedFilters, currentPage, itemsPerPage), {
+            stores: nextStores,
+            totalCount: nextTotal,
+          });
+          writePageCache(user.id, STORES_ROUTE_CACHE, { updatedAt: Date.now() });
+        }
+        hadCacheRef.current = true;
       }
     } catch (_) {}
     setLoading(false);
     setListLoading(false);
-  }, [appliedFilters, currentPage, itemsPerPage, fetchStoresPage]);
+  }, [appliedFilters, currentPage, itemsPerPage, fetchStoresPage, user?.id]);
 
   useEffect(() => {
     if (basicPageBlocked || planLoading) return;
     loadStores();
   }, [loadStores, basicPageBlocked, planLoading]);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+    const timer = window.setTimeout(() => setLoading(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   useEffect(() => {
     setCurrentPage(1);

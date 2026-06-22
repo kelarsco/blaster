@@ -12,10 +12,12 @@ import {
   createScrapeJob,
   completeScrapeJob,
   getLatestScrapeJob,
+  getScrapeJobById,
+  updateScrapeJobSession,
   countQualifiedStoresNeedingTagRefresh,
   clearTagClassificationForAllQualified,
 } from '../services/leadStoreRepository.js';
-import { runScrapeDiscoveryJob } from '../services/leadScraper.js';
+import { runScrapeDiscoverySession } from '../services/leadScraper.js';
 import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
 import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
 import { isBackfillEnabled } from '../services/backfillGate.js';
@@ -677,11 +679,22 @@ adminRoutes.get('/referrals', async (req, res) => {
 
 adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
   try {
+    const latest = await getLatestScrapeJob();
+    if (latest && latest.status === 'running') {
+      return res.json({ ok: true, jobId: latest.id, scrapeJob: latest, message: 'Scrape already in progress' });
+    }
+
     const jobId = await createScrapeJob();
-    runScrapeDiscoveryJob()
-      .then(async ({ urlsFound, storesAdded }) => {
-        await completeScrapeJob(jobId, { urlsFound, storesAdded });
-        kickLeadEngineWorker();
+    runScrapeDiscoverySession(async (patch) => {
+      await updateScrapeJobSession(jobId, patch, 'running');
+    })
+      .then(async (session) => {
+        await completeScrapeJob(jobId, {
+          urlsFound: session.totalGenerated,
+          storesAdded: 0,
+          status: 'ready',
+          session,
+        });
       })
       .catch(async (e) => {
         await completeScrapeJob(jobId, {
@@ -691,7 +704,7 @@ adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
           status: 'failed',
         });
       });
-    res.json({ ok: true, jobId, message: 'Scrape job started' });
+    res.json({ ok: true, jobId, message: 'Scrape session started' });
   } catch (e) {
     console.error('[lead-engine scrape]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to start scrape' });
@@ -700,9 +713,52 @@ adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
 
 adminRoutes.get('/lead-engine/scrape/status', async (req, res) => {
   try {
-    const scrapeJob = await getLatestScrapeJob();
+    const jobId = String(req.query.jobId || '').trim();
+    const scrapeJob = jobId ? await getScrapeJobById(jobId) : await getLatestScrapeJob();
     res.json({ scrapeJob });
   } catch (e) {
     res.status(500).json({ error: e?.message || 'Failed to load scrape status' });
+  }
+});
+
+adminRoutes.post('/lead-engine/scrape/accept', async (req, res) => {
+  try {
+    const jobId = String(req.body?.jobId || '').trim();
+    const job = jobId ? await getScrapeJobById(jobId) : await getLatestScrapeJob();
+    if (!job) return res.status(404).json({ error: 'No scrape session found' });
+    if (job.status === 'accepted') {
+      return res.json({ ok: true, added: job.storesAdded ?? 0, message: 'Leads already added' });
+    }
+    if (job.status !== 'ready') {
+      return res.status(400).json({ error: 'Scrape session is not ready for acceptance' });
+    }
+
+    const verified = job.session?.verifiedLeads || [];
+    const urls = verified.map((l) => l.storeUrl).filter(Boolean);
+    const { added } = await enqueueLeadStores(urls, 'scraping');
+    kickLeadEngineWorker();
+
+    const acceptedSession = {
+      ...job.session,
+      acceptedAt: new Date().toISOString(),
+      addedCount: added.length,
+      statusLabel: 'Added to website',
+    };
+    await completeScrapeJob(job.id, {
+      urlsFound: job.urlsFound ?? job.session?.totalGenerated ?? 0,
+      storesAdded: added.length,
+      status: 'accepted',
+      session: acceptedSession,
+    });
+
+    res.json({
+      ok: true,
+      added: added.length,
+      acceptedAt: acceptedSession.acceptedAt,
+      message: `${added.length.toLocaleString()} lead${added.length === 1 ? '' : 's'} added to the pipeline`,
+    });
+  } catch (e) {
+    console.error('[lead-engine scrape accept]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to add leads' });
   }
 });

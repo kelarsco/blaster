@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { API } from '../api.js';
 import { defaultStreaksState } from '../utils/streaksAndBadges.js';
 import { buildRecentActivityFeed } from '../utils/activityFeed.js';
+import { readPageCache, writePageCache } from '../utils/pageCache.js';
+
+const CACHE_KEY = 'dashboard';
+const MAX_SKELETON_MS = 3000;
 
 const RANGE_MS = {
   '24h': 24 * 60 * 60 * 1000,
@@ -71,19 +75,6 @@ function trendDelta(current, previous) {
   };
 }
 
-function pctTrend(current, previous) {
-  if (previous === 0 && current === 0) return { label: 'N/A', direction: 'neutral' };
-  if (previous === 0) return { label: '+100%', direction: 'up' };
-  const pct = ((current - previous) / previous) * 100;
-  const rounded = Math.abs(pct) < 0.01 ? 0 : pct;
-  if (rounded === 0) return { label: '0%', direction: 'neutral' };
-  const sign = rounded > 0 ? '+' : '';
-  return {
-    label: `${sign}${rounded.toFixed(2)}%`,
-    direction: rounded > 0 ? 'up' : 'down',
-  };
-}
-
 function countEmailTemplates(presetList) {
   return presetList.reduce(
     (sum, preset) => sum + (Array.isArray(preset.templates) ? preset.templates.length : 0),
@@ -91,110 +82,147 @@ function countEmailTemplates(presetList) {
   );
 }
 
+function emptyDashboardPayload() {
+  return {
+    campaigns: [],
+    emailLists: [],
+    manualRuns: [],
+    sendEvents: [],
+    activityLogs: [],
+    scans: [],
+    senders: [],
+    presets: [],
+    extractedTotal: 0,
+    streaksAndBadges: defaultStreaksState(),
+  };
+}
+
+function applyDashboardPayload(payload, setters) {
+  const p = payload || emptyDashboardPayload();
+  setters.setCampaigns(p.campaigns || []);
+  setters.setEmailLists(p.emailLists || []);
+  setters.setManualRuns(p.manualRuns || []);
+  setters.setSendEvents(p.sendEvents || []);
+  setters.setActivityLogs(p.activityLogs || []);
+  setters.setScans(p.scans || []);
+  setters.setSenders(p.senders || []);
+  setters.setPresets(p.presets || []);
+  setters.setExtractedTotal(Number(p.extractedTotal || 0));
+  setters.setStreaksAndBadges(p.streaksAndBadges || defaultStreaksState());
+}
+
 export function useDashboardData(range = '7d') {
   const { user, authFetch } = useAuth();
-  const [campaigns, setCampaigns] = useState([]);
-  const [emailLists, setEmailLists] = useState([]);
-  const [manualRuns, setManualRuns] = useState([]);
-  const [sendEvents, setSendEvents] = useState([]);
-  const [activityLogs, setActivityLogs] = useState([]);
-  const [scans, setScans] = useState([]);
-  const [senders, setSenders] = useState([]);
-  const [presets, setPresets] = useState([]);
-  const [extractedTotal, setExtractedTotal] = useState(0);
-  const [streaksAndBadges, setStreaksAndBadges] = useState(defaultStreaksState);
+  const userId = user?.id;
+  const cached = userId ? readPageCache(userId, CACHE_KEY) : null;
+  const hadCacheRef = useRef(Boolean(cached));
+
+  const [campaigns, setCampaigns] = useState(cached?.campaigns ?? []);
+  const [emailLists, setEmailLists] = useState(cached?.emailLists ?? []);
+  const [manualRuns, setManualRuns] = useState(cached?.manualRuns ?? []);
+  const [sendEvents, setSendEvents] = useState(cached?.sendEvents ?? []);
+  const [activityLogs, setActivityLogs] = useState(cached?.activityLogs ?? []);
+  const [scans, setScans] = useState(cached?.scans ?? []);
+  const [senders, setSenders] = useState(cached?.senders ?? []);
+  const [presets, setPresets] = useState(cached?.presets ?? []);
+  const [extractedTotal, setExtractedTotal] = useState(cached?.extractedTotal ?? 0);
+  const [streaksAndBadges, setStreaksAndBadges] = useState(cached?.streaksAndBadges ?? defaultStreaksState());
   const [settingTarget, setSettingTarget] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
+  const [isRevalidating, setIsRevalidating] = useState(false);
 
   const fetchDashboardData = useCallback(async () => {
-    if (!user) return;
+    if (!user || !authFetch) return;
+    const hadCache = hadCacheRef.current;
+
+    if (hadCache) setIsRevalidating(true);
+    else setLoading(true);
+
     try {
-      const [campaignsRes, dashboardMetricsRes, activityRes, scansRes, analyticsRes, sendersRes, presetsRes, streaksRes] = await Promise.all([
-        authFetch(`${API}/campaigns`),
-        authFetch(`${API}/campaigns/dashboard-metrics`),
-        authFetch(`${API}/activity/logs?limit=200`),
-        authFetch(`${API}/scan/recent`),
-        authFetch(`${API}/scan/analytics`),
-        authFetch(`${API}/automation/senders`),
-        authFetch(`${API}/automation/presets`),
-        authFetch(`${API}/streaks`),
-      ]);
+      const [campaignsRes, dashboardMetricsRes, activityRes, scansRes, analyticsRes, sendersRes, presetsRes, streaksRes] =
+        await Promise.all([
+          authFetch(`${API}/campaigns`),
+          authFetch(`${API}/campaigns/dashboard-metrics`),
+          authFetch(`${API}/activity/logs?limit=200`),
+          authFetch(`${API}/scan/recent`),
+          authFetch(`${API}/scan/analytics`),
+          authFetch(`${API}/automation/senders`),
+          authFetch(`${API}/automation/presets`),
+          authFetch(`${API}/streaks`),
+        ]);
+
+      const payload = emptyDashboardPayload();
 
       if (campaignsRes?.ok) {
         const data = await campaignsRes.json();
-        setCampaigns(data.campaigns || []);
-      } else {
-        setCampaigns([]);
+        payload.campaigns = data.campaigns || [];
       }
-
       if (activityRes?.ok) {
         const data = await activityRes.json();
-        setActivityLogs(data.logs || []);
-      } else {
-        setActivityLogs([]);
+        payload.activityLogs = data.logs || [];
       }
-
       if (scansRes?.ok) {
         const data = await scansRes.json();
-        setScans(Array.isArray(data) ? data : []);
-      } else {
-        setScans([]);
+        payload.scans = Array.isArray(data) ? data : [];
       }
-
       if (analyticsRes?.ok) {
         const data = await analyticsRes.json();
-        setExtractedTotal(Number(data.extracted || 0));
-      } else {
-        setExtractedTotal(0);
+        payload.extractedTotal = Number(data.extracted || 0);
       }
-
       if (sendersRes?.ok) {
         const data = await sendersRes.json();
-        setSenders(data.senders || []);
-      } else {
-        setSenders([]);
+        payload.senders = data.senders || [];
       }
-
       if (presetsRes?.ok) {
         const data = await presetsRes.json();
-        setPresets(data.presets || []);
-      } else {
-        setPresets([]);
+        payload.presets = data.presets || [];
       }
-
       if (dashboardMetricsRes?.ok) {
         const data = await dashboardMetricsRes.json();
-        setEmailLists(Array.isArray(data?.emailLists) ? data.emailLists : []);
-        setManualRuns(Array.isArray(data?.manualRuns) ? data.manualRuns : []);
-        setSendEvents(Array.isArray(data?.sendEvents) ? data.sendEvents : []);
-      } else {
-        setEmailLists([]);
-        setManualRuns([]);
-        setSendEvents([]);
+        payload.emailLists = Array.isArray(data?.emailLists) ? data.emailLists : [];
+        payload.manualRuns = Array.isArray(data?.manualRuns) ? data.manualRuns : [];
+        payload.sendEvents = Array.isArray(data?.sendEvents) ? data.sendEvents : [];
+      }
+      if (streaksRes?.ok) {
+        payload.streaksAndBadges = await streaksRes.json();
       }
 
-      if (streaksRes?.ok) {
-        const data = await streaksRes.json();
-        setStreaksAndBadges(data);
-      } else {
-        setStreaksAndBadges(defaultStreaksState());
-      }
+      applyDashboardPayload(payload, {
+        setCampaigns,
+        setEmailLists,
+        setManualRuns,
+        setSendEvents,
+        setActivityLogs,
+        setScans,
+        setSenders,
+        setPresets,
+        setExtractedTotal,
+        setStreaksAndBadges,
+      });
+
+      if (userId) writePageCache(userId, CACHE_KEY, payload);
+      hadCacheRef.current = true;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      setCampaigns([]);
-      setEmailLists([]);
-      setManualRuns([]);
-      setSendEvents([]);
-      setActivityLogs([]);
-      setScans([]);
-      setExtractedTotal(0);
-      setSenders([]);
-      setPresets([]);
-      setStreaksAndBadges(defaultStreaksState());
+      if (!hadCacheRef.current) {
+        applyDashboardPayload(emptyDashboardPayload(), {
+          setCampaigns,
+          setEmailLists,
+          setManualRuns,
+          setSendEvents,
+          setActivityLogs,
+          setScans,
+          setSenders,
+          setPresets,
+          setExtractedTotal,
+          setStreaksAndBadges,
+        });
+      }
     } finally {
       setLoading(false);
+      setIsRevalidating(false);
     }
-  }, [user, authFetch]);
+  }, [user, userId, authFetch]);
 
   const refreshStreaks = useCallback(async () => {
     if (!user || !authFetch) return;
@@ -203,14 +231,18 @@ export function useDashboardData(range = '7d') {
       if (streaksRes?.ok) {
         const data = await streaksRes.json();
         setStreaksAndBadges(data);
+        if (userId) {
+          const prev = readPageCache(userId, CACHE_KEY) || emptyDashboardPayload();
+          writePageCache(userId, CACHE_KEY, { ...prev, streaksAndBadges: data });
+        }
       }
     } catch (_) {}
-  }, [user, authFetch]);
+  }, [user, userId, authFetch]);
 
   useEffect(() => {
     fetchDashboardData();
-    const fallback = setTimeout(() => setLoading(false), 5000);
-    return () => clearTimeout(fallback);
+    const fallback = window.setTimeout(() => setLoading(false), MAX_SKELETON_MS);
+    return () => window.clearTimeout(fallback);
   }, [fetchDashboardData]);
 
   useEffect(() => {
@@ -220,11 +252,11 @@ export function useDashboardData(range = '7d') {
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(refreshStreaks, 30000);
+    const interval = window.setInterval(refreshStreaks, 30000);
     return () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
-      clearInterval(interval);
+      window.clearInterval(interval);
     };
   }, [refreshStreaks]);
 
@@ -426,6 +458,7 @@ export function useDashboardData(range = '7d') {
 
   return {
     loading,
+    isRevalidating,
     metrics,
     totals,
     onboarding,

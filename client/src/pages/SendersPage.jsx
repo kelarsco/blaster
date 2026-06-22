@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Mail } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { useConfirm } from '../context/ConfirmDialogContext.jsx';
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 
 function VerifiedBadge() {
   return (
@@ -31,11 +32,26 @@ function statusBadge(sender) {
 export function SendersPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const userId = auth?.user?.id;
   const { status, openUpgradeModal, refresh } = usePlanAccess();
   const confirm = useConfirm();
 
-  const [groups, setGroups] = useState([]);
-  const [maxPerGroup, setMaxPerGroup] = useState(10);
+  const loadGroups = useCallback(async () => {
+    const res = await authFetch(`${API}/automation/senders/groups`);
+    const d = await res.json().catch(() => ({}));
+    return {
+      groups: d.groups || [],
+      maxPerGroup: d.maxSendersPerGroup ?? 10,
+    };
+  }, [authFetch]);
+
+  const { data, refetch: fetchGroups } = useStaleWhileRevalidate('senders', loadGroups, {
+    userId,
+    enabled: Boolean(authFetch),
+  });
+
+  const groups = data?.groups ?? [];
+  const maxPerGroup = data?.maxPerGroup ?? 10;
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
@@ -44,21 +60,6 @@ export function SendersPage() {
   const [manualError, setManualError] = useState({});
   const [addingGroupId, setAddingGroupId] = useState(null);
   const [expandedGroupId, setExpandedGroupId] = useState(null);
-
-  const fetchGroups = useCallback(() => {
-    if (!authFetch) return;
-    authFetch(`${API}/automation/senders/groups`)
-      .then((r) => r.json())
-      .then((d) => {
-        setGroups(d.groups || []);
-        setMaxPerGroup(d.maxSendersPerGroup ?? 10);
-      })
-      .catch(() => {});
-  }, [authFetch]);
-
-  useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
 
   const createGroup = async () => {
     if (!newGroupName.trim() || !authFetch) return;

@@ -19,12 +19,12 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { access } = usePlanAccess();
   const [range, setRange] = useState('7d');
-  const { loading, metrics, onboarding, streaksAndBadges, recentFeed, setDailyTarget, settingTarget } = useDashboardData(range);
+  const { loading, isRevalidating, metrics, onboarding, streaksAndBadges, recentFeed, setDailyTarget, settingTarget } = useDashboardData(range);
   const displayName = user?.name || user?.email?.split('@')[0];
   const streakLocked = access?.streak ?? false;
 
   return (
-    <div className="min-h-full bg-white p-4 sm:p-6 md:p-8">
+    <div className={`min-h-full bg-white p-4 sm:p-6 md:p-8 transition-opacity duration-200 ${isRevalidating ? 'opacity-95' : ''}`}>
       {loading ? (
         <DashboardHeaderSkeleton />
       ) : (

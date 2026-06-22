@@ -44,6 +44,7 @@ import { AdminSubscriptionsPage } from './pages/bl-admin/AdminSubscriptionsPage'
 import { AdminMessagesPage } from './pages/bl-admin/AdminMessagesPage';
 import { AdminResourcesPage } from './pages/bl-admin/AdminResourcesPage';
 import { AdminLeadEnginePage } from './pages/bl-admin/AdminLeadEnginePage';
+import { AdminScrapeDashboardPage } from './pages/bl-admin/AdminScrapeDashboardPage';
 import { AdminAddLeadsPage } from './pages/bl-admin/AdminAddLeadsPage';
 import { AdminReferralsPage } from './pages/bl-admin/AdminReferralsPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
@@ -119,6 +120,7 @@ function AppRoutes() {
             <Route path="messages" element={<AdminMessagesPage />} />
             <Route path="resources" element={<AdminResourcesPage />} />
             <Route path="lead-engine" element={<AdminLeadEnginePage />} />
+            <Route path="lead-engine/scrape" element={<AdminScrapeDashboardPage />} />
             <Route path="lead-engine/add" element={<AdminAddLeadsPage />} />
           </Route>
         </Route>

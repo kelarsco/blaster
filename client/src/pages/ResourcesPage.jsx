@@ -1,31 +1,30 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
 import { ResourceTypeToggle } from '../components/resources/ResourceTypeToggle.jsx';
 import { ResourceSortButton } from '../components/resources/ResourceSortButton.jsx';
 import { VideoResourceCard } from '../components/resources/VideoResourceCard.jsx';
 import { DocumentResourceCard } from '../components/resources/DocumentResourceCard.jsx';
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 
 export function ResourcesPage() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const [tab, setTab] = useState('video');
   const [sortOrder, setSortOrder] = useState('newest');
-  const [resources, setResources] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  const fetchResources = useCallback(() => {
-    if (!authFetch) return;
-    setLoading(true);
-    authFetch(`${API}/resources?type=${tab}`)
-      .then((r) => (r.ok ? r.json() : { resources: [] }))
-      .then((data) => setResources(Array.isArray(data?.resources) ? data.resources : []))
-      .catch(() => setResources([]))
-      .finally(() => setLoading(false));
+  const fetchResources = useCallback(async () => {
+    const res = await authFetch(`${API}/resources?type=${tab}`);
+    if (!res.ok) return { resources: [] };
+    const data = await res.json().catch(() => ({}));
+    return { resources: Array.isArray(data?.resources) ? data.resources : [] };
   }, [authFetch, tab]);
 
-  useEffect(() => {
-    fetchResources();
-  }, [fetchResources]);
+  const { data, loading } = useStaleWhileRevalidate(`resources:${tab}`, fetchResources, {
+    userId: user?.id,
+    enabled: Boolean(authFetch),
+  });
+
+  const resources = data?.resources ?? [];
 
   const sortedResources = useMemo(() => {
     const items = [...resources];

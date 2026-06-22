@@ -18,6 +18,7 @@ import { formatUTCDateOnly } from '../utils/dateUtils';
 import { buildReferralSignupUrl, sanitizeReferralUrl } from '../utils/referralUrl.js';
 import { ReferralPageSkeleton } from '../components/referral/ReferralPageSkeleton.jsx';
 import { BrandGradientIcon, BrandIconBox, CrownIcon } from '../components/BrandGradientIcon.jsx';
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 import '../styles/referral-page.css';
 
 const REFERRAL_MESSAGE =
@@ -116,8 +117,6 @@ export function ReferralPage() {
   const authFetchRef = useRef(authFetch);
   authFetchRef.current = authFetch;
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -125,36 +124,35 @@ export function ReferralPage() {
   const perPage = 10;
 
   const loadReferral = useCallback(async () => {
-    if (authLoading) return;
+    if (authLoading) return null;
     if (!user) {
-      setLoading(false);
       setError('Sign in to view your referral program.');
-      setData(null);
-      return;
+      return null;
     }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const res = await authFetchRef.current(`${API}/referral/me`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Could not load referral data (${res.status})`);
-      }
-      const json = await res.json();
-      setData(json);
-    } catch (e) {
-      setData(null);
-      setError(formatLoadError(e));
-    } finally {
-      setLoading(false);
+    const res = await authFetchRef.current(`${API}/referral/me`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Could not load referral data (${res.status})`);
     }
+    return res.json();
   }, [authLoading, user]);
 
+  const {
+    data,
+    loading,
+    refetch: reloadReferral,
+  } = useStaleWhileRevalidate('referral', loadReferral, {
+    userId: user?.id,
+    enabled: Boolean(authFetch) && !authLoading && Boolean(user),
+  });
+
   useEffect(() => {
-    loadReferral();
-  }, [loadReferral]);
+    if (!user && !authLoading) {
+      setError('Sign in to view your referral program.');
+    } else {
+      setError('');
+    }
+  }, [user, authLoading]);
 
   const referralUrl = useMemo(() => {
     const code = data?.referralCode || '';
@@ -182,7 +180,7 @@ export function ReferralPage() {
   const progressPercent = Math.min(100, data?.progressPercent ?? 0);
   const upgradeCount = data?.upgradeCount ?? 0;
 
-  if (authLoading || loading) {
+  if (authLoading || (loading && !data)) {
     return <ReferralPageSkeleton />;
   }
 

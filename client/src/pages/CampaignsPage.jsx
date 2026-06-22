@@ -13,6 +13,9 @@ import { API } from '../api.js';
 import { domainFromUrl, exportScanResultsCsv, recipientsToScanResults } from '../utils/scannerUrls.js';
 import { saveManualCampaignDeck } from '../utils/manualCampaignDeck.js';
 import { useConfirm } from '../context/ConfirmDialogContext.jsx';
+import { readPageCache, writePageCache } from '../utils/pageCache.js';
+
+const CAMPAIGNS_CACHE_KEY = 'campaigns';
 
 function DotsIcon({ className }) {
   return (
@@ -346,29 +349,69 @@ function CampaignDetailSheet({ list, onClose, isMessaged, authFetch }) {
 export function CampaignsPage() {
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const userId = auth?.user?.id;
   const confirm = useConfirm();
   const location = useLocation();
   const { status, openUpgradeModal } = usePlanAccess();
   const { setAutomationOpen, activeCampaignId, setActiveCampaignId } = useToolState();
-  const [campaigns, setCampaigns] = useState([]);
+
+  const cached = userId ? readPageCache(userId, CAMPAIGNS_CACHE_KEY) : null;
+  const hadCacheRef = useRef(Boolean(cached));
+
+  const [campaigns, setCampaigns] = useState(cached?.campaigns ?? []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [recipientSourceOpen, setRecipientSourceOpen] = useState(false);
   const [csvRecipients, setCsvRecipients] = useState([]);
-  const [emailLists, setEmailLists] = useState([]);
+  const [emailLists, setEmailLists] = useState(cached?.emailLists ?? []);
   const [viewingList, setViewingList] = useState(null);
-  const [messagedEmails, setMessagedEmails] = useState(() => new Set());
+  const [messagedEmails, setMessagedEmails] = useState(
+    () => new Set(Array.isArray(cached?.messagedEmails) ? cached.messagedEmails : [])
+  );
   const menuRef = useRef(null);
 
-  const fetchLists = useCallback(() => {
+  const revalidateCampaigns = useCallback(async () => {
     if (!authFetch) return;
-    authFetch(`${API}/email-lists`)
-      .then((r) => (r.ok ? r.json() : { lists: [] }))
-      .then((data) => setEmailLists(Array.isArray(data?.lists) ? data.lists : []))
-      .catch(() => {});
-  }, [authFetch]);
+    try {
+      const [listsRes, campaignsRes, messagedRes] = await Promise.all([
+        authFetch(`${API}/email-lists`),
+        authFetch(`${API}/campaigns`),
+        authFetch(`${API}/campaigns/messaged-emails`),
+      ]);
+      let nextLists = [];
+      let nextCampaigns = [];
+      let nextMessaged = [];
+      if (listsRes.ok) {
+        const data = await listsRes.json().catch(() => ({}));
+        nextLists = Array.isArray(data?.lists) ? data.lists : [];
+        setEmailLists(nextLists);
+      }
+      if (campaignsRes.ok) {
+        const data = await campaignsRes.json().catch(() => ({}));
+        nextCampaigns = data.campaigns || [];
+        setCampaigns(nextCampaigns);
+      }
+      if (messagedRes.ok) {
+        const data = await messagedRes.json().catch(() => ({}));
+        nextMessaged = Array.isArray(data?.emails) ? data.emails : [];
+        setMessagedEmails(new Set(nextMessaged.map((e) => String(e).toLowerCase())));
+      }
+      if (userId) {
+        writePageCache(userId, CAMPAIGNS_CACHE_KEY, {
+          emailLists: nextLists,
+          campaigns: nextCampaigns,
+          messagedEmails: nextMessaged.map((e) => String(e).toLowerCase()),
+        });
+      }
+      hadCacheRef.current = true;
+    } catch (_) {}
+  }, [authFetch, userId]);
+
+  const fetchLists = useCallback(() => {
+    revalidateCampaigns();
+  }, [revalidateCampaigns]);
 
   const archiveList = useCallback(async (list) => {
     if (!authFetch || !list?.id) return;
@@ -427,9 +470,8 @@ export function CampaignsPage() {
   }, [viewingList, fetchMessagedEmails]);
 
   const fetchCampaigns = useCallback(() => {
-    if (!authFetch) return;
-    authFetch(`${API}/campaigns`).then((r) => (r.ok ? r.json() : { campaigns: [] })).then((d) => setCampaigns(d.campaigns || []));
-  }, [authFetch]);
+    revalidateCampaigns();
+  }, [revalidateCampaigns]);
 
   useEffect(() => {
     fetchCampaigns();
