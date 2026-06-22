@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
   /** Refresh access token using refresh token from cookies. */
   const doRefresh = useCallback(async () => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const res = await fetch(`${API}/auth/refresh`, {
         method: 'POST',

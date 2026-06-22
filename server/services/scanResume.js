@@ -19,6 +19,17 @@ export async function resumePendingScansOnStartup() {
   const db = getDb();
   if (!db) return;
 
+  if (process.env.SCAN_RESUME_ON_STARTUP === '0' || process.env.SCAN_RESUME_ON_STARTUP === 'false') {
+    console.log('[scan resume] Skipped (SCAN_RESUME_ON_STARTUP=0)');
+    return;
+  }
+
+  const startupConcurrency = Math.min(
+    Math.max(Number(process.env.SCAN_STARTUP_CONCURRENCY) || 2, 1),
+    8
+  );
+  const staggerMs = Math.max(Number(process.env.SCAN_RESUME_STAGGER_MS) || 750, 0);
+
   try {
     const scans = await db.query(
       `SELECT id, user_id, raw_input, processed, found_count, total_urls
@@ -72,10 +83,12 @@ export async function resumePendingScansOnStartup() {
         totalUrlCount: allUrls.length,
         forceRefresh: true,
         useCache: false,
+        maxConcurrentCrawlers: startupConcurrency,
       });
 
       resumed += 1;
       console.log(`[scan resume] Re-queued scan ${row.id} (${remaining.length} URLs remaining)`);
+      if (staggerMs > 0) await new Promise((r) => setTimeout(r, staggerMs));
     }
 
     if (resumed > 0) {

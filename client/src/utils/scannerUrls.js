@@ -39,6 +39,57 @@ export function domainFromUrl(url) {
   }
 }
 
+const PROVIDER_EMAIL_DOMAINS = [
+  'gmail.com',
+  'googlemail.com',
+  'outlook.com',
+  'outlook.co.uk',
+  'live.com',
+  'msn.com',
+  'hotmail.com',
+  'hotmail.co.uk',
+  'yahoo.com',
+  'yahoo.co.uk',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+];
+
+/** @returns {'provider' | 'domain'} */
+export function classifyCampaignEmail(email, storeUrl = '') {
+  const at = String(email || '').lastIndexOf('@');
+  if (at === -1) return 'domain';
+  const emailDomain = email.slice(at + 1).toLowerCase();
+  const storeHost = domainFromUrl(storeUrl).toLowerCase();
+  const isProvider = PROVIDER_EMAIL_DOMAINS.some(
+    (p) => emailDomain === p || emailDomain.endsWith(`.${p}`)
+  );
+  if (isProvider) return 'provider';
+  if (storeHost && (emailDomain === storeHost || emailDomain.endsWith(`.${storeHost}`))) {
+    return 'domain';
+  }
+  return 'domain';
+}
+
+export function filterCampaignRecipients(recipients, { includeProvider = true, includeDomain = true } = {}) {
+  if (!Array.isArray(recipients)) return [];
+  return recipients.filter((r) => {
+    const type = classifyCampaignEmail(r.email, r.storeUrl || r.store_url);
+    if (type === 'provider') return includeProvider;
+    return includeDomain;
+  });
+}
+
+export function countCampaignEmailsByType(recipients) {
+  let provider = 0;
+  let domain = 0;
+  for (const r of recipients || []) {
+    if (classifyCampaignEmail(r.email, r.storeUrl || r.store_url) === 'provider') provider += 1;
+    else domain += 1;
+  }
+  return { provider, domain };
+}
+
 export function recipientsFromResults(results) {
   if (!Array.isArray(results)) return [];
   return results.flatMap((store) =>

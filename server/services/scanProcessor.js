@@ -5,7 +5,10 @@ import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 5, 10);
+const DEFAULT_CONCURRENCY = Math.min(
+  Number(process.env.SCAN_CONCURRENCY) || (process.env.NODE_ENV === 'production' ? 3 : 5),
+  10
+);
 const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 200;
 const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 45000;
 const MAX_URLS_PER_SCAN = 500;

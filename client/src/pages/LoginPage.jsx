@@ -70,18 +70,13 @@ export function LoginPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="animate-pulse text-blaster-muted text-sm">Loading…</div>
-      </div>
-    );
-  }
-
   if (user) return null;
 
   return (
     <AuthLayout>
+      {loading ? (
+        <p className="text-xs text-center text-blaster-muted mb-3 animate-pulse">Checking session…</p>
+      ) : null}
       <SlideInNotice
         visible={deactivatedNotice}
         type="error"
