@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Check, ChevronDown, ChevronUp, Loader, Clock, RefreshCw, X } from 'react-feather';
+import { ArrowLeft, Play, Check, Loader, Clock, RefreshCw, X, Copy, PlusCircle } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import {
   readScrapeSessionCache,
@@ -128,6 +128,159 @@ function SourceLinksModal({ source, onClose }) {
   );
 }
 
+function ConfirmedLinksPanel({
+  leads,
+  enqueuedUrls,
+  statusLabel,
+  isRunning,
+  isFailed,
+  isAccepted,
+  progress,
+  scrapedTotal,
+  verifiedCount,
+  onCopy,
+  onCopyAll,
+  onEnqueue,
+  onEnqueueAll,
+  enqueueingUrls,
+  copiedUrl,
+}) {
+  const enqueuedSet = useMemo(() => new Set(enqueuedUrls || []), [enqueuedUrls]);
+  const pendingCount = leads.filter((l) => !enqueuedSet.has(l.storeUrl)).length;
+
+  return (
+    <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
+      <div className="grid lg:grid-cols-[minmax(220px,280px)_1fr] divide-y lg:divide-y-0 lg:divide-x divide-blaster-border">
+        <div className="px-6 py-8 sm:py-10 bg-gradient-to-b from-blaster-sidebar/50 to-white flex flex-col justify-center">
+          <p className="text-xs uppercase tracking-wider text-blaster-muted font-medium">Confirmed stores</p>
+          <p className="text-5xl sm:text-6xl font-bold text-blaster-fg mt-2 tracking-tight">
+            {scrapedTotal.toLocaleString()}
+          </p>
+          {verifiedCount > 0 && verifiedCount !== scrapedTotal ? (
+            <p className="text-xs text-blaster-muted mt-1">{verifiedCount.toLocaleString()} passed DB validation</p>
+          ) : null}
+          <div className="flex items-center gap-2 mt-4 text-sm text-blaster-muted">
+            {isRunning ? <LivePulse /> : isAccepted ? <Check className="w-4 h-4 text-green-600" /> : null}
+            <span>{statusLabel}</span>
+          </div>
+          {isRunning ? (
+            <div className="mt-4">
+              <div className="h-1.5 rounded-full bg-blaster-sidebar overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blaster-accent transition-all duration-500"
+                  style={{ width: `${Math.min(100, progress)}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-blaster-muted mt-1.5">{progress}% complete</p>
+            </div>
+          ) : null}
+          {leads.length > 0 ? (
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onCopyAll}
+                className="inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copy all URLs
+              </button>
+              {pendingCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={onEnqueueAll}
+                  disabled={enqueueingUrls.size > 0}
+                  className="inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-blaster-fg text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  {enqueueingUrls.size > 0 ? 'Adding…' : `Add all to pipeline (${pendingCount})`}
+                </button>
+              ) : (
+                <p className="text-xs text-green-700 font-medium">All queued in Lead Engine</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="min-h-[280px] max-h-[min(70vh,520px)] flex flex-col">
+          <div className="px-4 py-3 border-b border-blaster-border flex items-center justify-between gap-2 shrink-0">
+            <p className="text-sm font-semibold text-blaster-fg">
+              {isRunning ? 'Live confirmed links' : isFailed ? 'Partial results' : 'Confirmed links'}
+            </p>
+            <span className="text-xs text-blaster-muted">{leads.length.toLocaleString()} shown</span>
+          </div>
+          <ul className="flex-1 overflow-y-auto divide-y divide-blaster-border">
+            {leads.length === 0 ? (
+              <li className="px-5 py-12 text-center text-sm text-blaster-muted">
+                {isRunning
+                  ? 'Waiting for Shopify API confirmation…'
+                  : isFailed
+                    ? 'No stores were confirmed before failure.'
+                    : 'No confirmed stores yet.'}
+              </li>
+            ) : (
+              leads.map((lead) => {
+                const queued = enqueuedSet.has(lead.storeUrl);
+                const isEnqueueing = enqueueingUrls.has(lead.storeUrl);
+                return (
+                  <li key={lead.storeUrl} className="px-4 py-3 flex items-start gap-3 hover:bg-blaster-sidebar/30">
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={lead.storeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blaster-fg hover:underline break-all"
+                      >
+                        {lead.storeUrl}
+                      </a>
+                      {lead.rawSignal || lead.productCount != null ? (
+                        <p className="text-[11px] text-blaster-muted mt-0.5 line-clamp-1">
+                          {[lead.productCount != null ? `${lead.productCount} products` : null, lead.rawSignal]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onCopy(lead.storeUrl)}
+                        className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-sidebar"
+                        aria-label="Copy URL"
+                        title="Copy URL"
+                      >
+                        {copiedUrl === lead.storeUrl ? (
+                          <Check className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </button>
+                      {queued ? (
+                        <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-md whitespace-nowrap">
+                          In pipeline
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onEnqueue(lead.storeUrl)}
+                          disabled={isEnqueueing}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border border-blaster-border hover:bg-blaster-sidebar disabled:opacity-50 whitespace-nowrap"
+                        >
+                          <PlusCircle className="w-3 h-3" />
+                          {isEnqueueing ? 'Adding…' : 'Add to store'}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminScrapeDashboardPage() {
   const { adminFetch } = useAdmin();
   const [job, setJob] = useState(initialScrapeCache?.job ?? null);
@@ -143,12 +296,12 @@ export function AdminScrapeDashboardPage() {
   const [resuming, setResuming] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [resettingQuota, setResettingQuota] = useState(false);
-  const [accepting, setAccepting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [showDetails, setShowDetails] = useState(false);
   const [etaSeconds, setEtaSeconds] = useState(120);
   const [sourceModal, setSourceModal] = useState(null);
+  const [copiedUrl, setCopiedUrl] = useState('');
+  const [enqueueingUrls, setEnqueueingUrls] = useState(() => new Set());
 
   const session = job?.session;
   const isRunning = job?.status === 'running';
@@ -327,24 +480,55 @@ export function AdminScrapeDashboardPage() {
     setResettingQuota(false);
   };
 
-  const acceptLeads = async () => {
-    if (!job?.id) return;
-    setAccepting(true);
+  const enqueueStores = async (urls, { all = false } = {}) => {
+    if (!job?.id || !urls.length) return;
+    const next = new Set(enqueueingUrls);
+    urls.forEach((u) => next.add(u));
+    setEnqueueingUrls(next);
     setError('');
     try {
-      const res = await adminFetch('/lead-engine/scrape/accept', {
+      const res = await adminFetch('/lead-engine/scrape/enqueue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.id }),
+        body: JSON.stringify({ jobId: job.id, urls }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to add leads');
-      setMessage(data.message || 'Leads added successfully');
-      await loadStatus();
+      if (!res.ok) throw new Error(data.error || 'Failed to add stores');
+      setMessage(
+        data.message ||
+          (all
+            ? `${data.added ?? 0} stores queued in Lead Engine`
+            : 'Store queued for processing')
+      );
+      await loadStatus(job.id);
     } catch (e) {
-      setError(e.message || 'Failed to accept leads');
+      setError(e.message || 'Failed to add stores');
     }
-    setAccepting(false);
+    setEnqueueingUrls((prev) => {
+      const s = new Set(prev);
+      urls.forEach((u) => s.delete(u));
+      return s;
+    });
+  };
+
+  const copyUrl = async (url) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrl(url);
+      setTimeout(() => setCopiedUrl(''), 2000);
+    } catch (_) {
+      setError('Could not copy to clipboard');
+    }
+  };
+
+  const copyAllUrls = async () => {
+    if (!confirmedLeads.length) return;
+    try {
+      await navigator.clipboard.writeText(confirmedLeads.map((l) => l.storeUrl).join('\n'));
+      setMessage(`Copied ${confirmedLeads.length} URL${confirmedLeads.length === 1 ? '' : 's'}`);
+    } catch (_) {
+      setError('Could not copy to clipboard');
+    }
   };
 
   const sources = useMemo(() => {
@@ -360,13 +544,28 @@ export function AdminScrapeDashboardPage() {
       }));
   }, [session?.sources, session?.verifiedLeads]);
 
+  const confirmedLeads = useMemo(() => {
+    if (session?.verifiedLeads?.length) return session.verifiedLeads;
+    const hits = session?.checkpoint?.confirmedHits || session?.confirmedLeads || [];
+    return hits.map((h) => ({
+      storeUrl: h.url || h.storeUrl,
+      source: h.source || 'Shopify API',
+      platformHint: h.platform_hint || h.platformHint,
+      rawSignal: h.raw_signal || h.rawSignal,
+      productCount: h.productCount,
+    }));
+  }, [session?.verifiedLeads, session?.checkpoint?.confirmedHits, session?.confirmedLeads]);
+
+  const enqueuedUrls = session?.enqueuedUrls || [];
+
   const scrapedTotal = useMemo(() => {
+    if (confirmedLeads.length > 0) return confirmedLeads.length;
     if (isRunning && session?.linksFound != null) return session.linksFound;
     if (sources.length > 0) return sources.reduce((sum, s) => sum + (s.count || 0), 0);
     const all = (session?.sources ?? []).filter((s) => s.name !== 'Seed list' && s.id !== 'seed');
     if (all.length) return all.reduce((sum, s) => sum + (s.count || 0), 0);
     return session?.totalGenerated ?? job?.urlsFound ?? 0;
-  }, [isRunning, session?.linksFound, sources, session?.sources, session?.totalGenerated, job?.urlsFound]);
+  }, [confirmedLeads.length, isRunning, session?.linksFound, sources, session?.sources, session?.totalGenerated, job?.urlsFound]);
 
   const progress = session?.progressPercent ?? (isRunning ? 12 : isReady || isAccepted ? 100 : 0);
   const validation = session?.validation ?? {};
@@ -385,12 +584,17 @@ export function AdminScrapeDashboardPage() {
           : null;
 
   const statusLabel = useMemo(() => {
-    if (isFailed) return 'Scrape failed';
-    if (isAccepted) return 'Completed — leads added to website';
-    if (isReady) return 'Scraping complete — ready for review';
+    if (isFailed) return session?.statusLabel || 'Scrape failed';
+    if (isAccepted) {
+      if (session?.autoEnqueued) {
+        return `${job?.storesAdded ?? session?.addedCount ?? 0} stores auto-queued in Lead Engine`;
+      }
+      return 'Completed — leads added to pipeline';
+    }
+    if (isReady) return session?.autoEnqueued ? 'Auto-queued in Lead Engine' : 'Scraping complete — ready for review';
     if (isRunning) return session?.statusLabel || 'Scraping in progress…';
     return 'No active session';
-  }, [isFailed, isAccepted, isReady, isRunning, session?.statusLabel]);
+  }, [isFailed, isAccepted, isReady, isRunning, session?.statusLabel, session?.autoEnqueued, session?.addedCount, job?.storesAdded]);
 
   const automationOn = settings.enabled && settings.intervalMinutes > 0;
   const checkpoint = session?.checkpoint;
@@ -426,8 +630,8 @@ export function AdminScrapeDashboardPage() {
           <h1 className="text-xl font-semibold text-blaster-fg">Internet Scraping Dashboard</h1>
           <p className="text-sm text-blaster-muted mt-1">
             Two-step pipeline runs automatically: (1) 15 Shopify Google searches, then (2) Shopify API
-            confirmation on every candidate. This discovers store URLs — not emails. Accept leads to queue them
-            for the Lead Engine pipeline. Scraping pauses while users run store scans.
+            confirmation. Verified stores are <strong>auto-queued in Lead Engine</strong> when scraping finishes.
+            You can also add individual stores early with <strong>Add to store</strong>.
           </p>
         </div>
       </div>
@@ -553,18 +757,28 @@ export function AdminScrapeDashboardPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-            <div className="px-6 py-8 sm:py-10 text-center border-b border-blaster-border bg-gradient-to-b from-blaster-sidebar/40 to-white">
-              <p className="text-xs uppercase tracking-wider text-blaster-muted font-medium">Total links generated</p>
-              <p className="text-5xl sm:text-6xl font-bold text-blaster-fg mt-2 tracking-tight">
-                {scrapedTotal.toLocaleString()}
-              </p>
-              <div className="flex items-center justify-center gap-2 mt-4 text-sm text-blaster-muted">
-                {isRunning ? <LivePulse /> : isAccepted ? <Check className="w-4 h-4 text-green-600" /> : null}
-                <span>{statusLabel}</span>
-              </div>
-            </div>
-          </div>
+          <ConfirmedLinksPanel
+            leads={confirmedLeads}
+            enqueuedUrls={enqueuedUrls}
+            statusLabel={statusLabel}
+            isRunning={isRunning}
+            isFailed={isFailed}
+            isAccepted={isAccepted}
+            progress={progress}
+            scrapedTotal={scrapedTotal}
+            verifiedCount={verifiedCount}
+            onCopy={copyUrl}
+            onCopyAll={copyAllUrls}
+            onEnqueue={(url) => enqueueStores([url])}
+            onEnqueueAll={() => {
+              const pending = confirmedLeads
+                .map((l) => l.storeUrl)
+                .filter((u) => !enqueuedUrls.includes(u));
+              enqueueStores(pending, { all: true });
+            }}
+            enqueueingUrls={enqueueingUrls}
+            copiedUrl={copiedUrl}
+          />
 
           {sources.length > 0 ? (
             <div>
@@ -691,84 +905,9 @@ export function AdminScrapeDashboardPage() {
                 <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5">
                   <p className="text-xs font-medium text-amber-900/70">Final verified leads</p>
                   <p className="text-3xl font-semibold text-blaster-fg mt-2">{verifiedCount.toLocaleString()}</p>
-                  <p className="text-[11px] text-amber-900/60 mt-2">Ready for verification</p>
+                  <p className="text-[11px] text-amber-900/60 mt-2">Auto-queued in Lead Engine when scrape completes</p>
                 </div>
               </div>
-            </div>
-          )}
-
-          {(isReady || isAccepted) && verifiedCount > 0 && (
-            <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-              <div className="px-6 py-6 border-b border-blaster-border bg-blaster-sidebar/30">
-                <div className="flex items-center gap-2 text-green-700">
-                  <Check className="w-5 h-5" />
-                  <span className="text-lg font-semibold">Verified leads: {verifiedCount.toLocaleString()}</span>
-                </div>
-                <ul className="mt-3 space-y-1 text-xs text-blaster-muted">
-                  <li>✓ Total links passed all checks</li>
-                  <li>✓ Not in database</li>
-                  <li>✓ Not duplicated in batch</li>
-                </ul>
-              </div>
-              <div className="px-6 py-5 flex flex-wrap gap-3 items-center">
-                {!isAccepted ? (
-                  <button
-                    type="button"
-                    onClick={acceptLeads}
-                    disabled={accepting || !isReady}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-semibold hover:opacity-90 disabled:opacity-50"
-                  >
-                    {accepting ? 'Adding…' : 'Accept & add these leads to website'}
-                  </button>
-                ) : (
-                  <p className="text-sm text-green-800 font-medium">
-                    ✓ {job.storesAdded?.toLocaleString() ?? verifiedCount.toLocaleString()} leads added
-                    {session?.acceptedAt ? ` · ${new Date(session.acceptedAt).toLocaleString()}` : ''}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowDetails((v) => !v)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
-                >
-                  {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  Review details
-                </button>
-              </div>
-              {showDetails && session?.verifiedLeads?.length > 0 ? (
-                <div className="border-t border-blaster-border max-h-80 overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-blaster-sidebar text-left text-xs text-blaster-muted sticky top-0">
-                      <tr>
-                        <th className="px-4 py-2">Store URL</th>
-                        <th className="px-4 py-2">Source</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-blaster-border">
-                      {session.verifiedLeads.slice(0, 200).map((lead) => (
-                        <tr key={lead.storeUrl} className="hover:bg-blaster-sidebar/40">
-                          <td className="px-4 py-2 max-w-md truncate">
-                            <a
-                              href={lead.storeUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blaster-fg hover:underline"
-                            >
-                              {lead.storeUrl}
-                            </a>
-                          </td>
-                          <td className="px-4 py-2 text-blaster-muted">{lead.source}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {session.verifiedLeads.length > 200 ? (
-                    <p className="text-xs text-blaster-muted px-4 py-2 border-t border-blaster-border">
-                      Showing 200 of {session.verifiedLeads.length.toLocaleString()} leads
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           )}
 

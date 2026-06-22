@@ -275,6 +275,13 @@ export async function runScrapeDiscoverySession(onProgress, options = {}) {
       dorkCandidates: dorkResult.hits?.length ?? 0,
     },
     verifiedLeads,
+    confirmedLeads: shopifyResult.hits.map((h) => ({
+      storeUrl: h.url,
+      source: 'Shopify API',
+      platformHint: h.platform_hint,
+      rawSignal: h.raw_signal,
+      productCount: h.productCount,
+    })),
     duplicateLeads: duplicates.slice(0, 500),
     dbRecentLeads: dbRecentLeads.slice(0, 500),
     modules: {

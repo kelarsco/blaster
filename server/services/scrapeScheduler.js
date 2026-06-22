@@ -11,6 +11,8 @@ import {
   saveScrapeSettings,
 } from './leadStoreRepository.js';
 import { runScrapeDiscoverySession } from './leadScraper.js';
+import { enqueueLeadStores } from './leadStoreRepository.js';
+import { kickLeadEngineWorker } from './leadEngineWorker.js';
 
 let schedulerTimer = null;
 let schedulerBootstrapped = false;
@@ -68,18 +70,95 @@ async function markScrapeRunComplete() {
 
 const MAX_RUNNING_MS = 25 * 60 * 1000;
 
+/** Enqueue one or more store URLs from a scrape session into the Lead Engine pipeline. */
+export async function enqueueScrapeStores(jobId, urls) {
+  const job = await getScrapeJobById(jobId);
+  if (!job) return { ok: false, error: 'Scrape session not found' };
+
+  const allowed = new Set(['running', 'ready', 'failed', 'accepted']);
+  if (!allowed.has(job.status)) {
+    return { ok: false, error: 'Cannot enqueue stores for this session' };
+  }
+
+  const list = [...new Set((urls || []).map((u) => String(u).trim()).filter(Boolean))];
+  if (!list.length) return { ok: false, error: 'No URLs provided' };
+
+  const { added, skipped } = await enqueueLeadStores(list, 'scraping');
+  kickLeadEngineWorker();
+
+  const enqueuedUrls = [...new Set([...(job.session?.enqueuedUrls || []), ...added, ...skipped])];
+  const acceptedAt = job.session?.acceptedAt || (added.length || skipped.length ? new Date().toISOString() : null);
+  const updatedSession = {
+    ...job.session,
+    enqueuedUrls,
+    addedCount: enqueuedUrls.length,
+    ...(acceptedAt ? { acceptedAt } : {}),
+    statusLabel:
+      added.length > 0
+        ? `${added.length} store${added.length === 1 ? '' : 's'} queued in Lead Engine`
+        : job.session?.statusLabel,
+  };
+
+  const verifiedUrls = (job.session?.verifiedLeads || []).map((l) => l.storeUrl).filter(Boolean);
+  const allVerifiedEnqueued =
+    verifiedUrls.length > 0 && verifiedUrls.every((u) => enqueuedUrls.includes(u));
+  const shouldMarkAccepted = job.status === 'ready' && allVerifiedEnqueued;
+
+  if (shouldMarkAccepted) {
+    await completeScrapeJob(jobId, {
+      urlsFound: job.urlsFound ?? job.session?.totalGenerated ?? 0,
+      storesAdded: enqueuedUrls.length,
+      status: 'accepted',
+      session: { ...updatedSession, statusLabel: 'Added to Lead Engine pipeline' },
+    });
+  } else {
+    await updateScrapeJobSession(jobId, updatedSession, job.status);
+  }
+
+  return { ok: true, added: added.length, skipped: skipped.length, enqueuedUrls };
+}
+
+async function finalizeScrapeJob(jobId, session, trigger) {
+  const fullSession = { ...session, trigger };
+  const urls = (session.verifiedLeads || []).map((l) => l.storeUrl).filter(Boolean);
+
+  if (!urls.length) {
+    await completeScrapeJob(jobId, {
+      urlsFound: session.totalGenerated ?? 0,
+      storesAdded: 0,
+      status: 'ready',
+      session: fullSession,
+    });
+    await markScrapeRunComplete();
+    return;
+  }
+
+  const { added, skipped } = await enqueueLeadStores(urls, 'scraping');
+  kickLeadEngineWorker();
+  const enqueuedUrls = [...new Set([...added, ...skipped])];
+
+  await completeScrapeJob(jobId, {
+    urlsFound: session.totalGenerated ?? 0,
+    storesAdded: added.length,
+    status: 'accepted',
+    session: {
+      ...fullSession,
+      enqueuedUrls,
+      addedCount: enqueuedUrls.length,
+      acceptedAt: new Date().toISOString(),
+      autoEnqueued: true,
+      statusLabel: `${added.length} store${added.length === 1 ? '' : 's'} auto-queued in Lead Engine`,
+    },
+  });
+  await markScrapeRunComplete();
+}
+
 function runDiscoveryForJob(jobId, trigger, resumeFrom = null) {
   return runScrapeDiscoverySession(async (patch) => {
     await updateScrapeJobSession(jobId, { ...patch, trigger }, 'running');
   }, resumeFrom ? { resumeFrom } : undefined)
     .then(async (session) => {
-      await completeScrapeJob(jobId, {
-        urlsFound: session.totalGenerated,
-        storesAdded: 0,
-        status: 'ready',
-        session: { ...session, trigger },
-      });
-      await markScrapeRunComplete();
+      await finalizeScrapeJob(jobId, session, trigger);
     })
     .catch(async (e) => {
       const job = await getScrapeJobById(jobId);

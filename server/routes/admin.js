@@ -17,7 +17,7 @@ import {
   countQualifiedStoresNeedingTagRefresh,
   clearTagClassificationForAllQualified,
 } from '../services/leadStoreRepository.js';
-import { startLeadScrapeSession, applyScrapeScheduleSettings, ensureScrapeJobFresh, resumeLeadScrapeSession } from '../services/scrapeScheduler.js';
+import { startLeadScrapeSession, applyScrapeScheduleSettings, ensureScrapeJobFresh, resumeLeadScrapeSession, enqueueScrapeStores } from '../services/scrapeScheduler.js';
 import { getSerpQuotaStatus, resetSerpDailyQuota } from '../services/serpQuota.js';
 import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
 import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
@@ -774,30 +774,42 @@ adminRoutes.post('/lead-engine/scrape/accept', async (req, res) => {
 
     const verified = job.session?.verifiedLeads || [];
     const urls = verified.map((l) => l.storeUrl).filter(Boolean);
-    const { added } = await enqueueLeadStores(urls, 'scraping');
-    kickLeadEngineWorker();
-
-    const acceptedSession = {
-      ...job.session,
-      acceptedAt: new Date().toISOString(),
-      addedCount: added.length,
-      statusLabel: 'Added to website',
-    };
-    await completeScrapeJob(job.id, {
-      urlsFound: job.urlsFound ?? job.session?.totalGenerated ?? 0,
-      storesAdded: added.length,
-      status: 'accepted',
-      session: acceptedSession,
-    });
+    const result = await enqueueScrapeStores(job.id, urls);
+    if (!result.ok) return res.status(400).json({ error: result.error || 'Failed to add leads' });
 
     res.json({
       ok: true,
-      added: added.length,
-      acceptedAt: acceptedSession.acceptedAt,
-      message: `${added.length.toLocaleString()} lead${added.length === 1 ? '' : 's'} added to the pipeline`,
+      added: result.added,
+      skipped: result.skipped,
+      acceptedAt: new Date().toISOString(),
+      message: `${result.added.toLocaleString()} lead${result.added === 1 ? '' : 's'} added to the pipeline`,
     });
   } catch (e) {
     console.error('[lead-engine scrape accept]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to add leads' });
+  }
+});
+
+adminRoutes.post('/lead-engine/scrape/enqueue', async (req, res) => {
+  try {
+    const jobId = String(req.body?.jobId || '').trim();
+    if (!jobId) return res.status(400).json({ error: 'jobId is required' });
+    const raw = req.body?.urls ?? req.body?.url;
+    const urls = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const result = await enqueueScrapeStores(jobId, urls);
+    if (!result.ok) return res.status(400).json({ error: result.error || 'Failed to enqueue stores' });
+    res.json({
+      ok: true,
+      added: result.added,
+      skipped: result.skipped,
+      enqueuedUrls: result.enqueuedUrls,
+      message:
+        result.added > 0
+          ? `${result.added} store${result.added === 1 ? '' : 's'} queued for processing`
+          : 'Store already in pipeline',
+    });
+  } catch (e) {
+    console.error('[lead-engine scrape enqueue]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to enqueue stores' });
   }
 });
