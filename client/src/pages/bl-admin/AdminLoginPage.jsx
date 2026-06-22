@@ -29,7 +29,12 @@ export function AdminLoginPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Invalid code');
-      await refetchAdmin();
+      const sessionOk = await refetchAdmin();
+      if (!sessionOk) {
+        throw new Error(
+          'Code accepted but session could not be saved. Clear site cookies for wiblaster.com and try again.'
+        );
+      }
       navigate('/bl-admin/overview', { replace: true });
     } catch (err) {
       setError(err?.message || 'Authentication failed');
