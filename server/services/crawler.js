@@ -1,29 +1,32 @@
 /**
- * Store crawler: privacy policy first, then contact + homepage in parallel.
+ * Simple store crawler: privacy policy → contact → homepage (sequential).
+ * Stops as soon as emails are found on any page.
  */
 import https from 'https';
 import http from 'http';
+import { collectEmailsFromHtml } from './emailExtractor.js';
 
 const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 12000;
-const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 400;
+const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 450;
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const PRIVACY_PATHS = [
   '/policies/privacy-policy',
   '/privacy-policy',
-  '/privacy',
+  '/policies/privacy',
+  '/policies',
   '/pages/privacy-policy',
+  '/privacy',
 ];
 
-const SUPPORT_PATHS = [
-  '/pages/contact',
-  '/pages/contact-us',
-  '/contact',
-  '/',
-];
+const CONTACT_PATHS = ['/contact', '/contact-us', '/pages/contact', '/pages/contact-us'];
 
-const URL_TOKEN_REGEX = /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
+const HOME_PATHS = ['/', '/home'];
+
+const URL_TOKEN_REGEX =
+  /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
 
 function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -116,47 +119,70 @@ async function fetchPage(url) {
 }
 
 /**
- * Crawl a store:
- * 1) Try privacy-policy paths until one succeeds.
- * 2) Fetch contact + homepage paths in parallel (always — emails often live there).
+ * Crawl a store in order: privacy policy paths → contact → homepage.
+ * Stops as soon as any page yields at least one valid email.
  */
 export async function crawlStore(storeUrl) {
   const pages = [];
-  const seenPages = new Set();
-  const addPage = (page) => {
-    if (!page || seenPages.has(page.url)) return;
-    seenPages.add(page.url);
-    pages.push(page);
-  };
-
+  const seen = new Set();
   const normalized = normalizeStoreUrl(storeUrl);
+
   if (!normalized) {
-    return { pages, privacyPageFound: false, privacyPageUrl: null, fallbackUsed: false };
+    return { pages, privacyPageFound: false, fallbackUsed: false };
   }
 
   let privacyPageFound = false;
-  let privacyPageUrl = null;
+  let requestCount = 0;
 
-  for (let i = 0; i < PRIVACY_PATHS.length; i += 1) {
-    if (i > 0) await delay(DELAY_BETWEEN_PAGES_MS);
-    const url = pageUrl(normalized, PRIVACY_PATHS[i]);
+  async function visit(path) {
+    const url = pageUrl(normalized, path);
+    if (seen.has(url)) return null;
+    seen.add(url);
+    if (requestCount > 0) await delay(DELAY_BETWEEN_PAGES_MS);
+    requestCount += 1;
     const page = await fetchPage(url);
-    if (page) {
-      addPage(page);
-      privacyPageFound = true;
-      privacyPageUrl = url;
-      break;
+    if (page) pages.push(page);
+    return page;
+  }
+
+  function pageHasEmails(page) {
+    if (!page) return false;
+    const emails = collectEmailsFromHtml(page.url, page.html);
+    if (emails.length > 0 && process.env.SCAN_DEBUG === '1') {
+      console.log(`[crawler] ${normalized} — found ${emails.length} email(s) on ${page.url}`);
+    }
+    return emails.length > 0;
+  }
+
+  for (const path of PRIVACY_PATHS) {
+    const page = await visit(path);
+    if (!page) continue;
+    privacyPageFound = true;
+    if (pageHasEmails(page)) {
+      return { pages, privacyPageFound, fallbackUsed: false };
+    }
+    break;
+  }
+
+  for (const path of CONTACT_PATHS) {
+    const page = await visit(path);
+    if (!page) continue;
+    if (pageHasEmails(page)) {
+      return { pages, privacyPageFound, fallbackUsed: true };
+    }
+    break;
+  }
+
+  for (const path of HOME_PATHS) {
+    const page = await visit(path);
+    if (page && pageHasEmails(page)) {
+      return { pages, privacyPageFound, fallbackUsed: true };
     }
   }
 
-  const supportUrls = SUPPORT_PATHS.map((path) => pageUrl(normalized, path)).filter((url) => !seenPages.has(url));
-  if (supportUrls.length > 0) {
-    if (privacyPageFound) await delay(DELAY_BETWEEN_PAGES_MS);
-    const supportPages = await Promise.all(supportUrls.map((url) => fetchPage(url)));
-    supportPages.forEach(addPage);
-  }
-
-  const fallbackUsed = pages.some((p) => !p.url.includes('privacy') && !p.url.includes('policies'));
-
-  return { pages, privacyPageFound, privacyPageUrl, fallbackUsed };
+  return {
+    pages,
+    privacyPageFound,
+    fallbackUsed: pages.some((p) => !p.url.includes('privacy') && !p.url.includes('policies')),
+  };
 }

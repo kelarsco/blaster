@@ -57,12 +57,24 @@ function normalizeDomain(domain) {
   return null;
 }
 
+function stripPlusAlias(local) {
+  if (!local || !local.includes('+')) return local;
+  const plusIdx = local.indexOf('+');
+  const before = local.slice(0, plusIdx);
+  const after = local.slice(plusIdx + 1);
+  if (FRENCH_ADDRESS_LOCAL_PREFIX.test(before) || /^(?:addresse|adresse|tag|alias|email)$/i.test(before)) {
+    return (after || before).replace(/^\+/, '');
+  }
+  return before;
+}
+
 function normalizeEmail(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const s = raw.trim().replace(/^mailto:/i, '').split(/[?&,;]+/)[0].trim();
   const at = s.indexOf('@');
   if (at <= 0 || at >= s.length - 1) return null;
   let local = stripFrenchAddressLocalPrefix(s.slice(0, at).trim().toLowerCase());
+  local = stripPlusAlias(local);
   const domain = normalizeDomain(s.slice(at + 1).trim());
   if (!local || !domain) return null;
   return `${local}@${domain}`;
@@ -241,6 +253,19 @@ function extractFromPage(url, html) {
     }
   }
 
+  return out;
+}
+
+/** Return unique canonical emails found in a single HTML page. */
+export function collectEmailsFromHtml(url, html) {
+  const candidates = extractFromPage(url, html);
+  const seen = new Set();
+  const out = [];
+  for (const c of candidates) {
+    if (!c?.email || seen.has(c.email)) continue;
+    seen.add(c.email);
+    out.push(c.email);
+  }
   return out;
 }
 

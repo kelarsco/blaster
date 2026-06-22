@@ -1,14 +1,14 @@
 /**
- * Scan processor: cache check, priority crawler, one-email-per-store.
+ * Scan processor: crawl stores, extract one email per store, write results.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { getDb, memoryStore } from '../db.js';
 
-const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 2, 8);
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 600;
-const CACHE_TTL_DAYS = Number(process.env.SCAN_CACHE_TTL_DAYS) || 7;
+const DEFAULT_CONCURRENCY = Math.min(Number(process.env.SCAN_CONCURRENCY) || 3, 8);
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 500;
 const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
+const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
 function parseUrls(text) {
@@ -73,26 +73,16 @@ export async function processScan(payload) {
   const {
     scanId,
     rawInput,
-    userId,
-    emailFilters: rawEmailFilters = {},
     maxConcurrentCrawlers,
     maxUrlsPerScan,
-    forceRefresh = true,
-    useCache = false,
   } = payload;
-
-  const emailFilters = {
-    includeProviders: Array.isArray(rawEmailFilters.includeProviders)
-      ? rawEmailFilters.includeProviders
-      : Array.isArray(rawEmailFilters.include_providers)
-        ? rawEmailFilters.include_providers
-        : [],
-    onePerStore: rawEmailFilters.onePerStore !== false,
-  };
 
   const db = getDb();
   let urls = parseUrls(rawInput || '');
-  const cap = typeof maxUrlsPerScan === 'number' && maxUrlsPerScan > 0 ? Math.min(maxUrlsPerScan, 5000) : 1000;
+  const cap =
+    typeof maxUrlsPerScan === 'number' && maxUrlsPerScan > 0
+      ? Math.min(maxUrlsPerScan, MAX_URLS_PER_SCAN)
+      : MAX_URLS_PER_SCAN;
   urls = urls.slice(0, cap);
   let processed = payload.initialProcessed ?? 0;
   let foundCount = payload.initialFoundCount ?? 0;
@@ -131,38 +121,6 @@ export async function processScan(payload) {
     }
   }
 
-  const cacheUserId = userId || null;
-  const cacheCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
-
-  async function getCachedResult(storeUrl) {
-    if (!db || !cacheUserId || forceRefresh || !useCache) return null;
-    try {
-      const r = await db.query(
-        `SELECT email, source_page, source_type, platform FROM scan_cache
-         WHERE store_url = $1 AND user_id = $2 AND cached_at > $3`,
-        [storeUrl, cacheUserId, cacheCutoff]
-      );
-      const row = r.rows?.[0];
-      return row ? { email: row.email, source_page: row.source_page, source_type: row.source_type, platform: row.platform } : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  async function setCachedResult(storeUrl, email, sourcePage, sourceType, platform) {
-    if (!db || !cacheUserId) return;
-    try {
-      await db.query(
-        `INSERT INTO scan_cache (store_url, user_id, email, source_page, source_type, platform, cached_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (store_url, user_id) DO UPDATE SET
-           email = EXCLUDED.email, source_page = EXCLUDED.source_page,
-           source_type = EXCLUDED.source_type, platform = EXCLUDED.platform, cached_at = NOW()`,
-        [storeUrl, cacheUserId, email || null, sourcePage || null, sourceType || null, platform || null]
-      );
-    } catch (_) {}
-  }
-
   function processOneWithTimeout(storeUrl) {
     const timeoutPromise = new Promise((resolve) => {
       const t = setTimeout(() => {
@@ -172,29 +130,11 @@ export async function processScan(payload) {
     });
     const workPromise = (async () => {
       try {
-        const wantAllEmails = emailFilters.onePerStore === false;
-        if (!wantAllEmails) {
-          const cached = await getCachedResult(storeUrl);
-          if (cached) {
-            const results = cached.email
-              ? [{ email: cached.email, storeUrl, sourcePage: cached.source_page || '', sourceType: cached.source_type, platform: cached.platform }]
-              : [];
-            return { storeUrl, results };
-          }
-        }
-
         const crawl = await crawlStore(storeUrl);
         const results = extractEmailsFromPages(storeUrl, crawl.pages, {
-          ...emailFilters,
+          onePerStore: true,
           privacyPageFound: crawl.privacyPageFound,
-          fallbackUsed: crawl.fallbackUsed,
         });
-        const best = results[0];
-        if (best?.email) {
-          await setCachedResult(storeUrl, best.email, best.sourcePage, best.sourceType || null, best.platform || null);
-        } else {
-          await setCachedResult(storeUrl, null, null, null, null);
-        }
         const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
         return { storeUrl, results, noEmailReason };
       } catch (err) {
@@ -202,7 +142,9 @@ export async function processScan(payload) {
         return { storeUrl, results: [], noEmailReason: 'No Email Found' };
       }
     })();
-    return Promise.race([workPromise, timeoutPromise]).then((r) => (r.timedOut ? { storeUrl: r.storeUrl, results: [] } : r));
+    return Promise.race([workPromise, timeoutPromise]).then((r) =>
+      r.timedOut ? { storeUrl: r.storeUrl, results: [], noEmailReason: 'Request timed out' } : r
+    );
   }
 
   const concurrency =
@@ -214,7 +156,9 @@ export async function processScan(payload) {
     if (i > 0) await sleep(DELAY_BETWEEN_STORES_MS);
     const batch = urls.slice(i, i + concurrency);
     if (process.env.SCAN_DEBUG === '1') {
-      console.log(`[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`);
+      console.log(
+        `[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`
+      );
     }
     const settled = await Promise.allSettled(batch.map((storeUrl) => processOneWithTimeout(storeUrl)));
     const outcomes = settled.map((s, idx) => {

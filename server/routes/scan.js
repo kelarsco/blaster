@@ -22,7 +22,7 @@ function parseUrls(text) {
       urls.push(normalized);
     }
   }
-  return urls.slice(0, 1000);
+  return urls.slice(0, 500);
 }
 
 scanRoutes.get('/recent', requireAuth, async (req, res) => {
@@ -119,8 +119,8 @@ scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
     if (allUrls.length === 0) {
       return res.status(400).json({ error: 'No valid URLs provided' });
     }
-    if (allUrls.length > 1000) {
-      return res.status(400).json({ error: 'Maximum 1000 URLs per scan' });
+    if (allUrls.length > 500) {
+      return res.status(400).json({ error: 'Maximum 500 URLs per scan' });
     }
     const excludeSet = new Set([...excludeStoreUrls].map((u) => (u || '').trim()).filter(Boolean));
     let previousRows = [];

@@ -25,6 +25,7 @@ export function ScannerWorkspace({
           </h2>
           <p className="text-xs text-blaster-muted mt-0.5">
             {urlCount} valid URL{urlCount !== 1 ? 's' : ''} detected
+            {urlCount > 500 ? ' · max 500 per scan' : ''}
             {csvName ? ` · ${csvName}` : ''}
           </p>
         </div>

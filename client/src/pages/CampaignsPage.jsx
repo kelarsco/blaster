@@ -38,7 +38,7 @@ function formatEmailMobile(email) {
   return `${value.slice(0, 4)}..`;
 }
 
-function SavedCampaignTile({ list, onClick, onRemove }) {
+function SavedCampaignTile({ list, onClick, onRemove, allMessaged }) {
   const clickTimer = useRef(null);
   const count = list.recipients?.length ?? 0;
 
@@ -67,9 +67,17 @@ function SavedCampaignTile({ list, onClick, onRemove }) {
       title="Click to open. Double-click to remove."
       className="group relative flex flex-col items-center justify-center aspect-square w-[148px] sm:w-[156px] rounded-2xl border border-blaster-border bg-white shadow-sm hover:shadow-md hover:border-blaster-accent/35 hover:-translate-y-0.5 transition-all duration-300 p-4"
     >
-      <span className="absolute top-2.5 right-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
+      <span className="absolute top-2.5 left-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
         {count}
       </span>
+      {allMessaged ? (
+        <span
+          className="absolute top-2.5 right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-black"
+          aria-label="All contacts messaged"
+        >
+          <CheckIcon className="w-3 h-3 text-white" />
+        </span>
+      ) : null}
       <span className="text-sm font-semibold text-blaster-fg text-center line-clamp-3 leading-snug px-1">
         {list.name}
       </span>
@@ -527,14 +535,21 @@ export function CampaignsPage() {
           </div>
         ) : (
           <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
-            {emailLists.map((list) => (
-              <SavedCampaignTile
-                key={list.id}
-                list={list}
-                onClick={() => setViewingList(list)}
-                onRemove={() => archiveList(list)}
-              />
-            ))}
+            {emailLists.map((list) => {
+              const recipients = list.recipients || [];
+              const allMessaged =
+                recipients.length > 0 &&
+                recipients.every((r) => messagedEmails.has(String(r.email || '').toLowerCase()));
+              return (
+                <SavedCampaignTile
+                  key={list.id}
+                  list={list}
+                  allMessaged={allMessaged}
+                  onClick={() => setViewingList(list)}
+                  onRemove={() => archiveList(list)}
+                />
+              );
+            })}
           </div>
         )}
       </section>

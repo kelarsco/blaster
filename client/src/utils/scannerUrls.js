@@ -28,7 +28,7 @@ export function parseUrls(text) {
     seen.add(normalized);
     urls.push(normalized);
   }
-  return urls.slice(0, 1000);
+  return urls.slice(0, 500);
 }
 
 export function domainFromUrl(url) {

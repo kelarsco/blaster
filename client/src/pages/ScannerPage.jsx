@@ -47,8 +47,8 @@ export default function ScannerPage() {
     setIsStarting(true);
 
     try {
-      const maxConcurrentCrawlers = 2;
-      const maxUrlsPerScan = 1000;
+      const maxConcurrentCrawlers = 3;
+      const maxUrlsPerScan = 500;
 
       const urls = parseUrls(rawUrls);
       if (!urls.length) throw new Error('Add at least one valid store URL.');
