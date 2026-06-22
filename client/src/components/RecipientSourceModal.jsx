@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Upload } from 'react-feather';
+import React, { useCallback, useRef, useState } from 'react';
+import { Upload, Search } from 'react-feather';
+import { useNavigate } from 'react-router-dom';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,7 +18,7 @@ function parseCsv(text) {
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(',').map((c) => c.trim().replace(/^["']|["']$/g, ''));
     const email = useFirstAsEmail ? (cells[0] || '').trim() : (cells[emailIdx] || '').trim();
-    const storeUrl = (urlIdx >= 0 && cells[urlIdx]) ? cells[urlIdx].trim() : '';
+    const storeUrl = urlIdx >= 0 && cells[urlIdx] ? cells[urlIdx].trim() : '';
     if (email && EMAIL_REGEX.test(email)) {
       rows.push({ email, storeUrl: storeUrl || email });
     }
@@ -25,17 +26,13 @@ function parseCsv(text) {
   return rows;
 }
 
-function SavedListTile({ list, selected, onClick }) {
+function SavedListTile({ list, onClick }) {
   const count = list.recipients?.length ?? 0;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`${TILE_BASE} ${
-        selected
-          ? 'border-blaster-accent ring-2 ring-blaster-accent/30'
-          : 'border-blaster-border'
-      }`}
+      className={`${TILE_BASE} border-blaster-border`}
     >
       <span className="absolute top-2.5 right-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
         {count}
@@ -48,7 +45,7 @@ function SavedListTile({ list, selected, onClick }) {
   );
 }
 
-function CsvUploadTile({ onFileChange, count }) {
+function CsvUploadTile({ onFileChange }) {
   const fileRef = useRef(null);
 
   return (
@@ -58,16 +55,11 @@ function CsvUploadTile({ onFileChange, count }) {
         onClick={() => fileRef.current?.click()}
         className={`${TILE_BASE} border-dashed border-blaster-border cursor-pointer`}
       >
-        {count > 0 && (
-          <span className="absolute top-2.5 right-2.5 min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 border border-blaster-accent/20 text-[10px] font-semibold text-blaster-fg">
-            {count}
-          </span>
-        )}
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blaster-accent/15 to-blaster-orange/25 border border-blaster-accent/20 group-hover:from-blaster-accent/25 group-hover:to-blaster-orange/35 transition">
           <Upload className="w-6 h-6 text-blaster-accent" strokeWidth={1.75} />
         </span>
         <span className="text-sm font-semibold text-blaster-fg text-center mt-2">Upload CSV</span>
-        <span className="text-[10px] text-blaster-muted mt-1">{count > 0 ? 'contacts' : 'Import a file'}</span>
+        <span className="text-[10px] text-blaster-muted mt-1">Import a file</span>
       </button>
       <input
         ref={fileRef}
@@ -80,52 +72,51 @@ function CsvUploadTile({ onFileChange, count }) {
   );
 }
 
-export function RecipientSourceModal({ onClose, onContinueScanned, onContinueCsv, onContinueSavedLists, scannedCount, emailLists = [] }) {
-  const [csvRecipients, setCsvRecipients] = useState([]);
+function ScannerTile({ onClick }) {
+  return (
+    <button type="button" onClick={onClick} className={`${TILE_BASE} border-blaster-border`}>
+      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blaster-accent/15 to-blaster-orange/25 border border-blaster-accent/20 group-hover:from-blaster-accent/25 group-hover:to-blaster-orange/35 transition">
+        <Search className="w-6 h-6 text-blaster-accent" strokeWidth={1.75} />
+      </span>
+      <span className="text-sm font-semibold text-blaster-fg text-center mt-2">App Scanner</span>
+      <span className="text-[10px] text-blaster-muted mt-1">Scan store URLs</span>
+    </button>
+  );
+}
+
+export function RecipientSourceModal({
+  onClose,
+  onOpenList,
+  onCsvReady,
+  emailLists = [],
+}) {
+  const navigate = useNavigate();
   const [csvError, setCsvError] = useState('');
-  const [selectedListIds, setSelectedListIds] = useState(new Set());
 
-  const toggleSavedList = useCallback((id) => {
-    setSelectedListIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const savedListsRecipients = selectedListIds.size > 0
-    ? (() => {
-        const combined = emailLists
-          .filter((l) => selectedListIds.has(l.id))
-          .flatMap((l) => l.recipients || []);
-        const byEmail = new Map();
-        for (const r of combined) {
-          if (r.email && !byEmail.has(r.email.toLowerCase())) byEmail.set(r.email.toLowerCase(), r);
+  const onFileChange = useCallback(
+    (e) => {
+      const file = e.target.files?.[0];
+      setCsvError('');
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const text = reader.result || '';
+          const rows = parseCsv(text);
+          if (rows.length === 0) {
+            setCsvError('No valid email addresses found. Use an "email" column or put emails in the first column.');
+            return;
+          }
+          onCsvReady?.(rows);
+        } catch {
+          setCsvError('Could not parse CSV.');
         }
-        return [...byEmail.values()];
-      })()
-    : [];
-
-  const onFileChange = useCallback((e) => {
-    const file = e.target.files?.[0];
-    setCsvError('');
-    setCsvRecipients([]);
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const text = reader.result || '';
-        const rows = parseCsv(text);
-        setCsvRecipients(rows);
-        if (rows.length === 0) setCsvError('No valid email addresses found in the CSV. Ensure the file has an "email" column or that the first column contains emails.');
-      } catch {
-        setCsvError('Could not parse CSV.');
-      }
-    };
-    reader.readAsText(file, 'UTF-8');
-    e.target.value = '';
-  }, []);
+      };
+      reader.readAsText(file, 'UTF-8');
+      e.target.value = '';
+    },
+    [onCsvReady]
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -134,60 +125,38 @@ export function RecipientSourceModal({ onClose, onContinueScanned, onContinueCsv
         onClick={(e) => e.stopPropagation()}
       >
         <div className="card-header-mobile flex items-center justify-between shrink-0">
-          <h2 className="card-title-mobile">Choose email list</h2>
+          <h2 className="card-title-mobile">New campaign</h2>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-border/50">
             ×
           </button>
         </div>
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
-          <p className="text-sm text-blaster-muted">Select one or more saved lists to run the campaign for.</p>
+          <p className="text-sm text-blaster-muted">
+            Open a saved list, upload a CSV, or scan stores — all use the same campaign setup.
+          </p>
 
           <div className="flex flex-wrap gap-4">
-            {emailLists.length > 0 && onContinueSavedLists
-              ? emailLists.map((list) => (
-                  <SavedListTile
-                    key={list.id}
-                    list={list}
-                    selected={selectedListIds.has(list.id)}
-                    onClick={() => toggleSavedList(list.id)}
-                  />
-                ))
-              : null}
-            {onContinueCsv ? (
-              <CsvUploadTile onFileChange={onFileChange} count={csvRecipients.length} />
-            ) : null}
+            <ScannerTile
+              onClick={() => {
+                onClose();
+                navigate('/app/scanner');
+              }}
+            />
+            <CsvUploadTile onFileChange={onFileChange} />
+            {emailLists.map((list) => (
+              <SavedListTile
+                key={list.id}
+                list={list}
+                onClick={() => onOpenList?.(list)}
+              />
+            ))}
           </div>
 
-          {emailLists.length === 0 && onContinueSavedLists && (
-            <p className="text-sm text-blaster-muted">No saved lists yet. Upload a CSV or save a list from the Scanner page.</p>
+          {emailLists.length === 0 && (
+            <p className="text-sm text-blaster-muted">No saved lists yet. Upload a CSV or scan stores on the Scanner page.</p>
           )}
 
           {csvError && <p className="text-xs text-red-600">{csvError}</p>}
-
-          {selectedListIds.size > 0 && (
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <span className="text-sm text-blaster-muted">{savedListsRecipients.length} email{savedListsRecipients.length !== 1 ? 's' : ''} selected</span>
-              <button
-                type="button"
-                onClick={() => onContinueSavedLists(savedListsRecipients)}
-                className="btn-blaster-accent text-sm"
-              >
-                Continue with {savedListsRecipients.length} emails
-              </button>
-            </div>
-          )}
-
-          {csvRecipients.length > 0 && onContinueCsv && (
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => onContinueCsv(csvRecipients)}
-                className="btn-blaster-accent text-sm"
-              >
-                Continue with {csvRecipients.length} email{csvRecipients.length !== 1 ? 's' : ''}
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { API } from '../api.js';
 import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
+import { createEmailList } from '../utils/createEmailList.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
 import { ScannerLanding } from '../components/scanner/ScannerLanding.jsx';
 import { ScannerWorkspace } from '../components/scanner/ScannerWorkspace.jsx';
@@ -96,15 +97,8 @@ export default function ScannerPage() {
       const recipients = recipientsFromResults(batch.results);
       if (!recipients.length) throw new Error('No emails to save');
 
-      const res = await authFetch(`${API}/email-lists`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, recipients }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to save campaign');
-
-      navigate('/app/campaigns', { state: { highlightListId: data.list?.id } });
+      const list = await createEmailList(authFetch, { name, recipients });
+      navigate('/app/campaigns', { state: { highlightListId: list.id } });
     },
     [authFetch, navigate]
   );

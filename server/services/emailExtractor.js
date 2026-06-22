@@ -387,6 +387,8 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const list = rankEmailCandidates([...byEmail.values()], storeHost);
   if (list.length === 0) return [];
 
+  const selected = onePerStore ? list.slice(0, 1) : list.slice(0, maxEmails);
+
   return selected.map((row) => ({
     email: row.email,
     storeUrl: row.storeUrl,
