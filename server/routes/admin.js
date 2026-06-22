@@ -9,15 +9,15 @@ import {
   listLeadStores,
   enqueueLeadStores,
   requeueRejectedLeadStores,
-  createScrapeJob,
   completeScrapeJob,
   getLatestScrapeJob,
   getScrapeJobById,
-  updateScrapeJobSession,
+  getScrapeSettings,
   countQualifiedStoresNeedingTagRefresh,
   clearTagClassificationForAllQualified,
 } from '../services/leadStoreRepository.js';
-import { runScrapeDiscoverySession } from '../services/leadScraper.js';
+import { startLeadScrapeSession, applyScrapeScheduleSettings } from '../services/scrapeScheduler.js';
+import { getSerpQuotaStatus, resetSerpDailyQuota } from '../services/serpQuota.js';
 import { kickLeadEngineWorker } from '../services/leadEngineWorker.js';
 import { kickTagBackfillWorker, isTagBackfillRunning } from '../services/leadTagBackfillWorker.js';
 import { isBackfillEnabled } from '../services/backfillGate.js';
@@ -677,34 +677,39 @@ adminRoutes.get('/referrals', async (req, res) => {
   }
 });
 
+adminRoutes.get('/lead-engine/scrape/settings', async (req, res) => {
+  try {
+    const [settings, serpQuota] = await Promise.all([getScrapeSettings(), getSerpQuotaStatus()]);
+    res.json({ settings, serpQuota });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed to load scrape settings' });
+  }
+});
+
+adminRoutes.put('/lead-engine/scrape/settings', async (req, res) => {
+  try {
+    const enabled = Boolean(req.body?.enabled);
+    const intervalMinutes = Number(req.body?.intervalMinutes ?? req.body?.interval_minutes ?? 0);
+    const settings = await applyScrapeScheduleSettings({ enabled, intervalMinutes });
+    res.json({ ok: true, settings });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed to save scrape settings' });
+  }
+});
+
+adminRoutes.post('/lead-engine/scrape/quota/reset', async (req, res) => {
+  try {
+    const serpQuota = await resetSerpDailyQuota();
+    res.json({ ok: true, serpQuota, message: "Today's SerpAPI quota reset — you can run a new scrape." });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'Failed to reset quota' });
+  }
+});
+
 adminRoutes.post('/lead-engine/scrape/start', async (req, res) => {
   try {
-    const latest = await getLatestScrapeJob();
-    if (latest && latest.status === 'running') {
-      return res.json({ ok: true, jobId: latest.id, scrapeJob: latest, message: 'Scrape already in progress' });
-    }
-
-    const jobId = await createScrapeJob();
-    runScrapeDiscoverySession(async (patch) => {
-      await updateScrapeJobSession(jobId, patch, 'running');
-    })
-      .then(async (session) => {
-        await completeScrapeJob(jobId, {
-          urlsFound: session.totalGenerated,
-          storesAdded: 0,
-          status: 'ready',
-          session,
-        });
-      })
-      .catch(async (e) => {
-        await completeScrapeJob(jobId, {
-          urlsFound: 0,
-          storesAdded: 0,
-          errorMessage: e?.message || 'Scrape failed',
-          status: 'failed',
-        });
-      });
-    res.json({ ok: true, jobId, message: 'Scrape session started' });
+    const result = await startLeadScrapeSession({ trigger: 'manual' });
+    res.json(result);
   } catch (e) {
     console.error('[lead-engine scrape]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to start scrape' });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Check, ChevronDown, ChevronUp, Loader } from 'react-feather';
+import { ArrowLeft, Play, Check, ChevronDown, ChevronUp, Loader, Clock, RefreshCw, X } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
 
 const SOURCE_STYLES = {
@@ -9,14 +9,31 @@ const SOURCE_STYLES = {
   TikTok: 'border-gray-800 bg-gray-900 text-white',
   LinkedIn: 'border-sky-200 bg-sky-50',
   Twitter: 'border-slate-200 bg-slate-50',
-  'Seed list': 'border-violet-200 bg-violet-50',
+  'Google Ads': 'border-emerald-200 bg-emerald-50',
+  'Google Dork': 'border-emerald-200 bg-emerald-50',
 };
+
+const INTERVAL_OPTIONS = [
+  { value: 0, label: 'Off — manual only' },
+  { value: 1440, label: 'Every 24 hours (recommended — 15 SerpAPI/day)' },
+  { value: 2880, label: 'Every 48 hours' },
+  { value: 10080, label: 'Every 7 days' },
+];
 
 function formatDuration(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}m ${String(r).padStart(2, '0')}s`;
+}
+
+function formatWhen(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }
 
 function LivePulse() {
@@ -28,16 +45,97 @@ function LivePulse() {
   );
 }
 
+function SourceLinksModal({ source, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!source) return null;
+  const links = source.links || [];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="source-links-title"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg max-h-[min(80vh,32rem)] flex flex-col rounded-2xl border border-blaster-border bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-blaster-border">
+          <div>
+            <h2 id="source-links-title" className="text-sm font-semibold text-blaster-fg">
+              {source.name}
+            </h2>
+            <p className="text-xs text-blaster-muted mt-0.5">
+              {links.length.toLocaleString()} link{links.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-sidebar"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <ul className="flex-1 overflow-auto divide-y divide-blaster-border">
+          {links.length === 0 ? (
+            <li className="px-5 py-8 text-center text-sm text-blaster-muted">No links for this source.</li>
+          ) : (
+            links.map((lead) => (
+              <li key={lead.storeUrl} className="px-5 py-2.5">
+                <a
+                  href={lead.storeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blaster-fg hover:underline break-all"
+                >
+                  {lead.storeUrl}
+                </a>
+                {lead.platformHint || lead.rawSignal ? (
+                  <p className="text-[11px] text-blaster-muted mt-0.5 line-clamp-2">
+                    {[lead.platformHint, lead.rawSignal].filter(Boolean).join(' · ')}
+                  </p>
+                ) : null}
+              </li>
+            ))
+          )}
+        </ul>
+        {source.linkCount > links.length ? (
+          <p className="text-xs text-blaster-muted px-5 py-2 border-t border-blaster-border">
+            Showing {links.length} of {source.linkCount.toLocaleString()} links
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function AdminScrapeDashboardPage() {
   const { adminFetch } = useAdmin();
   const [job, setJob] = useState(null);
+  const [settings, setSettings] = useState({ enabled: false, intervalMinutes: 0, lastRunAt: null, nextRunAt: null });
+  const [serpQuota, setSerpQuota] = useState(null);
+  const [intervalDraft, setIntervalDraft] = useState(1440);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [resettingQuota, setResettingQuota] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showDetails, setShowDetails] = useState(false);
-  const [etaSeconds, setEtaSeconds] = useState(90);
+  const [etaSeconds, setEtaSeconds] = useState(120);
+  const [sourceModal, setSourceModal] = useState(null);
 
   const session = job?.session;
   const isRunning = job?.status === 'running';
@@ -51,14 +149,34 @@ export function AdminScrapeDashboardPage() {
       const res = await adminFetch(`/lead-engine/scrape/status${query}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.scrapeJob) setJob(data.scrapeJob);
+        if (data.scrapeJob) {
+          setJob(data.scrapeJob);
+          if (data.scrapeJob.session?.etaSeconds != null) {
+            setEtaSeconds(data.scrapeJob.session.etaSeconds);
+          }
+        }
       }
     } catch (_) {}
     setLoading(false);
   }, [adminFetch, job?.id]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await adminFetch('/lead-engine/scrape/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          setSettings(data.settings);
+          setIntervalDraft(data.settings.intervalMinutes ?? 1440);
+        }
+        if (data.serpQuota) setSerpQuota(data.serpQuota);
+      }
+    } catch (_) {}
+  }, [adminFetch]);
+
   useEffect(() => {
     loadStatus();
+    loadSettings();
   }, []);
 
   useEffect(() => {
@@ -83,18 +201,66 @@ export function AdminScrapeDashboardPage() {
       const res = await adminFetch('/lead-engine/scrape/start', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to start scrape');
-      setEtaSeconds(90);
+      setEtaSeconds(120);
       if (data.jobId) {
         const statusRes = await adminFetch(`/lead-engine/scrape/status?jobId=${encodeURIComponent(data.jobId)}`);
         const statusData = await statusRes.json().catch(() => ({}));
         if (statusData.scrapeJob) setJob(statusData.scrapeJob);
+      } else if (data.scrapeJob) {
+        setJob(data.scrapeJob);
       } else {
         await loadStatus();
       }
+      if (data.message) setMessage(data.message);
+      await loadSettings();
     } catch (e) {
       setError(e.message || 'Failed to start');
     }
     setStarting(false);
+  };
+
+  const saveSchedule = async () => {
+    setSavingSchedule(true);
+    setError('');
+    try {
+      const enabled = intervalDraft > 0;
+      const res = await adminFetch('/lead-engine/scrape/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, intervalMinutes: intervalDraft }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to save schedule');
+      if (data.settings) {
+        setSettings(data.settings);
+        setIntervalDraft(data.settings.intervalMinutes ?? 1440);
+      }
+      if (data.serpQuota) setSerpQuota(data.serpQuota);
+      setMessage(
+        enabled
+          ? `Automation enabled — scrapes every ${INTERVAL_OPTIONS.find((o) => o.value === intervalDraft)?.label?.replace('Every ', '') || `${intervalDraft}m`}`
+          : 'Automation disabled — manual runs only'
+      );
+    } catch (e) {
+      setError(e.message || 'Failed to save schedule');
+    }
+    setSavingSchedule(false);
+  };
+
+  const resetDailyQuota = async () => {
+    setResettingQuota(true);
+    setError('');
+    try {
+      const res = await adminFetch('/lead-engine/scrape/quota/reset', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to reset quota');
+      if (data.serpQuota) setSerpQuota(data.serpQuota);
+      setMessage(data.message || "Today's SerpAPI quota reset.");
+      await loadSettings();
+    } catch (e) {
+      setError(e.message || 'Failed to reset quota');
+    }
+    setResettingQuota(false);
   };
 
   const acceptLeads = async () => {
@@ -117,11 +283,31 @@ export function AdminScrapeDashboardPage() {
     setAccepting(false);
   };
 
-  const totalGenerated = session?.totalGenerated ?? job?.urlsFound ?? 0;
+  const sources = useMemo(() => {
+    const raw = session?.sources ?? [];
+    return raw
+      .filter((s) => s.name !== 'Seed list' && s.id !== 'seed')
+      .map((s) => ({
+        ...s,
+        linkCount: s.count,
+        links:
+          s.links ||
+          (session?.verifiedLeads || []).filter((l) => l.source === s.name).slice(0, 500),
+      }));
+  }, [session?.sources, session?.verifiedLeads]);
+
+  const scrapedTotal = useMemo(() => {
+    if (sources.length > 0) return sources.reduce((sum, s) => sum + (s.count || 0), 0);
+    const all = (session?.sources ?? []).filter((s) => s.name !== 'Seed list' && s.id !== 'seed');
+    if (all.length) return all.reduce((sum, s) => sum + (s.count || 0), 0);
+    return session?.totalGenerated ?? job?.urlsFound ?? 0;
+  }, [sources, session?.sources, session?.totalGenerated, job?.urlsFound]);
+
   const progress = session?.progressPercent ?? (isRunning ? 12 : isReady || isAccepted ? 100 : 0);
-  const sources = session?.sources ?? [];
   const validation = session?.validation ?? {};
   const verifiedCount = validation.verifiedCount ?? 0;
+  const googleAds = session?.modules?.googleAds || session?.modules?.googleDork;
+  const quota = googleAds?.quota || serpQuota;
 
   const statusLabel = useMemo(() => {
     if (isFailed) return 'Scrape failed';
@@ -130,6 +316,8 @@ export function AdminScrapeDashboardPage() {
     if (isRunning) return session?.statusLabel || 'Scraping in progress…';
     return 'No active session';
   }, [isFailed, isAccepted, isReady, isRunning, session?.statusLabel]);
+
+  const automationOn = settings.enabled && settings.intervalMinutes > 0;
 
   if (loading && !job) {
     return <p className="text-sm text-blaster-muted">Loading scraping dashboard…</p>;
@@ -150,19 +338,97 @@ export function AdminScrapeDashboardPage() {
           </Link>
           <h1 className="text-xl font-semibold text-blaster-fg">Internet Scraping Dashboard</h1>
           <p className="text-sm text-blaster-muted mt-1">
-            Discover store links from configured sources, validate them, then add clean leads to the pipeline.
+            One daily run uses 15 Google Ads Transparency Center searches to find active ecommerce storefronts
+            (past 24h + past 6 days), then validates against your database.
           </p>
         </div>
-        {showEmpty ? (
+      </div>
+
+      {/* Automation + manual run controls */}
+      <div className="rounded-2xl border border-blaster-border bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <label htmlFor="scrape-interval" className="block text-xs font-medium text-blaster-muted mb-1.5">
+              <Clock className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />
+              Automation interval
+            </label>
+            <select
+              id="scrape-interval"
+              value={intervalDraft}
+              onChange={(e) => setIntervalDraft(Number(e.target.value))}
+              className="w-full rounded-lg border border-blaster-border bg-white px-3 py-2 text-sm text-blaster-fg"
+            >
+              {INTERVAL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={saveSchedule}
+            disabled={savingSchedule}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-blaster-sidebar hover:bg-white disabled:opacity-50"
+          >
+            {savingSchedule ? 'Saving…' : 'Save automation'}
+          </button>
           <button
             type="button"
             onClick={startScrape}
-            disabled={starting}
+            disabled={starting || isRunning}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blaster-fg text-white hover:opacity-90 disabled:opacity-50"
           >
-            <Play className="w-4 h-4" />
-            {starting ? 'Starting…' : 'Start scraping session'}
+            {starting || isRunning ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {isRunning ? 'Scraping…' : starting ? 'Starting…' : 'Run scrape now'}
           </button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-blaster-muted">
+          <span>
+            Automation:{' '}
+            <span className={automationOn ? 'text-green-700 font-medium' : 'text-blaster-fg'}>
+              {automationOn ? 'On' : 'Off'}
+            </span>
+          </span>
+          {settings.lastRunAt ? <span>Last run: {formatWhen(settings.lastRunAt)}</span> : null}
+          {automationOn && settings.nextRunAt ? <span>Next run: {formatWhen(settings.nextRunAt)}</span> : null}
+          {quota ? (
+            <span>
+              SerpAPI today:{' '}
+              <span className="text-blaster-fg font-medium">
+                {quota.usedToday}/{quota.dailyBudget}
+              </span>
+              {' · '}
+              month: {quota.usedMonth}/{quota.monthlyQuota}
+            </span>
+          ) : null}
+        </div>
+        {quota && quota.remainingToday <= 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p className="flex-1 min-w-[200px]">
+              Today&apos;s SerpAPI budget is used ({quota.dailyBudget} searches/day). Reset to run another full scan,
+              or wait until tomorrow.
+            </p>
+            <button
+              type="button"
+              onClick={resetDailyQuota}
+              disabled={resettingQuota || isRunning}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 font-medium hover:bg-amber-100 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${resettingQuota ? 'animate-spin' : ''}`} />
+              {resettingQuota ? 'Resetting…' : 'Reset today\'s quota (15)'}
+            </button>
+          </div>
+        ) : null}
+        {googleAds?.skipped && !isRunning ? (
+          <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Google Ads scraper skipped — set <code className="text-[11px]">SERPAPI_KEY</code> to your SerpApi private
+            key (not a URL). {googleAds.reason ? `(${googleAds.reason})` : ''}
+          </p>
         ) : null}
       </div>
 
@@ -175,20 +441,20 @@ export function AdminScrapeDashboardPage() {
 
       {showEmpty ? (
         <div className="rounded-2xl border border-dashed border-blaster-border bg-white py-16 px-6 text-center">
-          <p className="text-sm font-medium text-blaster-fg">No scraping session yet</p>
+          <RefreshCw className="w-8 h-8 text-blaster-muted mx-auto mb-3" />
+          <p className="text-sm font-medium text-blaster-fg">Ready to scrape</p>
           <p className="text-xs text-blaster-muted mt-1 max-w-md mx-auto">
-            Start a session to collect links from seed URLs and discovery pages, run duplicate and database checks, then
-            accept verified leads into the Lead Engine pipeline.
+            Set automation to <strong>Every 24 hours</strong>, save, then click <strong>Run scrape now</strong>. Each
+            daily run uses 15 Google Ads searches (Shopping + Search, 24h and 6-day windows).
           </p>
         </div>
       ) : (
         <>
-          {/* Section 1: Overview */}
           <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
             <div className="px-6 py-8 sm:py-10 text-center border-b border-blaster-border bg-gradient-to-b from-blaster-sidebar/40 to-white">
               <p className="text-xs uppercase tracking-wider text-blaster-muted font-medium">Total links generated</p>
               <p className="text-5xl sm:text-6xl font-bold text-blaster-fg mt-2 tracking-tight">
-                {totalGenerated.toLocaleString()}
+                {scrapedTotal.toLocaleString()}
               </p>
               <div className="flex items-center justify-center gap-2 mt-4 text-sm text-blaster-muted">
                 {isRunning ? <LivePulse /> : isAccepted ? <Check className="w-4 h-4 text-green-600" /> : null}
@@ -197,15 +463,24 @@ export function AdminScrapeDashboardPage() {
             </div>
           </div>
 
-          {/* Section 2: Source breakdown */}
           {sources.length > 0 ? (
             <div>
               <h2 className="text-sm font-semibold text-blaster-fg mb-3">Source breakdown</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {sources.map((src) => (
-                  <div
+                  <button
                     key={src.id}
-                    className={`rounded-xl border p-4 ${SOURCE_STYLES[src.name] || 'border-blaster-border bg-white'}`}
+                    type="button"
+                    onClick={() =>
+                      setSourceModal({
+                        name: src.name,
+                        links: src.links,
+                        linkCount: src.linkCount ?? src.count,
+                      })
+                    }
+                    className={`rounded-xl border p-4 text-left transition-shadow hover:shadow-md cursor-pointer ${
+                      SOURCE_STYLES[src.name] || 'border-blaster-border bg-white'
+                    }`}
                   >
                     <p className={`text-xs font-medium ${src.name === 'TikTok' ? 'text-gray-300' : 'text-blaster-muted'}`}>
                       {src.name}
@@ -214,15 +489,14 @@ export function AdminScrapeDashboardPage() {
                       {src.count.toLocaleString()}
                     </p>
                     <p className={`text-[10px] mt-1 ${src.name === 'TikTok' ? 'text-gray-400' : 'text-blaster-muted'}`}>
-                      {src.percent}% of total
+                      {src.percent}% of total · click to view links
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
           ) : null}
 
-          {/* Section 3: Timer & progress */}
           <div className="rounded-2xl border border-blaster-border bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
               <div>
@@ -248,9 +522,14 @@ export function AdminScrapeDashboardPage() {
               {isRunning ? <Loader className="w-3.5 h-3.5 animate-spin" /> : null}
               {isFailed && job?.errorMessage ? job.errorMessage : statusLabel}
             </p>
+            {googleAds && !googleAds.skipped && googleAds.stats ? (
+              <p className="text-[11px] text-blaster-muted mt-2">
+                Google Ads ({googleAds.mode || 'daily'}): {googleAds.stats.uniqueHits?.toLocaleString() ?? 0} store
+                domains · {googleAds.stats.serpRequestsUsed ?? 0}/15 SerpAPI searches · windows: 24h + 6 days
+              </p>
+            ) : null}
           </div>
 
-          {/* Section 4: Validation pipeline */}
           {(isReady || isAccepted || validation.verifiedCount != null) && (
             <div>
               <h2 className="text-sm font-semibold text-blaster-fg mb-3">Data validation pipeline</h2>
@@ -278,7 +557,6 @@ export function AdminScrapeDashboardPage() {
             </div>
           )}
 
-          {/* Section 5: Accept */}
           {(isReady || isAccepted) && verifiedCount > 0 && (
             <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
               <div className="px-6 py-6 border-b border-blaster-border bg-blaster-sidebar/30">
@@ -305,9 +583,7 @@ export function AdminScrapeDashboardPage() {
                 ) : (
                   <p className="text-sm text-green-800 font-medium">
                     ✓ {job.storesAdded?.toLocaleString() ?? verifiedCount.toLocaleString()} leads added
-                    {session?.acceptedAt
-                      ? ` · ${new Date(session.acceptedAt).toLocaleString()}`
-                      : ''}
+                    {session?.acceptedAt ? ` · ${new Date(session.acceptedAt).toLocaleString()}` : ''}
                   </p>
                 )}
                 <button
@@ -369,6 +645,8 @@ export function AdminScrapeDashboardPage() {
           ) : null}
         </>
       )}
+
+      <SourceLinksModal source={sourceModal} onClose={() => setSourceModal(null)} />
     </div>
   );
 }

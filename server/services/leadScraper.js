@@ -1,14 +1,11 @@
 /**
- * Discover store URLs from seeds and configured discovery pages.
+ * Discover store URLs from Google Ads Transparency Center and configured discovery pages.
  * Returns a session payload for the admin scraping dashboard (no auto-enqueue).
  */
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { normalizeStoreUrl, fetchHtml } from './crawler.js';
 import { findUrlsExistingInDb, findUrlsInDbSince } from './leadStoreRepository.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { runGoogleAdsScraper } from './googleAdsScraper.js';
+import { isBlockedBrandDomain } from './brandBlocklist.js';
 const URL_REGEX = /https?:\/\/[a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)+(?:\/[^\s"'<>]*)?/gi;
 const DOMAIN_REGEX = /(?:^|[\s"'(])([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)+)/gi;
 
@@ -18,24 +15,8 @@ const SOURCE_COLORS = {
   TikTok: 'bg-gray-900 text-white border-gray-700',
   LinkedIn: 'bg-sky-100 text-sky-800 border-sky-200',
   Twitter: 'bg-slate-100 text-slate-800 border-slate-200',
-  'Seed list': 'bg-violet-100 text-violet-800 border-violet-200',
+  'Google Ads': 'bg-emerald-100 text-emerald-800 border-emerald-200',
 };
-
-function loadSeedUrls() {
-  const candidates = [
-    path.join(__dirname, '../../client/src/data/seedStoreUrls.json'),
-    path.join(__dirname, '../data/seedStoreUrls.json'),
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) {
-        const data = JSON.parse(fs.readFileSync(p, 'utf8'));
-        if (Array.isArray(data)) return data;
-      }
-    } catch (_) {}
-  }
-  return [];
-}
 
 function sourceLabelFromPageUrl(pageUrl) {
   try {
@@ -71,12 +52,7 @@ function extractStoreUrlsFromHtml(html) {
     const n = normalizeStoreUrl(dm[1]);
     if (
       n &&
-      !n.includes('facebook.com') &&
-      !n.includes('google.com') &&
-      !n.includes('shopify.com') &&
-      !n.includes('instagram.com') &&
-      !n.includes('twitter.com') &&
-      !n.includes('x.com')
+      !isBlockedBrandDomain(n)
     ) {
       found.add(n);
     }
@@ -97,37 +73,36 @@ export async function runScrapeDiscoverySession(onProgress) {
     if (typeof onProgress === 'function') await onProgress(patch);
   };
 
-  await report({ phase: 'collecting', progressPercent: 5, statusLabel: 'Collecting seed URLs…' });
+  await report({ phase: 'google_ads', progressPercent: 8, statusLabel: 'Scraping Google Ads for ecommerce stores…', etaSeconds: 20 });
 
-  const seedRaw = [
-    ...loadSeedUrls(),
-    ...(process.env.LEAD_SCRAPE_URLS || '').split(',').map((s) => s.trim()).filter(Boolean),
-  ];
-  const seedUrls = [];
-  const seedSeen = new Set();
-  for (const raw of seedRaw) {
-    const url = normalizeStoreUrl(raw);
-    if (url && !seedSeen.has(url)) {
-      seedSeen.add(url);
-      seedUrls.push(url);
-    }
+  const sourceBuckets = [];
+
+  const adsResult = await runGoogleAdsScraper(async (patch) => {
+    await report(patch);
+  });
+
+  if (adsResult.hits.length > 0) {
+    const adsUrls = adsResult.hits.map((h) => h.url);
+    sourceBuckets.push({
+      id: 'google-ads',
+      name: 'Google Ads',
+      urls: adsUrls,
+      leads: adsResult.hits.map((h) => ({
+        storeUrl: h.url,
+        source: 'Google Ads',
+        platformHint: h.platform_hint,
+        rawSignal: h.raw_signal,
+        advertiser: h.advertiser,
+      })),
+    });
   }
-
-  const sourceBuckets = [
-    {
-      id: 'seed',
-      name: 'Seed list',
-      urls: seedUrls,
-      leads: seedUrls.map((storeUrl) => ({ storeUrl, source: 'Seed list' })),
-    },
-  ];
 
   const discoveryPages = (process.env.LEAD_DISCOVERY_PAGES || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 
-  await report({ phase: 'scraping', progressPercent: 15, statusLabel: 'Scraping discovery sources…' });
+  await report({ phase: 'scraping', progressPercent: 62, statusLabel: 'Scraping discovery sources…', etaSeconds: 45 });
 
   const pageCount = Math.min(discoveryPages.length, 8);
   for (let i = 0; i < pageCount; i += 1) {
@@ -142,7 +117,7 @@ export async function runScrapeDiscoverySession(onProgress) {
       urls,
       leads: urls.map((storeUrl) => ({ storeUrl, source: name })),
     });
-    const progress = 15 + Math.round(((i + 1) / Math.max(pageCount, 1)) * 55);
+    const progress = 62 + Math.round(((i + 1) / Math.max(pageCount, 1)) * 18);
     await report({
       phase: 'scraping',
       progressPercent: progress,
@@ -151,7 +126,7 @@ export async function runScrapeDiscoverySession(onProgress) {
     await sleep(400);
   }
 
-  await report({ phase: 'validating', progressPercent: 75, statusLabel: 'Running validation pipeline…' });
+  await report({ phase: 'validating', progressPercent: 82, statusLabel: 'Running validation pipeline…', etaSeconds: 10 });
 
   const allLeads = [];
   for (const bucket of sourceBuckets) {
@@ -180,16 +155,16 @@ export async function runScrapeDiscoverySession(onProgress) {
   const dbRecentLeads = uniqueLeads.filter((l) => dbRecentSet.has(l.storeUrl));
   const verifiedLeads = uniqueLeads.filter((l) => !dbAllSet.has(l.storeUrl));
 
-  const totalGenerated = rawTotal;
-  const sources = sourceBuckets
-    .filter((b) => b.urls.length > 0)
-    .map((b) => ({
-      id: b.id,
-      name: b.name,
-      count: b.urls.length,
-      percent: totalGenerated > 0 ? Math.round((b.urls.length / totalGenerated) * 100) : 0,
-      pageUrl: b.pageUrl || null,
-    }));
+  const scrapedBuckets = sourceBuckets.filter((b) => b.urls.length > 0);
+  const totalGenerated = scrapedBuckets.reduce((sum, b) => sum + b.urls.length, 0);
+  const sources = scrapedBuckets.map((b) => ({
+    id: b.id,
+    name: b.name,
+    count: b.urls.length,
+    percent: totalGenerated > 0 ? Math.round((b.urls.length / totalGenerated) * 100) : 0,
+    pageUrl: b.pageUrl || null,
+    links: b.leads.slice(0, 500),
+  }));
 
   const session = {
     startedAt: new Date(startedAt).toISOString(),
@@ -208,6 +183,19 @@ export async function runScrapeDiscoverySession(onProgress) {
     verifiedLeads,
     duplicateLeads: duplicates.slice(0, 500),
     dbRecentLeads: dbRecentLeads.slice(0, 500),
+    modules: {
+      googleAds: adsResult.skipped
+        ? { skipped: true, reason: adsResult.reason, quota: adsResult.quota }
+        : {
+            skipped: false,
+            provider: adsResult.provider,
+            engine: adsResult.engine,
+            mode: adsResult.mode,
+            stats: adsResult.stats,
+            errors: adsResult.errors,
+            quota: adsResult.quota,
+          },
+    },
     acceptedAt: null,
     addedCount: 0,
   };

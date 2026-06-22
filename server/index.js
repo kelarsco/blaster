@@ -16,6 +16,7 @@ import { initDb, getDb, isDbQuotaError, getDbUnavailableMessage } from './db.js'
 import { resumePendingCampaignsOnStartup } from './services/campaignResume.js';
 import { resumePendingScansOnStartup } from './services/scanResume.js';
 import { resumeLeadEngineOnStartup } from './services/leadEngineWorker.js';
+import { resumeScrapeSchedulerOnStartup } from './services/scrapeScheduler.js';
 import { syncPaystackPlans } from './services/paystackSync.js';
 import { scanRoutes } from './routes/scan.js';
 import { exportRoutes } from './routes/export.js';
@@ -205,6 +206,7 @@ async function start() {
   await resumePendingCampaignsOnStartup();
   await resumePendingScansOnStartup();
   await resumeLeadEngineOnStartup();
+  await resumeScrapeSchedulerOnStartup();
   syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
   const basePort = Number(process.env.PORT) || 4000;
   const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : undefined);

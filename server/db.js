@@ -14,6 +14,16 @@ export const memoryStore = {
   resources: [],
   leadStores: [],
   leadScrapeJobs: [],
+  leadScrapeSettings: {
+    enabled: false,
+    interval_minutes: 0,
+    last_run_at: null,
+    next_run_at: null,
+    serp_month_key: null,
+    serp_requests_month: 0,
+    serp_day_key: null,
+    serp_requests_day: 0,
+  },
 };
 
 export function getDb() {
@@ -639,6 +649,7 @@ async function runSchema(p) {
     await migrateReferralCodes(p);
     await migrateProcessedPayments(p);
     await migrateLeadScrapeJobSession(p);
+    await migrateLeadScrapeSettings(p);
   } finally {
     client.release();
   }
@@ -829,5 +840,29 @@ async function migrateLeadScrapeJobSession(pool) {
     `);
   } catch (e) {
     console.warn('[migrateLeadScrapeJobSession]', e?.message || e);
+  }
+}
+
+async function migrateLeadScrapeSettings(pool) {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lead_scrape_settings (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        interval_minutes INTEGER NOT NULL DEFAULT 0,
+        last_run_at TIMESTAMPTZ,
+        next_run_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO lead_scrape_settings (id, enabled, interval_minutes)
+      VALUES ('default', FALSE, 0)
+      ON CONFLICT (id) DO NOTHING;
+      ALTER TABLE lead_scrape_settings ADD COLUMN IF NOT EXISTS serp_month_key TEXT;
+      ALTER TABLE lead_scrape_settings ADD COLUMN IF NOT EXISTS serp_requests_month INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE lead_scrape_settings ADD COLUMN IF NOT EXISTS serp_day_key TEXT;
+      ALTER TABLE lead_scrape_settings ADD COLUMN IF NOT EXISTS serp_requests_day INTEGER NOT NULL DEFAULT 0;
+    `);
+  } catch (e) {
+    console.warn('[migrateLeadScrapeSettings]', e?.message || e);
   }
 }

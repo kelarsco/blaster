@@ -625,6 +625,60 @@ export async function getLatestScrapeJob() {
   return mapScrapeJobRow(res.rows[0]);
 }
 
+function mapScrapeSettingsRow(row) {
+  if (!row) {
+    return {
+      enabled: false,
+      intervalMinutes: 0,
+      lastRunAt: null,
+      nextRunAt: null,
+    };
+  }
+  return {
+    enabled: Boolean(row.enabled),
+    intervalMinutes: Number(row.interval_minutes) || 0,
+    lastRunAt: row.last_run_at || null,
+    nextRunAt: row.next_run_at || null,
+  };
+}
+
+export async function getScrapeSettings() {
+  const db = getDb();
+  if (!db) {
+    const s = memoryStore.leadScrapeSettings || {};
+    return mapScrapeSettingsRow(s);
+  }
+  const res = await db.query(`SELECT * FROM lead_scrape_settings WHERE id = 'default' LIMIT 1`);
+  return mapScrapeSettingsRow(res.rows[0]);
+}
+
+export async function saveScrapeSettings({ enabled, intervalMinutes, lastRunAt, nextRunAt }) {
+  const db = getDb();
+  const payload = {
+    enabled: Boolean(enabled),
+    interval_minutes: Math.max(0, Number(intervalMinutes) || 0),
+    last_run_at: lastRunAt || null,
+    next_run_at: nextRunAt || null,
+    updated_at: new Date().toISOString(),
+  };
+  if (!db) {
+    memoryStore.leadScrapeSettings = { id: 'default', ...payload };
+    return mapScrapeSettingsRow(memoryStore.leadScrapeSettings);
+  }
+  await db.query(
+    `INSERT INTO lead_scrape_settings (id, enabled, interval_minutes, last_run_at, next_run_at, updated_at)
+     VALUES ('default', $1, $2, $3, $4, NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       enabled = EXCLUDED.enabled,
+       interval_minutes = EXCLUDED.interval_minutes,
+       last_run_at = COALESCE(EXCLUDED.last_run_at, lead_scrape_settings.last_run_at),
+       next_run_at = EXCLUDED.next_run_at,
+       updated_at = NOW()`,
+    [payload.enabled, payload.interval_minutes, payload.last_run_at, payload.next_run_at]
+  );
+  return getScrapeSettings();
+}
+
 export async function updateLeadStoreTags(id, data) {
   const db = getDb();
   const now = new Date().toISOString();
