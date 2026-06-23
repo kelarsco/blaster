@@ -1,6 +1,7 @@
 import { getDb, memoryStore } from '../db.js';
 import { addScanJob } from './queue.js';
 import { normalizeStoreUrl } from './crawler.js';
+import { DEFAULT_SCAN_EXTRACT_OPTIONS } from './scanExtractOptions.js';
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -84,6 +85,7 @@ export async function resumePendingScansOnStartup() {
         forceRefresh: true,
         useCache: false,
         maxConcurrentCrawlers: startupConcurrency,
+        extractOptions: DEFAULT_SCAN_EXTRACT_OPTIONS,
       });
 
       resumed += 1;

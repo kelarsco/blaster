@@ -111,6 +111,43 @@ export function recipientsToScanResults(recipients) {
   return [...byStore.values()];
 }
 
+export function summarizeExtractedCounts(results, extractOptions) {
+  const counts = { email: 0, phone: 0, whatsapp: 0, instagram: 0, tiktok: 0 };
+  for (const store of results || []) {
+    if (extractOptions?.email && store.emails?.length) counts.email += 1;
+    if (extractOptions?.phone && store.phone) counts.phone += 1;
+    if (extractOptions?.whatsapp && store.whatsapp) counts.whatsapp += 1;
+    if (extractOptions?.instagram && store.instagram) counts.instagram += 1;
+    if (extractOptions?.tiktok && store.tiktok) counts.tiktok += 1;
+  }
+  return counts;
+}
+
+export function formatExtractedSummary(results, extractOptions, fallbackFoundCount = 0) {
+  const counts = summarizeExtractedCounts(results, extractOptions);
+  const parts = [];
+  if (extractOptions?.email && counts.email) {
+    parts.push(`${counts.email} email${counts.email !== 1 ? 's' : ''}`);
+  }
+  if (extractOptions?.phone && counts.phone) {
+    parts.push(`${counts.phone} phone${counts.phone !== 1 ? 's' : ''}`);
+  }
+  if (extractOptions?.whatsapp && counts.whatsapp) {
+    parts.push(`${counts.whatsapp} WhatsApp`);
+  }
+  if (extractOptions?.instagram && counts.instagram) {
+    parts.push(`${counts.instagram} IG`);
+  }
+  if (extractOptions?.tiktok && counts.tiktok) {
+    parts.push(`${counts.tiktok} TikTok`);
+  }
+  if (parts.length) return parts.join(' · ');
+  if (fallbackFoundCount > 0) {
+    return `${fallbackFoundCount} store${fallbackFoundCount !== 1 ? 's' : ''} with contacts`;
+  }
+  return '0 contacts found';
+}
+
 export function storesWithExtractedData(results, extractOptions) {
   if (!Array.isArray(results)) return [];
   return results.filter((store) => {

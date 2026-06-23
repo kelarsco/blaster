@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Download, Radio, X } from 'react-feather';
-import { exportScanResultsCsv, recipientsFromResults, storesWithExtractedData } from '../../utils/scannerUrls.js';
+import { exportScanResultsCsv, formatExtractedSummary, storesWithExtractedData } from '../../utils/scannerUrls.js';
 import { CampaignNameModal } from './CampaignNameModal.jsx';
 import { ExportFieldsModal } from './ExportFieldsModal.jsx';
 
@@ -45,6 +45,10 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
     }
   };
 
+  const summaryText = isComplete && batch.results?.length
+    ? formatExtractedSummary(batch.results, batch.extractOptions, batch.foundCount)
+    : `${batch.foundCount || 0} store${(batch.foundCount || 0) !== 1 ? 's' : ''} with contacts`;
+
   return (
     <>
       <article
@@ -70,7 +74,7 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
               )}
             </div>
             <p className="text-xs text-blaster-muted mt-0.5">
-              {batch.foundCount || 0} email{(batch.foundCount || 0) !== 1 ? 's' : ''} found
+              {summaryText}
             </p>
           </div>
           <button

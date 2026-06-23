@@ -27,68 +27,10 @@ const setupChipDefault =
 const setupChipSelected =
   'px-3 py-2 rounded-xl text-sm font-medium border border-blaster-accent/25 bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 text-[#1a1a21] shadow-sm transition';
 
-function MailTypeOption({ label, hint, count, selected, onToggle }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={selected}
-      className={`flex flex-1 min-w-[148px] items-center gap-3 rounded-xl border p-3 text-left transition ${
-        selected
-          ? 'border-blaster-accent/35 bg-gradient-to-r from-blaster-accent/15 to-blaster-orange/25 shadow-sm ring-1 ring-blaster-accent/20'
-          : 'border-blaster-border bg-white hover:border-blaster-accent/25'
-      }`}
-    >
-      <span
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
-          selected
-            ? 'border-transparent bg-gradient-to-br from-blaster-accent to-blaster-orange text-white'
-            : 'border-blaster-border bg-white'
-        }`}
-      >
-        {selected ? <CheckIcon className="w-3 h-3" /> : null}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-blaster-fg">{label}</span>
-        <span className="block text-[11px] text-blaster-muted">{hint}</span>
-        <span className="block text-[11px] font-medium text-blaster-fg/80 mt-0.5">{count} in list</span>
-      </span>
-    </button>
-  );
-}
-
-function ChipRowSkeleton({ count = 3 }) {
-  const widths = ['w-24', 'w-28', 'w-20', 'w-32'];
-  return (
-    <div className="mt-2 flex flex-wrap gap-2" aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className={`h-9 rounded-xl bg-gray-100 animate-pulse ${widths[i % widths.length]}`} />
-      ))}
-    </div>
-  );
-}
-
-function SetupOptionsSkeleton() {
-  return (
-    <div className="relative rounded-xl border border-blaster-border overflow-hidden bg-white">
-      <div
-        className="pointer-events-none absolute inset-0 bg-gradient-to-t from-blaster-orange/10 via-blaster-accent/10 to-transparent"
-        aria-hidden
-      />
-      <div className="relative p-4 space-y-4">
-        <div>
-          <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Sender Group</label>
-          <ChipRowSkeleton count={3} />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Templates</label>
-          <ChipRowSkeleton count={4} />
-          <div className="h-3 w-48 rounded bg-gray-100 animate-pulse mt-2" aria-hidden />
-        </div>
-      </div>
-    </div>
-  );
-}
+/**
+ * Unified campaign setup: sender group, templates, contact table, start/resume.
+ * Used after CSV import, scanner save, or opening a saved list.
+ */
 export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onListUpdated }) {
   const navigate = useNavigate();
   const [exportOpen, setExportOpen] = useState(false);
@@ -99,53 +41,20 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
   const [activeRun, setActiveRun] = useState(null);
   const [starting, setStarting] = useState(false);
   const [setupError, setSetupError] = useState('');
-  const [includeProviderEmails, setIncludeProviderEmails] = useState(true);
-  const [includeDomainEmails, setIncludeDomainEmails] = useState(true);
-  const [setupLoading, setSetupLoading] = useState(true);
 
   useEffect(() => {
-    if (!authFetch || !list?.id) return undefined;
-    let cancelled = false;
-    setSetupLoading(true);
-
-    Promise.all([
-      authFetch(`${API}/automation/senders/groups`).then((r) => r.json()),
-      authFetch(`${API}/automation/presets`).then((r) => r.json()),
-      authFetch(`${API}/manual-campaigns?emailListId=${list.id}`).then((r) => r.json()),
-    ])
-      .then(([groupsRes, presetsRes, runRes]) => {
-        if (cancelled) return;
-        setGroups(groupsRes.groups || []);
-        setPresets(presetsRes.presets || []);
-        setActiveRun(runRes.run || null);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setGroups([]);
-          setPresets([]);
-          setActiveRun(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setSetupLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    if (!authFetch || !list?.id) return;
+    authFetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => setGroups(d.groups || []));
+    authFetch(`${API}/automation/presets`).then((r) => r.json()).then((d) => setPresets(d.presets || []));
+    authFetch(`${API}/manual-campaigns?emailListId=${list.id}`)
+      .then((r) => r.json())
+      .then((d) => setActiveRun(d.run || null));
   }, [authFetch, list?.id]);
 
   if (!list) return null;
 
-  const allRecipients = list.recipients || [];
-  const emailTypeCounts = countCampaignEmailsByType(allRecipients);
-  const filteredRecipients = filterCampaignRecipients(allRecipients, {
-    includeProvider: includeProviderEmails,
-    includeDomain: includeDomainEmails,
-  });
-  const hasExportable = allRecipients.length > 0;
-  const hasFilteredRecipients = filteredRecipients.length > 0;
-  const canStart = hasFilteredRecipients && selectedGroupId && selectedPresetIds.size > 0;
+  const hasExportable = (list.recipients?.length ?? 0) > 0;
+  const canStart = hasExportable && selectedGroupId && selectedPresetIds.size > 0;
   const hasActiveRun = activeRun && activeRun.status !== 'completed';
   const scanResults = recipientsToScanResults(list.recipients);
   const extractOptions = { email: true, phone: false, whatsapp: false, instagram: false, tiktok: false };
@@ -156,20 +65,6 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
-    });
-  };
-
-  const toggleProviderEmails = () => {
-    setIncludeProviderEmails((prev) => {
-      if (prev && !includeDomainEmails) return prev;
-      return !prev;
-    });
-  };
-
-  const toggleDomainEmails = () => {
-    setIncludeDomainEmails((prev) => {
-      if (prev && !includeProviderEmails) return prev;
-      return !prev;
     });
   };
 
@@ -203,7 +98,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
           emailListId: list.id,
           senderGroupId: selectedGroupId,
           templateIds: [...selectedPresetIds],
-          recipients: filteredRecipients,
+          recipients: list.recipients || [],
         }),
       });
       const data = await res.json();
@@ -238,11 +133,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
             <div className="flex items-center justify-between px-5 py-4 border-b border-blaster-border shrink-0">
               <div>
                 <h3 id="campaign-setup-title" className="text-base font-semibold text-blaster-fg">{list.name}</h3>
-                <p className="text-xs text-blaster-muted mt-0.5">
-                  {hasActiveRun
-                    ? `${list.recipients?.length ?? 0} contacts`
-                    : `${filteredRecipients.length} of ${allRecipients.length} contacts selected`}
-                </p>
+                <p className="text-xs text-blaster-muted mt-0.5">{list.recipients?.length ?? 0} contacts</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -257,7 +148,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                 <button
                   type="button"
                   onClick={handleStartOrResume}
-                  disabled={!hasExportable || (!hasActiveRun && (!canStart || setupLoading)) || starting}
+                  disabled={!hasExportable || (!hasActiveRun && !canStart) || starting}
                   className="px-3 py-1.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {starting ? 'Starting…' : hasActiveRun ? 'Resume Campaign' : 'Start Campaign'}
@@ -267,9 +158,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
 
             <div className="px-5 py-4 border-b border-blaster-border shrink-0 bg-gray-50/40">
               {setupError && <p className="text-sm text-red-600 mb-4">{setupError}</p>}
-              {setupLoading ? (
-                <SetupOptionsSkeleton />
-              ) : hasActiveRun ? (
+              {hasActiveRun ? (
                 <p className="text-sm text-blaster-muted">
                   In progress — {activeRun.totalSent} of {(activeRun.recipientQueue?.length ?? list.recipients?.length) || 0} sent.
                   Resume to continue where you left off.
@@ -333,31 +222,6 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                       )}
                       <p className="text-[11px] text-blaster-muted mt-1.5">Templates rotate randomly per send.</p>
                     </div>
-                    <div>
-                      <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Mail</label>
-                      <p className="text-[11px] text-blaster-muted mt-1 mb-2">
-                        Choose which email types to include in this campaign run.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <MailTypeOption
-                          label="Provider email"
-                          hint="Gmail, Outlook, Yahoo, etc."
-                          count={emailTypeCounts.provider}
-                          selected={includeProviderEmails}
-                          onToggle={toggleProviderEmails}
-                        />
-                        <MailTypeOption
-                          label="Domain email"
-                          hint="Store / business domain addresses"
-                          count={emailTypeCounts.domain}
-                          selected={includeDomainEmails}
-                          onToggle={toggleDomainEmails}
-                        />
-                      </div>
-                      {!hasFilteredRecipients && (
-                        <p className="text-xs text-amber-700 mt-2">Select at least one mail type with contacts in this list.</p>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}
@@ -374,7 +238,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                     </tr>
                   </thead>
                   <tbody>
-                    {(hasActiveRun ? allRecipients : filteredRecipients).map((r, i) => (
+                    {(list.recipients || []).map((r, i) => (
                       <tr key={`${r.email}-${i}`} className="border-b border-blaster-border/70 last:border-b-0 hover:bg-gray-50/50">
                         <td className="px-4 py-3 text-blaster-fg align-top">
                           <span className="font-medium block">{domainFromUrl(r.storeUrl)}</span>

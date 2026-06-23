@@ -34,6 +34,7 @@ const CONTACT_PATHS = [
   '/pages/contact-us',
   '/pages/get-in-touch',
   '/get-in-touch',
+  '/policies/contact-information',
 ];
 
 const EXTRA_PATHS = [

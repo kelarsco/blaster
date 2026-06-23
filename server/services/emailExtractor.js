@@ -187,7 +187,10 @@ function walkJsonLdEmails(node, sink) {
   }
 }
 
-const NON_CONTACT_LOCAL = /^(noreply|no-reply|donotreply|do-not-reply|mailer-daemon|bounce|newsletter|marketing|promo|unsubscribe|privacy|abuse|postmaster|webmaster|admin|test|demo|example)@/i;
+const NON_CONTACT_LOCAL = /^(noreply|no-reply|donotreply|do-not-reply|mailer-daemon|bounce|newsletter|marketing|promo|unsubscribe|abuse|postmaster|webmaster|admin|test|demo|example)@/i;
+
+/** privacy@ on policy pages is standard for Shopify — not a noreply address */
+const SHOPIFY_POLICY_EMAIL = /^privacy@/i;
 
 function contactPageBoost(url) {
   const u = (url || '').toLowerCase();
@@ -202,10 +205,13 @@ function scoreEmailCandidate(candidate, storeHost) {
   const email = candidate.email || '';
   const domain = email.split('@')[1] || '';
   const local = email.split('@')[0] || '';
+  const onPolicyPage = /privacy|policies|contact-information|contact/i.test(candidate.sourcePage || '');
 
   if (NON_CONTACT_LOCAL.test(email)) score -= 150;
+  else if (SHOPIFY_POLICY_EMAIL.test(email) && onPolicyPage) score += 85;
 
-  if (candidate.sourceType === 'mailto') score += 120;
+  if (candidate.sourceType === 'shopify_shop') score += 130;
+  else if (candidate.sourceType === 'mailto') score += 120;
   else if (candidate.sourceType === 'schema') score += 70;
   else if (candidate.sourceType === 'footer') score += 50;
   else if (candidate.sourceType === 'contact') score += 45;
@@ -299,7 +305,9 @@ function extractFromPage(url, html) {
     });
   });
 
-  const contactText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"], .contact, #contact, [class*="contact"], [id*="contact"]').text();
+  const contactText = $(
+    'footer, .footer, #footer, .site-footer, [role="contentinfo"], .contact, #contact, [class*="contact"], [id*="contact"], [class*="footer"], [id*="footer"], .shopify-section-group-footer, #shopify-section-footer'
+  ).text();
   extractFromText(contactText).forEach((e) => {
     const row = add(e, 'contact');
     if (row) out.push(row);
@@ -319,7 +327,9 @@ function extractFromPage(url, html) {
     if (row) out.push(row);
   });
 
-  const footerText = $('footer, .footer, #footer, .site-footer, [role="contentinfo"]').text();
+  const footerText = $(
+    'footer, .footer, #footer, .site-footer, [role="contentinfo"], [class*="footer"], #shopify-section-footer'
+  ).text();
   extractFromText(footerText).forEach((e) => {
     const row = add(e, 'footer');
     if (row) out.push(row);
@@ -346,6 +356,15 @@ function extractFromPage(url, html) {
     }
   }
 
+  $('script:not([src])').each((_, el) => {
+    const text = $(el).html() || '';
+    if (!/Shopify\.shop|shop\.email|"email"\s*:/i.test(text)) return;
+    extractFromText(text).forEach((e) => {
+      const row = add(e, 'shopify_shop');
+      if (row) out.push(row);
+    });
+  });
+
   return out;
 }
 
@@ -364,16 +383,30 @@ export function collectEmailsFromHtml(url, html) {
 
 /**
  * Extract the single best contact email from crawled HTML pages (one per store).
+ * @param {object} [options]
+ * @param {{ email: string, sourcePage?: string, probeSource?: string }[]} [options.shopifyHints]
  */
 export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const onePerStore = options.onePerStore !== false;
   const maxEmails = Math.max(1, Number(options.maxEmails) || 8);
   const privacyPageFound = options.privacyPageFound !== false;
+  const shopifyHints = options.shopifyHints || [];
 
   const byEmail = new Map();
   let platform = null;
 
-  for (const { url, html } of (pages || [])) {
+  for (const hint of shopifyHints) {
+    const canonical = toCanonicalEmail(hint.email);
+    if (!canonical) continue;
+    byEmail.set(canonical, {
+      email: canonical,
+      sourcePage: hint.sourcePage || storeUrl,
+      sourceType: 'shopify_shop',
+      storeUrl,
+    });
+  }
+
+  for (const { url, html } of pages || []) {
     try {
       if (!platform) platform = detectPlatform(html);
       const candidates = extractFromPage(url, html);

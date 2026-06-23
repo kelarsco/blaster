@@ -13,10 +13,10 @@ export function ExportFieldsModal({ onClose, onConfirm }) {
   const [fields, setFields] = useState({
     storeUrl: true,
     email: true,
-    phone: false,
-    whatsapp: false,
-    instagram: false,
-    tiktok: false,
+    phone: true,
+    whatsapp: true,
+    instagram: true,
+    tiktok: true,
   });
 
   const toggle = (key) => {

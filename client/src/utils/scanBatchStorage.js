@@ -1,3 +1,5 @@
+import { DEFAULT_SCAN_EXTRACT_OPTIONS } from './scanExtractOptions.js';
+
 const STORAGE_PREFIX = 'wiblaster-scan-batches';
 
 function storageKey(userId) {
@@ -14,7 +16,7 @@ function sanitizeBatch(batch) {
     processed: Number(batch.processed) || 0,
     totalUrls: Number(batch.totalUrls) || 0,
     foundCount: Number(batch.foundCount) || 0,
-    extractOptions: batch.extractOptions || { email: true },
+    extractOptions: batch.extractOptions || DEFAULT_SCAN_EXTRACT_OPTIONS,
     startedAt: batch.startedAt || Date.now(),
   };
 }

@@ -1,8 +1,11 @@
 /**
- * Scan processor: crawl each store, extract one contact email when available, write results.
+ * Scan processor: crawl each store, extract email + social/phone contacts, write results.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
+import { extractContactsFromPages, storeHasExtractedData } from './contactExtractor.js';
+import { probeShopifyEmails } from './shopifyEmailProbe.js';
+import { normalizeExtractOptions } from './scanExtractOptions.js';
 import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
@@ -80,10 +83,19 @@ async function insertScanResultsBatch(db, scanId, rows) {
   let paramIndex = 2;
   for (const row of rows) {
     valueClauses.push(
-      `($1, $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, NULL, NULL, NULL, NULL)`
+      `($1, $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7})`
     );
-    params.push(row.store_url, row.email, row.source_page, row.has_email);
-    paramIndex += 4;
+    params.push(
+      row.store_url,
+      row.email,
+      row.source_page,
+      row.has_email,
+      row.phone,
+      row.whatsapp,
+      row.instagram,
+      row.tiktok
+    );
+    paramIndex += 8;
   }
   await runDbQueryWithRetry(
     db,
@@ -108,7 +120,9 @@ async function processScanWork(payload) {
     rawInput,
     maxConcurrentCrawlers,
     maxUrlsPerScan,
+    extractOptions: rawExtractOptions,
   } = payload;
+  const extractOptions = normalizeExtractOptions(rawExtractOptions);
 
   const db = getDb();
   let urls = parseUrls(rawInput || '');
@@ -163,20 +177,52 @@ async function processScanWork(payload) {
     });
     const workPromise = (async () => {
       try {
-        const crawl = await crawlStore(storeUrl);
-        const results = extractEmailsFromPages(storeUrl, crawl.pages, {
-          onePerStore: true,
-          privacyPageFound: crawl.privacyPageFound,
-        });
-        const noEmailReason = crawl.privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
-        return { storeUrl, results, noEmailReason };
+        const [crawl, shopify] = await Promise.all([
+          crawlStore(storeUrl),
+          probeShopifyEmails(storeUrl),
+        ]);
+
+        const pageByUrl = new Map();
+        for (const p of [...crawl.pages, ...shopify.pages]) {
+          if (p?.url && p?.html) pageByUrl.set(p.url, p);
+        }
+        const mergedPages = [...pageByUrl.values()];
+
+        const privacyPageFound =
+          crawl.privacyPageFound ||
+          mergedPages.some((p) => /privacy|policies\/contact-information|policies\/privacy/i.test(p.url));
+
+        const results = extractOptions.email
+          ? extractEmailsFromPages(storeUrl, mergedPages, {
+              onePerStore: true,
+              privacyPageFound,
+              shopifyHints: shopify.hints,
+            })
+          : [];
+
+        const contacts = extractContactsFromPages(storeUrl, mergedPages, extractOptions);
+
+        const noEmailReason = privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
+        return { storeUrl, results, contacts, noEmailReason };
       } catch (err) {
         console.error('[scanProcessor] store error:', storeUrl, err?.message || err);
-        return { storeUrl, results: [], noEmailReason: 'No Email Found' };
+        return {
+          storeUrl,
+          results: [],
+          contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
+          noEmailReason: 'No Email Found',
+        };
       }
     })();
     return Promise.race([workPromise, timeoutPromise]).then((r) =>
-      r.timedOut ? { storeUrl: r.storeUrl, results: [], noEmailReason: 'Request timed out' } : r
+      r.timedOut
+        ? {
+            storeUrl: r.storeUrl,
+            results: [],
+            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl: r.storeUrl },
+            noEmailReason: 'Request timed out',
+          }
+        : r
     );
   }
 
@@ -197,14 +243,27 @@ async function processScanWork(payload) {
     const outcomes = settled.map((s, idx) => {
       if (s.status === 'fulfilled') return s.value;
       console.error('[scanProcessor] store failed:', batch[idx], s.reason?.message || s.reason);
-      return { storeUrl: batch[idx], results: [] };
+      return {
+        storeUrl: batch[idx],
+        results: [],
+        contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl: batch[idx] },
+      };
     });
 
     const dbRows = [];
 
-    for (const { storeUrl, results, noEmailReason } of outcomes) {
+    for (const { storeUrl, results, contacts, noEmailReason } of outcomes) {
       try {
-        if (results.length > 0) foundCount += 1;
+        const hasData = storeHasExtractedData(results, contacts, extractOptions);
+        if (hasData) foundCount += 1;
+
+        const contactFields = {
+          phone: contacts?.phone || null,
+          whatsapp: contacts?.whatsapp || null,
+          instagram: contacts?.instagram || null,
+          tiktok: contacts?.tiktok || null,
+        };
+
         if (results.length > 0) {
           for (const r of results) {
             const row = {
@@ -212,6 +271,7 @@ async function processScanWork(payload) {
               email: r.email,
               source_page: r.sourcePage || '',
               has_email: 1,
+              ...contactFields,
             };
             if (db) dbRows.push(row);
             else memoryResults.push(row);
@@ -222,6 +282,7 @@ async function processScanWork(payload) {
             email: null,
             source_page: noEmailReason || 'No Email Found',
             has_email: 0,
+            ...contactFields,
           };
           if (db) dbRows.push(noEmailRow);
           else memoryResults.push(noEmailRow);

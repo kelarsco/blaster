@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { scanRateLimit } from '../middleware/apiRateLimit.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
 import { normalizeStoreUrl } from '../services/crawler.js';
+import { normalizeExtractOptions } from '../services/scanExtractOptions.js';
 
 export const scanRoutes = Router();
 
@@ -75,10 +76,16 @@ scanRoutes.get('/analytics', requireAuth, async (req, res) => {
 
     if (db) {
       const result = await db.query(
-        `SELECT COALESCE(COUNT(*), 0) AS extracted
+        `SELECT COALESCE(COUNT(DISTINCT sr.store_url), 0) AS extracted
          FROM scan_results sr
          JOIN scans s ON s.id = sr.scan_id
-         WHERE s.user_id = $1 AND sr.has_email = 1`,
+         WHERE s.user_id = $1 AND (
+           sr.has_email = 1
+           OR sr.phone IS NOT NULL
+           OR sr.whatsapp IS NOT NULL
+           OR sr.instagram IS NOT NULL
+           OR sr.tiktok IS NOT NULL
+         )`,
         [userId]
       );
       return res.json({ extracted: Number(result.rows?.[0]?.extracted || 0) });
@@ -113,6 +120,7 @@ scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
       rawUrls = Array.isArray(body.urls) ? body.urls.join('\n') : body.urls;
     }
     const emailFilters = body.emailFilters ?? body.email_filters ?? {};
+    const extractOptions = normalizeExtractOptions(body.extractOptions ?? body.extract_options);
     const excludeStoreUrls = body.excludeStoreUrls ?? body.exclude_store_urls ?? [];
     const previousScanId = body.previousScanId ?? body.previous_scan_id ?? null;
     const allUrls = parseUrls(typeof rawUrls === 'string' ? rawUrls : (Array.isArray(rawUrls) ? rawUrls.join('\n') : ''));
@@ -223,7 +231,7 @@ scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
       userId: userId || undefined,
       rawInput: limitedUrls.join('\n'),
       emailFilters: emailFilters || {},
-      extractOptions: { email: true },
+      extractOptions,
       forceRefresh: body.forceRefresh ?? body.force_refresh ?? true,
       useCache: body.useCache ?? body.use_cache ?? false,
       stealthMode: !!(body.stealthMode ?? body.stealth_mode),

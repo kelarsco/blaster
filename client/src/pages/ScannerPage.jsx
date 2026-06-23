@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { API } from '../api.js';
 import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
+import { DEFAULT_SCAN_EXTRACT_OPTIONS } from '../utils/scanExtractOptions.js';
 import { createEmailList } from '../utils/createEmailList.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
 import { ScannerLanding } from '../components/scanner/ScannerLanding.jsx';
@@ -17,6 +18,7 @@ export default function ScannerPage() {
   const [phase, setPhase] = useState('landing');
   const [rawUrls, setRawUrls] = useState('');
   const [csvName, setCsvName] = useState('');
+  const [extractOptions, setExtractOptions] = useState(DEFAULT_SCAN_EXTRACT_OPTIONS);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
   const [upgradeRequired, setUpgradeRequired] = useState(false);
@@ -41,6 +43,10 @@ export default function ScannerPage() {
     }
   };
 
+  const toggleExtract = (key) => {
+    setExtractOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const startScan = async () => {
     if (isStarting) return;
     setError('');
@@ -61,6 +67,7 @@ export default function ScannerPage() {
           rawUrls: urls.join('\n'),
           maxConcurrentCrawlers,
           maxUrlsPerScan,
+          extractOptions: { ...extractOptions },
         }),
       });
 
@@ -78,7 +85,7 @@ export default function ScannerPage() {
         addBatch({
           scanId: data.scanId,
           totalUrls: data.scannedUrls ?? urls.length,
-          extractOptions: { email: true },
+          extractOptions: { ...extractOptions },
           label: `Batch ${batchCounter}`,
         });
         setPhase('workspace');
@@ -127,6 +134,8 @@ export default function ScannerPage() {
         <ScannerWorkspace
           rawUrls={rawUrls}
           onUrlsChange={setRawUrls}
+          extractOptions={extractOptions}
+          onToggleExtract={toggleExtract}
           onStartScan={startScan}
           isStarting={isStarting}
           error={error}
