@@ -8,7 +8,7 @@ import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { TrialBanner } from '../components/access/PlanAccessUI.jsx';
 import { useNavNotifications } from '../context/NavNotificationsContext.jsx';
-import { PriorityResourceToast } from '../components/notifications/PriorityResourceToast.jsx';
+import { applyPageSeo, getAppRouteSeo } from '../utils/seo.js';
 
 const LAYOUT_SKELETON_MS = 1500;
 const SCROLL_THRESHOLD = 10;
@@ -50,6 +50,11 @@ export function AppLayout() {
   const [trialBannerHidden, setTrialBannerHidden] = useState(false);
   const mainRef = useRef(null);
   const lastScrollTop = useRef(0);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/app')) return;
+    applyPageSeo(getAppRouteSeo(location.pathname));
+  }, [location.pathname]);
 
   useEffect(() => {
     const t = setTimeout(() => setLayoutLoading(false), LAYOUT_SKELETON_MS);

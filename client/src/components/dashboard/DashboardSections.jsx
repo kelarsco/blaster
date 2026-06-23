@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, TrendingUp, TrendingDown, Minus, Mail, Zap, Award, Target, Star, Edit } from 'react-feather';
 import { RecentActivityList } from './RecentActivityList.jsx';
-import { FeatureLockOverlay } from '../access/PlanAccessUI.jsx';
 import { MIN_DAILY_TARGET } from '../../utils/streaksAndBadges.js';
 import {
   PerformanceStatsCardSkeleton,
@@ -466,7 +465,6 @@ export function DashboardActivityAchievements({
   embedded = false,
   onSetTarget,
   settingTarget,
-  streakLocked = false,
 }) {
   if (loading) {
     return <DashboardActivityAchievementsSkeleton embedded={embedded} />;
@@ -486,13 +484,6 @@ export function DashboardActivityAchievements({
             onSetTarget={onSetTarget}
             settingTarget={settingTarget}
           />
-          {streakLocked && (
-            <FeatureLockOverlay
-              message="Upgrade to set and track your streak."
-              className="absolute inset-0 z-10"
-              minHeight="100%"
-            />
-          )}
         </div>
 
         <div>

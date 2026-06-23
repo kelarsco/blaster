@@ -53,6 +53,39 @@ export const PAGE_SEO = {
   },
 };
 
+/** Document titles for authenticated app routes (browser tab). */
+const APP_ROUTE_TITLES = [
+  { prefix: '/app/campaigns/send/', title: 'Send Campaign | Wiblaster' },
+  { prefix: '/app/account/settings/usage', title: 'Usage & Billing | Wiblaster' },
+  { prefix: '/app/account/settings/manage-plan', title: 'Manage Plan | Wiblaster' },
+  { prefix: '/app/account/billing/monthly-plan', title: 'Monthly Plan | Wiblaster' },
+  { prefix: '/app/account/billing/information', title: 'Billing Information | Wiblaster' },
+  { prefix: '/app/account/billing/history', title: 'Billing History | Wiblaster' },
+  { prefix: '/app/account/billing/extra-credit', title: 'Extra Credit | Wiblaster' },
+  { prefix: '/app/account/pricing', title: 'Pricing | Wiblaster' },
+  { prefix: '/app/dashboard', title: 'Dashboard | Wiblaster' },
+  { prefix: '/app/analytics', title: 'Analytics | Wiblaster' },
+  { prefix: '/app/stores', title: 'Stores | Wiblaster' },
+  { prefix: '/app/scanner', title: 'Scanner | Wiblaster' },
+  { prefix: '/app/campaigns', title: 'Campaigns | Wiblaster' },
+  { prefix: '/app/templates', title: 'Templates | Wiblaster' },
+  { prefix: '/app/resources', title: 'Resources | Wiblaster' },
+  { prefix: '/app/referral', title: 'Referral | Wiblaster' },
+  { prefix: '/app/account', title: 'Account | Wiblaster' },
+];
+
+export function getAppRouteSeo(pathname = '/app/dashboard') {
+  const path = pathname.startsWith('/app') ? pathname : '/app/dashboard';
+  const match =
+    APP_ROUTE_TITLES.find((entry) => path === entry.prefix || path.startsWith(`${entry.prefix}/`)) ||
+    APP_ROUTE_TITLES.find((entry) => entry.prefix === '/app/dashboard');
+  return {
+    title: match?.title || 'Dashboard | Wiblaster',
+    path,
+    robots: 'noindex, follow',
+  };
+}
+
 function upsertMeta(attr, key, content) {
   if (!content) return;
   let el = document.head.querySelector(`meta[${attr}="${key}"]`);

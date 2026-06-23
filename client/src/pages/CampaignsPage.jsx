@@ -85,7 +85,7 @@ export function CampaignsPage() {
   const userId = auth?.user?.id;
   const confirm = useConfirm();
   const location = useLocation();
-  const { status, openUpgradeModal } = usePlanAccess();
+  const { status, openUpgradeModal, requireActivePlan } = usePlanAccess();
   const { activeCampaignId, setActiveCampaignId } = useToolState();
 
   const cached = userId ? readPageCache(userId, CAMPAIGNS_CACHE_KEY) : null;
@@ -272,6 +272,7 @@ export function CampaignsPage() {
   const isMessaged = (email) => messagedEmails.has(String(email || '').toLowerCase());
 
   const tryNewCampaign = () => {
+    if (!requireActivePlan()) return;
     if ((status?.campaignsActive ?? 0) >= (status?.campaignsActiveMax ?? 999999)) {
       openUpgradeModal({
         title: 'Campaign limit reached',
@@ -298,6 +299,7 @@ export function CampaignsPage() {
 
   const handleCreateList = async (name) => {
     if (!authFetch || !pendingRecipients?.length) return;
+    if (!requireActivePlan()) return;
     setSavingList(true);
     setListCreateError('');
     try {

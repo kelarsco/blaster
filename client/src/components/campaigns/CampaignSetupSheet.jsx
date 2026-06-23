@@ -12,6 +12,7 @@ import {
 } from '../../utils/scannerUrls.js';
 import { saveManualCampaignDeck } from '../../utils/manualCampaignDeck.js';
 import { ExportFieldsModal } from '../scanner/ExportFieldsModal.jsx';
+import { usePlanAccess } from '../../context/PlanAccessContext.jsx';
 
 function CheckIcon({ className }) {
   return (
@@ -111,6 +112,7 @@ function SetupOptionsSkeleton() {
  */
 export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onListUpdated }) {
   const navigate = useNavigate();
+  const { requireActivePlan } = usePlanAccess();
   const [exportOpen, setExportOpen] = useState(false);
   const [presets, setPresets] = useState([]);
   const [selectedPresetIds, setSelectedPresetIds] = useState(() => new Set());
@@ -191,6 +193,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
 
   const handleStartOrResume = async () => {
     if (!authFetch) return;
+    if (!requireActivePlan()) return;
     setSetupError('');
     if (hasActiveRun) {
       setStarting(true);

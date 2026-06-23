@@ -1,8 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from './AuthContext.jsx';
-import { UpgradeActionModal, TrialUpgradeModal, isFreeUserAllowedRoute } from '../components/access/PlanAccessUI.jsx';
+import { UpgradeActionModal, TrialUpgradeModal } from '../components/access/PlanAccessUI.jsx';
 import { TRIAL_PLAN_ID } from '../data/plans.js';
 import '../styles/plan-access.css';
 
@@ -21,7 +21,6 @@ const DEFAULT_UPGRADE = {
 export function PlanAccessProvider({ children }) {
   const { user, authFetch } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState([]);
@@ -29,7 +28,6 @@ export function PlanAccessProvider({ children }) {
   const [trialUpgradeOpen, setTrialUpgradeOpen] = useState(false);
   const [trialUpgrading, setTrialUpgrading] = useState(false);
   const [trialUpgradeError, setTrialUpgradeError] = useState('');
-  const shownInitialRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!user || !authFetch) {
@@ -100,24 +98,14 @@ export function PlanAccessProvider({ children }) {
     }
   }, [authFetch, trialUpgrading]);
 
-  useEffect(() => {
-    if (loading || !trialExpired) return;
-
-    if (!isFreeUserAllowedRoute(location.pathname)) {
-      openTrialUpgradeModal();
-      navigate('/app/dashboard', { replace: true });
-      return;
-    }
-
-    if (location.pathname === '/app/dashboard' && !shownInitialRef.current) {
-      shownInitialRef.current = true;
-      openTrialUpgradeModal();
-    }
-  }, [loading, trialExpired, location.pathname, navigate, openTrialUpgradeModal]);
+  const requireActivePlan = useCallback(() => {
+    if (!trialExpired) return true;
+    openTrialUpgradeModal();
+    return false;
+  }, [trialExpired, openTrialUpgradeModal]);
 
   useEffect(() => {
     if (!trialExpired) {
-      shownInitialRef.current = false;
       setTrialUpgradeOpen(false);
     }
   }, [trialExpired]);
@@ -184,13 +172,14 @@ export function PlanAccessProvider({ children }) {
       openUpgradeModal,
       openTrialUpgradeModal,
       closeTrialUpgradeModal,
+      requireActivePlan,
       recordFilterUse,
       activatePayg,
       tier: status?.tier ?? 0,
       trialExpired,
       access: status?.access ?? null,
     }),
-    [status, loading, refresh, showToast, openUpgradeModal, openTrialUpgradeModal, closeTrialUpgradeModal, recordFilterUse, activatePayg, trialExpired]
+    [status, loading, refresh, showToast, openUpgradeModal, openTrialUpgradeModal, closeTrialUpgradeModal, requireActivePlan, recordFilterUse, activatePayg, trialExpired]
   );
 
   return (

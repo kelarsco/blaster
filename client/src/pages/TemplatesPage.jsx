@@ -1,12 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { FileText, Trash2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import { useConfirm } from '../context/ConfirmDialogContext.jsx';
 import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 
 export function TemplatesPage() {
   const { authFetch, user } = useAuth();
+  const { requireActivePlan } = usePlanAccess();
   const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -31,6 +33,7 @@ export function TemplatesPage() {
   const saveTemplate = async (e) => {
     e.preventDefault();
     if (!authFetch || !name.trim()) return;
+    if (!requireActivePlan()) return;
     setSaving(true);
     setError('');
     try {
@@ -60,6 +63,7 @@ export function TemplatesPage() {
 
   const deleteTemplate = async (preset) => {
     if (!authFetch || !preset?.id) return;
+    if (!requireActivePlan()) return;
     const ok = await confirm({
       title: 'Delete template',
       message: `Delete template "${preset.name}"? This cannot be undone.`,

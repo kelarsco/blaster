@@ -18,7 +18,6 @@ import { StoresPagination } from '../components/stores/StoresPagination.jsx';
 import { StoresPageSkeleton } from '../components/stores/StoresPageSkeleton.jsx';
 import { StoresExportFieldsModal } from '../components/stores/StoresExportFieldsModal.jsx';
 import {
-  FeatureLockOverlay,
   PaygConfirmModal,
 } from '../components/access/PlanAccessUI.jsx';
 
@@ -40,6 +39,7 @@ export function StoresPage() {
     recordFilterUse,
     activatePayg,
     openUpgradeModal,
+    requireActivePlan,
   } = usePlanAccess();
 
   const initialFilters = emptyFilters();
@@ -64,8 +64,6 @@ export function StoresPage() {
   const [paygActivating, setPaygActivating] = useState(false);
   const [showPaygHint, setShowPaygHint] = useState(false);
 
-  const storesAccess = access?.storesPage;
-  const basicPageBlocked = storesAccess === 'blocked' || trialExpired;
   const filtersBlocked = status?.filtersBlocked ?? false;
   const exportCopyBlocked = status?.exportCopyBlocked ?? false;
   const paygActive = status?.paygActive ?? false;
@@ -80,6 +78,7 @@ export function StoresPage() {
     access?.paygAvailable;
 
   const promptFilterUpgrade = useCallback(() => {
+    if (trialExpired) return requireActivePlan();
     if (!filtersBlocked) return true;
     if (showPaygOffer) {
       setPaygModalOpen(true);
@@ -96,6 +95,8 @@ export function StoresPage() {
     });
     return false;
   }, [
+    trialExpired,
+    requireActivePlan,
     filtersBlocked,
     showPaygOffer,
     status?.tier,
@@ -144,9 +145,12 @@ export function StoresPage() {
   }, [appliedFilters, currentPage, itemsPerPage, fetchStoresPage, user?.id]);
 
   useEffect(() => {
-    if (basicPageBlocked || planLoading) return;
+    if (planLoading || trialExpired) {
+      if (trialExpired) setLoading(false);
+      return;
+    }
     loadStores();
-  }, [loadStores, basicPageBlocked, planLoading]);
+  }, [loadStores, planLoading, trialExpired]);
 
   useEffect(() => {
     if (!loading) return undefined;
@@ -271,18 +275,6 @@ export function StoresPage() {
     return (
       <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
         <StoresPageSkeleton />
-      </div>
-    );
-  }
-
-  if (basicPageBlocked) {
-    return (
-      <div className="stores-page min-h-full bg-blaster-sidebar p-4 sm:p-6 md:p-8">
-        <FeatureLockOverlay
-          message="Start a $1 trial or choose a plan to access the Stores page."
-          minHeight="min(70vh, 32rem)"
-          className="stores-glass"
-        />
       </div>
     );
   }

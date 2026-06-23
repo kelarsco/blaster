@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { domainFromUrl } from '../utils/scannerUrls.js';
 import { buildMailtoUrl, openMailtoUrl } from '../utils/campaignSend.js';
 import {
@@ -59,6 +60,7 @@ export function ManualSendPage() {
   const navigate = useNavigate();
   const auth = useAuth();
   const authFetch = auth?.authFetch;
+  const { requireActivePlan } = usePlanAccess();
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,6 +171,7 @@ export function ManualSendPage() {
 
   const handleSend = async () => {
     if (!authFetch || !card) return;
+    if (!requireActivePlan()) return;
     setError('');
 
     const sendingCard = card;
@@ -224,6 +227,7 @@ export function ManualSendPage() {
 
   const handleSkip = async () => {
     if (!authFetch || !card) return;
+    if (!requireActivePlan()) return;
     setError('');
     advanceLocal(0);
 

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
 import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
 import { DEFAULT_SCAN_EXTRACT_OPTIONS } from '../utils/scanExtractOptions.js';
@@ -13,6 +14,7 @@ import { ScanBatchFeed } from '../components/scanner/ScanBatchFeed.jsx';
 
 export default function ScannerPage() {
   const { authFetch, user } = useAuth();
+  const { requireActivePlan } = usePlanAccess();
   const navigate = useNavigate();
   const { batches, batchCounter, hydrated, addBatch, removeBatch } = useScanBatches(authFetch, user?.id);
 
@@ -50,6 +52,7 @@ export default function ScannerPage() {
 
   const startScan = async () => {
     if (isStarting) return;
+    if (!requireActivePlan()) return;
     setError('');
     setUpgradeRequired(false);
     setIsStarting(true);
@@ -110,13 +113,14 @@ export default function ScannerPage() {
 
   const handleStartCampaign = useCallback(
     async (batch, name) => {
+      if (!requireActivePlan()) return;
       const recipients = recipientsFromResults(batch.results);
       if (!recipients.length) throw new Error('No emails to save');
 
       const list = await createEmailList(authFetch, { name, recipients });
       navigate('/app/campaigns', { state: { highlightListId: list.id } });
     },
-    [authFetch, navigate]
+    [authFetch, navigate, requireActivePlan]
   );
 
   if (!hydrated) {
