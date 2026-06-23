@@ -8,6 +8,7 @@ import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { TrialBanner } from '../components/access/PlanAccessUI.jsx';
 import { useNavNotifications } from '../context/NavNotificationsContext.jsx';
+import { PriorityResourceToast } from '../components/notifications/PriorityResourceToast.jsx';
 import { applyPageSeo, getAppRouteSeo } from '../utils/seo.js';
 
 const LAYOUT_SKELETON_MS = 1500;
