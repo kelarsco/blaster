@@ -9,6 +9,8 @@ import { getPlanLimitsForUser } from '../services/planLimits.js';
 import { normalizeStoreUrl } from '../services/crawler.js';
 import { normalizeExtractOptions } from '../services/scanExtractOptions.js';
 
+import { sanitizeExtractedContacts } from '../services/contactValidation.js';
+
 export const scanRoutes = Router();
 
 function parseUrls(text) {
@@ -346,10 +348,16 @@ function buildStoresFromRows(rows) {
       });
     }
     const rec = byStore.get(r.store_url);
-    if (r.phone && !rec.phone) rec.phone = r.phone;
-    if (r.whatsapp && !rec.whatsapp) rec.whatsapp = r.whatsapp;
-    if (r.instagram && !rec.instagram) rec.instagram = r.instagram;
-    if (r.tiktok && !rec.tiktok) rec.tiktok = r.tiktok;
+    const contacts = sanitizeExtractedContacts({
+      phone: r.phone,
+      whatsapp: r.whatsapp,
+      instagram: r.instagram,
+      tiktok: r.tiktok,
+    });
+    if (contacts.phone) rec.phone = contacts.phone;
+    if (contacts.whatsapp) rec.whatsapp = contacts.whatsapp;
+    if (contacts.instagram) rec.instagram = contacts.instagram;
+    if (contacts.tiktok) rec.tiktok = contacts.tiktok;
     if (r.email) {
       rec.emails.push({ email: r.email, sourcePage: r.source_page });
       rec.hasEmail = true;

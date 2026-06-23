@@ -1,3 +1,8 @@
+import {
+  sanitizeStoreRecord,
+  storeHasValidExtractedData,
+} from './contactValidation.js';
+
 export function normalizeStoreUrl(input) {
   const raw = (input || '').trim().replace(/^[\s"'`<>()[\]]+|[\s"'`<>()[\]]+$/g, '');
   if (!raw) return null;
@@ -113,7 +118,7 @@ export function recipientsToScanResults(recipients) {
 
 export function summarizeExtractedCounts(results, extractOptions) {
   const counts = { email: 0, phone: 0, whatsapp: 0, instagram: 0, tiktok: 0 };
-  for (const store of results || []) {
+  for (const store of (results || []).map(sanitizeStoreRecord).filter(Boolean)) {
     if (extractOptions?.email && store.emails?.length) counts.email += 1;
     if (extractOptions?.phone && store.phone) counts.phone += 1;
     if (extractOptions?.whatsapp && store.whatsapp) counts.whatsapp += 1;
@@ -150,18 +155,38 @@ export function formatExtractedSummary(results, extractOptions, fallbackFoundCou
 
 export function storesWithExtractedData(results, extractOptions) {
   if (!Array.isArray(results)) return [];
-  return results.filter((store) => {
-    if (extractOptions?.email && store.emails?.length) return true;
-    if (extractOptions?.phone && store.phone) return true;
-    if (extractOptions?.whatsapp && store.whatsapp) return true;
-    if (extractOptions?.instagram && store.instagram) return true;
-    if (extractOptions?.tiktok && store.tiktok) return true;
-    return false;
-  });
+  return results
+    .map(sanitizeStoreRecord)
+    .filter(Boolean)
+    .filter((store) => storeHasValidExtractedData(store, extractOptions));
+}
+
+function rowHasSelectedData(store, fields) {
+  if (fields.email && store.emails?.length) return true;
+  if (fields.phone && store.phone) return true;
+  if (fields.whatsapp && store.whatsapp) return true;
+  if (fields.instagram && store.instagram) return true;
+  if (fields.tiktok && store.tiktok) return true;
+  return false;
+}
+
+function buildExportRow(store, columns, email = '') {
+  const row = [];
+  for (const col of columns) {
+    if (col === 'storeUrl') row.push(store.storeUrl || '');
+    else if (col === 'email') row.push(email || '');
+    else if (col === 'phone') row.push(store.phone || '');
+    else if (col === 'whatsapp') row.push(store.whatsapp || '');
+    else if (col === 'instagram') row.push(store.instagram || '');
+    else if (col === 'tiktok') row.push(store.tiktok || '');
+    else row.push('');
+  }
+  return row;
 }
 
 export function exportScanResultsCsv(results, fields, extractOptions) {
   const withData = storesWithExtractedData(results, extractOptions);
+  if (!withData.length) return 0;
   const columns = ['storeUrl'];
   if (fields.email) columns.push('email');
   if (fields.phone) columns.push('phone');
@@ -180,26 +205,24 @@ export function exportScanResultsCsv(results, fields, extractOptions) {
 
   const rows = [header];
   for (const store of withData) {
-    const emails = fields.email && store.emails?.length ? store.emails.map((e) => e.email) : [''];
-    const iterations = fields.email ? emails : [null];
-    for (const email of iterations) {
-      const row = [];
-      for (const col of columns) {
-        if (col === 'storeUrl') row.push(store.storeUrl || '');
-        else if (col === 'email') row.push(email || '');
-        else if (col === 'phone') row.push(store.phone || '');
-        else if (col === 'whatsapp') row.push(store.whatsapp || '');
-        else if (col === 'instagram') row.push(store.instagram || '');
-        else if (col === 'tiktok') row.push(store.tiktok || '');
-        else row.push('');
+    if (!rowHasSelectedData(store, fields)) continue;
+
+    const emails = fields.email
+      ? (store.emails || []).map((e) => e.email).filter(Boolean)
+      : [];
+
+    if (fields.email && emails.length > 1) {
+      for (const email of emails) {
+        rows.push(buildExportRow(store, columns, email));
       }
-      if (fields.email && !email) continue;
-      rows.push(row);
+    } else {
+      const email = emails[0] || '';
+      rows.push(buildExportRow(store, columns, email));
     }
   }
 
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const csv = rows.map((row) => row.map(escape).join(',')).join('\n');
+  const csv = `\uFEFF${rows.map((row) => row.map(escape).join(',')).join('\n')}`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -209,4 +232,5 @@ export function exportScanResultsCsv(results, fields, extractOptions) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  return rows.length - 1;
 }

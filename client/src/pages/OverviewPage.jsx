@@ -28,12 +28,12 @@ export function OverviewPage() {
           <p className="text-sm text-blaster-muted mt-1">Run and manage outreach campaigns</p>
         </Link>
         <Link
-          to="/app/senders"
+          to="/app/templates"
           className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile hover:border-blaster-accent/40 transition group"
         >
           <Mail className="w-10 h-10 text-blaster-accent mb-3 group-hover:scale-105 transition" strokeWidth={2} />
-          <h3 className="card-title-mobile">Senders</h3>
-          <p className="text-sm text-blaster-muted mt-1">Configure email accounts</p>
+          <h3 className="card-title-mobile">Templates</h3>
+          <p className="text-sm text-blaster-muted mt-1">Create outreach message templates</p>
         </Link>
         <Link
           to="/app/account/settings/usage"
@@ -54,7 +54,7 @@ export function OverviewPage() {
           </li>
           <li className="flex gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-blaster-accent/20 text-blaster-accent flex items-center justify-center text-xs font-medium">2</span>
-            Add senders in Senders and create a campaign
+            Create templates and start a campaign
           </li>
           <li className="flex gap-3">
             <span className="shrink-0 w-6 h-6 rounded-full bg-blaster-accent/20 text-blaster-accent flex items-center justify-center text-xs font-medium">3</span>

@@ -90,7 +90,6 @@ function emptyDashboardPayload() {
     sendEvents: [],
     activityLogs: [],
     scans: [],
-    senders: [],
     presets: [],
     extractedTotal: 0,
     streaksAndBadges: defaultStreaksState(),
@@ -105,7 +104,6 @@ function applyDashboardPayload(payload, setters) {
   setters.setSendEvents(p.sendEvents || []);
   setters.setActivityLogs(p.activityLogs || []);
   setters.setScans(p.scans || []);
-  setters.setSenders(p.senders || []);
   setters.setPresets(p.presets || []);
   setters.setExtractedTotal(Number(p.extractedTotal || 0));
   setters.setStreaksAndBadges(p.streaksAndBadges || defaultStreaksState());
@@ -123,7 +121,6 @@ export function useDashboardData(range = '7d') {
   const [sendEvents, setSendEvents] = useState(cached?.sendEvents ?? []);
   const [activityLogs, setActivityLogs] = useState(cached?.activityLogs ?? []);
   const [scans, setScans] = useState(cached?.scans ?? []);
-  const [senders, setSenders] = useState(cached?.senders ?? []);
   const [presets, setPresets] = useState(cached?.presets ?? []);
   const [extractedTotal, setExtractedTotal] = useState(cached?.extractedTotal ?? 0);
   const [streaksAndBadges, setStreaksAndBadges] = useState(cached?.streaksAndBadges ?? defaultStreaksState());
@@ -139,14 +136,13 @@ export function useDashboardData(range = '7d') {
     else setLoading(true);
 
     try {
-      const [campaignsRes, dashboardMetricsRes, activityRes, scansRes, analyticsRes, sendersRes, presetsRes, streaksRes] =
+      const [campaignsRes, dashboardMetricsRes, activityRes, scansRes, analyticsRes, presetsRes, streaksRes] =
         await Promise.all([
           authFetch(`${API}/campaigns`),
           authFetch(`${API}/campaigns/dashboard-metrics`),
           authFetch(`${API}/activity/logs?limit=200`),
           authFetch(`${API}/scan/recent`),
           authFetch(`${API}/scan/analytics`),
-          authFetch(`${API}/automation/senders`),
           authFetch(`${API}/automation/presets`),
           authFetch(`${API}/streaks`),
         ]);
@@ -169,10 +165,6 @@ export function useDashboardData(range = '7d') {
         const data = await analyticsRes.json();
         payload.extractedTotal = Number(data.extracted || 0);
       }
-      if (sendersRes?.ok) {
-        const data = await sendersRes.json();
-        payload.senders = data.senders || [];
-      }
       if (presetsRes?.ok) {
         const data = await presetsRes.json();
         payload.presets = data.presets || [];
@@ -194,7 +186,6 @@ export function useDashboardData(range = '7d') {
         setSendEvents,
         setActivityLogs,
         setScans,
-        setSenders,
         setPresets,
         setExtractedTotal,
         setStreaksAndBadges,
@@ -295,20 +286,18 @@ export function useDashboardData(range = '7d') {
   const onboarding = useMemo(() => {
     const hasScan = scans.some((s) => s.status === 'completed' || s.status === 'running' || s.processed > 0);
     const hasEmails = totals.emailsExtracted > 0;
-    const hasSender = senders.length > 0;
     const hasCampaign = emailLists.length > 0;
     const hasSent = totals.sentMails > 0;
 
     const steps = [
       { id: 'scan', label: 'Run your first store scan', done: hasScan, to: '/app/scanner' },
       { id: 'emails', label: 'Review extracted store emails', done: hasEmails, to: '/app/stores' },
-      { id: 'sender', label: 'Add an email sender account', done: hasSender, to: '/app/senders' },
       { id: 'campaign', label: 'Create your first campaign', done: hasCampaign, to: '/app/campaigns' },
       { id: 'send', label: 'Send your first outreach email', done: hasSent, to: '/app/campaigns' },
     ];
 
     const allComplete = steps.every((s) => s.done);
-    const hasAnyActivity = hasScan || hasEmails || hasSender || hasCampaign || hasSent || activityLogs.length > 0;
+    const hasAnyActivity = hasScan || hasEmails || hasCampaign || hasSent || activityLogs.length > 0;
 
     return {
       steps,
@@ -316,7 +305,7 @@ export function useDashboardData(range = '7d') {
       allComplete,
       hasAnyActivity,
     };
-  }, [scans, totals, senders, emailLists, activityLogs]);
+  }, [scans, totals, emailLists, activityLogs]);
 
   const recentFeed = useMemo(
     () => buildRecentActivityFeed({ scans, activityLogs }),
@@ -352,9 +341,6 @@ export function useDashboardData(range = '7d') {
     const emailsSentInRange = filterSendEventsBySentRange(sendEvents, range, now).length;
     const emailsSentPrevRange = filterSendEventsBySentPreviousRange(sendEvents, range, now).length;
     const totalEmailsSent = sendEvents.length;
-
-    const sendersAddedInRange = senders.filter((s) => inRange(s.createdAt, range, now)).length;
-    const sendersAddedPrevRange = senders.filter((s) => previousRange(s.createdAt, range, now)).length;
 
     const emailTemplateCount = countEmailTemplates(presets);
     const emailTemplatesInRange = countEmailTemplates(filterByRange(presets, range, now));
@@ -407,13 +393,6 @@ export function useDashboardData(range = '7d') {
           to: '/app/campaigns',
         },
         {
-          key: 'senders',
-          label: 'Senders',
-          value: senders.length.toLocaleString(),
-          trend: trendDelta(sendersAddedInRange, sendersAddedPrevRange),
-          to: '/app/senders',
-        },
-        {
           key: 'templates',
           label: 'Email templates',
           value: emailTemplateCount.toLocaleString(),
@@ -454,7 +433,7 @@ export function useDashboardData(range = '7d') {
       })),
       recentActivity: activityLogs.slice(0, 5),
     };
-  }, [emailLists, manualRuns, sendEvents, activityLogs, scans, senders, presets, extractedTotal, range]);
+  }, [emailLists, manualRuns, sendEvents, activityLogs, scans, presets, extractedTotal, range]);
 
   return {
     loading,

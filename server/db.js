@@ -644,8 +644,8 @@ async function runSchema(p) {
     await migrateScanResultsCascade(p);
     await migrateScanResultsContactColumns(p);
     await migrateCampaignChildCascade(p);
-    await migrateSendersGmailOAuth(p);
     await migrateManualCampaigns(p);
+    await migrateRemoveLegacySenders(p);
     await migrateReferralCodes(p);
     await migrateProcessedPayments(p);
     await migrateLeadScrapeJobSession(p);
@@ -699,7 +699,27 @@ async function migrateCampaignChildCascade(pool) {
   }
 }
 
-/** Add Gmail OAuth columns to senders (provider, tokens, status, daily_sent). */
+async function migrateRemoveLegacySenders(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE manual_campaign_runs DROP COLUMN IF EXISTS sender_group_id;
+      ALTER TABLE manual_campaign_runs DROP COLUMN IF EXISTS sender_order;
+      ALTER TABLE manual_campaign_runs DROP COLUMN IF EXISTS last_sender_email;
+      ALTER TABLE manual_campaign_runs DROP COLUMN IF EXISTS sender_cycle_index;
+      ALTER TABLE campaigns DROP COLUMN IF EXISTS sender_group_id;
+      ALTER TABLE campaign_pending_sends DROP COLUMN IF EXISTS sender_id;
+      ALTER TABLE manual_send_events DROP COLUMN IF EXISTS sender_email;
+      ALTER TABLE campaign_presets DROP COLUMN IF EXISTS senders;
+      DROP TABLE IF EXISTS sender_group_members;
+      DROP TABLE IF EXISTS sender_groups;
+      DROP TABLE IF EXISTS senders;
+    `);
+  } catch (e) {
+    console.warn('[migrateRemoveLegacySenders]', e?.message || e);
+  }
+}
+
+/** @deprecated Legacy sender OAuth columns — table removed by migrateRemoveLegacySenders */
 async function migrateSendersGmailOAuth(pool) {
   try {
     await pool.query(`

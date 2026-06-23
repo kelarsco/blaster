@@ -18,7 +18,6 @@ const navItems = [
   { to: '/app/scanner', label: 'Scanner', icon: ScannerIcon },
   { to: '/app/campaigns', label: 'Campaigns', icon: CampaignsIcon },
   { to: '/app/templates', label: 'Templates', icon: TemplatesIcon },
-  { to: '/app/senders', label: 'Senders', icon: SendersIcon },
   { to: '/app/resources', label: 'Resources', icon: ResourcesIcon },
   { to: '/app/referral', label: 'Referral', icon: ReferralIcon },
 ];
@@ -294,7 +293,6 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
                   to === '/app/scanner' ||
                   to === '/app/campaigns' ||
                   to === '/app/templates' ||
-                  to === '/app/senders' ||
                   to === '/app/resources'
                 }
                 onClick={(e) => handleNavClick(e, to)}

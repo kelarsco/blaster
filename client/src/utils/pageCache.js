@@ -7,7 +7,6 @@ export const APP_ROUTE_CACHE_KEYS = {
   '/app/stores': 'stores-list',
   '/app/campaigns': 'campaigns',
   '/app/templates': 'templates',
-  '/app/senders': 'senders',
   '/app/resources': 'resources',
   '/app/referral': 'referral',
 };

@@ -6,6 +6,7 @@ import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
 import { DEFAULT_SCAN_EXTRACT_OPTIONS } from '../utils/scanExtractOptions.js';
 import { createEmailList } from '../utils/createEmailList.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
+import { parseScanResultsPayload } from '../utils/scanStatus.js';
 import { ScannerLanding } from '../components/scanner/ScannerLanding.jsx';
 import { ScannerWorkspace } from '../components/scanner/ScannerWorkspace.jsx';
 import { ScanBatchFeed } from '../components/scanner/ScanBatchFeed.jsx';
@@ -99,6 +100,16 @@ export default function ScannerPage() {
     }
   };
 
+  const handleFetchResults = useCallback(
+    async (batch) => {
+      const res = await authFetch(`${API}/scan/results/${batch.scanId}`);
+      if (!res.ok) return batch.results || [];
+      const data = await res.json().catch(() => ({}));
+      return parseScanResultsPayload(data);
+    },
+    [authFetch]
+  );
+
   const handleStartCampaign = useCallback(
     async (batch, name) => {
       const recipients = recipientsFromResults(batch.results);
@@ -146,6 +157,7 @@ export default function ScannerPage() {
           batches={batches}
           onStartCampaign={handleStartCampaign}
           onRemoveBatch={removeBatch}
+          onFetchResults={handleFetchResults}
         />
       </div>
     </div>

@@ -50,6 +50,10 @@ function applyDeckHead(deck) {
   };
 }
 
+function templatePreviewLines(body, maxLines = 3) {
+  return String(body || '').split(/\r?\n/).slice(0, maxLines);
+}
+
 export function ManualSendPage() {
   const { runId } = useParams();
   const navigate = useNavigate();
@@ -170,7 +174,6 @@ export function ManualSendPage() {
     const sendingCard = card;
     const mailto = buildMailtoUrl({
       to: sendingCard.recipient.email,
-      from: sendingCard.senderEmail,
       subject: sendingCard.subject,
       body: sendingCard.body,
     });
@@ -180,11 +183,8 @@ export function ManualSendPage() {
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
       body: JSON.stringify({
-        senderEmail: sendingCard.senderEmail,
         subject: sendingCard.subject,
         body: sendingCard.body,
-        senderOrder: sendingCard.senderOrder,
-        senderPickIndex: sendingCard.senderPickIndex,
       }),
     })
       .then(readJsonResponse)
@@ -313,16 +313,26 @@ export function ManualSendPage() {
               {error && <p className="text-sm text-red-600">{error}</p>}
 
               <div>
-                <label className="text-xs font-medium text-blaster-muted uppercase">From</label>
-                <p className="mt-1 text-base font-medium text-blaster-fg">{card.senderEmail}</p>
-              </div>
-
-              <div>
                 <label className="text-xs font-medium text-blaster-muted uppercase">To</label>
                 <p className="mt-1 text-base font-medium text-blaster-fg">{card.recipient.email}</p>
                 <p className="text-xs text-blaster-muted mt-0.5">
                   {domainFromUrl(card.recipient.storeUrl || card.recipient.store_url || '')}
                 </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-blaster-muted uppercase">Message preview</label>
+                <p className="mt-1 text-sm font-medium text-blaster-fg">{card.subject}</p>
+                <div
+                  className="mt-2 rounded-xl border border-blaster-border bg-gray-50/80 px-4 py-3 text-sm text-blaster-muted whitespace-pre-wrap"
+                  aria-readonly="true"
+                >
+                  {templatePreviewLines(card.body).join('\n')}
+                  {String(card.body || '').split(/\r?\n/).length > 3 ? (
+                    <span>{'\n'}…</span>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-blaster-muted mt-1.5">Opens in your email app when you tap Send.</p>
               </div>
 
               <button

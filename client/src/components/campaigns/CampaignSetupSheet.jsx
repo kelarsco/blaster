@@ -28,15 +28,13 @@ const setupChipSelected =
   'px-3 py-2 rounded-xl text-sm font-medium border border-blaster-accent/25 bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 text-[#1a1a21] shadow-sm transition';
 
 /**
- * Unified campaign setup: sender group, templates, contact table, start/resume.
+ * Unified campaign setup: templates, contact table, start/resume.
  * Used after CSV import, scanner save, or opening a saved list.
  */
 export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onListUpdated }) {
   const navigate = useNavigate();
   const [exportOpen, setExportOpen] = useState(false);
-  const [groups, setGroups] = useState([]);
   const [presets, setPresets] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
   const [selectedPresetIds, setSelectedPresetIds] = useState(() => new Set());
   const [activeRun, setActiveRun] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -44,7 +42,6 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
 
   useEffect(() => {
     if (!authFetch || !list?.id) return;
-    authFetch(`${API}/automation/senders/groups`).then((r) => r.json()).then((d) => setGroups(d.groups || []));
     authFetch(`${API}/automation/presets`).then((r) => r.json()).then((d) => setPresets(d.presets || []));
     authFetch(`${API}/manual-campaigns?emailListId=${list.id}`)
       .then((r) => r.json())
@@ -54,7 +51,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
   if (!list) return null;
 
   const hasExportable = (list.recipients?.length ?? 0) > 0;
-  const canStart = hasExportable && selectedGroupId && selectedPresetIds.size > 0;
+  const canStart = hasExportable && selectedPresetIds.size > 0;
   const hasActiveRun = activeRun && activeRun.status !== 'completed';
   const scanResults = recipientsToScanResults(list.recipients);
   const extractOptions = { email: true, phone: false, whatsapp: false, instagram: false, tiktok: false };
@@ -96,7 +93,6 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           emailListId: list.id,
-          senderGroupId: selectedGroupId,
           templateIds: [...selectedPresetIds],
           recipients: list.recipients || [],
         }),
@@ -170,33 +166,6 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                     aria-hidden
                   />
                   <div className="relative p-4 space-y-4">
-                    <div>
-                      <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Sender Group</label>
-                      {groups.length === 0 ? (
-                        <p className="text-sm text-blaster-muted mt-1">
-                          No groups yet.{' '}
-                          <Link to="/app/senders" className="text-blaster-accent hover:underline" onClick={onClose}>
-                            Create one on Senders
-                          </Link>
-                        </p>
-                      ) : (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {groups.map((g) => (
-                            <button
-                              key={g.id}
-                              type="button"
-                              onClick={() => setSelectedGroupId(g.id)}
-                              className={selectedGroupId === g.id ? setupChipSelected : setupChipDefault}
-                            >
-                              {g.name}
-                              <span className={`ml-1.5 text-xs ${selectedGroupId === g.id ? 'text-[#1a1a21]/70' : 'text-[#1a1a21]/55'}`}>
-                                ({(g.senders || []).length})
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
                     <div>
                       <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Templates</label>
                       {presets.length === 0 ? (

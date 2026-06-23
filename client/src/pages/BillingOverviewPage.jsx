@@ -113,10 +113,8 @@ export function BillingOverviewPage() {
   const showInitialLoading = loading && !hasData;
   const isFree = (plan?.amount ?? 0) === 0;
   const scansRemaining = usage ? Math.max(0, (usage.scansLimit >= 999999 ? 999999 : usage.scansLimit) - (usage.scansUsed ?? 0)) : 0;
-  const sendersRemaining = usage ? Math.max(0, usage.sendersLimit >= 999 ? 999 : usage.sendersLimit - usage.sendersUsed) : 0;
   const emailsRemaining = usage ? Math.max(0, (usage.emailsLimit >= 999999 ? 999999 : usage.emailsLimit) - usage.emailsUsed) : 0;
   const scansPct = usage && (usage.scansLimit > 0 && usage.scansLimit < 999999) ? (Math.min((usage.scansUsed ?? 0) / usage.scansLimit, 1) * 100) : 0;
-  const sendersPct = usage && usage.sendersLimit > 0 && usage.sendersLimit < 999 ? (usage.sendersUsed / usage.sendersLimit) * 100 : 0;
   const emailsPct = usage && usage.emailsLimit > 0 && usage.emailsLimit < 999999 ? (usage.emailsUsed / usage.emailsLimit) * 100 : 0;
   const extraPct = extraCredit.nextThreshold > 0 ? Math.min(100, (extraCredit.owed / extraCredit.nextThreshold) * 100) : 0;
 
@@ -199,17 +197,6 @@ export function BillingOverviewPage() {
                   </div>
                   <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
                     <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, emailsPct)}%` }} />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-blaster-muted">Email senders</span>
-                    <span className="text-blaster-fg">
-                      {usage.sendersLimit >= 999 ? `${usage.sendersUsed} used · Unlimited` : `${usage.sendersUsed} of ${usage.sendersLimit} used · ${sendersRemaining} remaining`}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
-                    <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${Math.min(100, sendersPct)}%` }} />
                   </div>
                 </div>
                 {showFilterUsage && (

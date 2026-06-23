@@ -14,7 +14,6 @@ import ScannerPage from './pages/ScannerPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { ManualSendPage } from './pages/ManualSendPage';
 import { TemplatesPage } from './pages/TemplatesPage';
-import { SendersPage } from './pages/SendersPage';
 import { ResourcesPage } from './pages/ResourcesPage';
 import { ReferralPage } from './pages/ReferralPage';
 import { StoresPage } from './pages/StoresPage';
@@ -145,7 +144,6 @@ function AppRoutes() {
           <Route path="campaigns" element={<CampaignsPage />} />
           <Route path="campaigns/send/:runId" element={<ManualSendPage />} />
           <Route path="templates" element={<TemplatesPage />} />
-          <Route path="senders" element={<SendersPage />} />
           <Route path="resources" element={<ResourcesPage />} />
           <Route path="referral" element={<ReferralPage />} />
           <Route path="account" element={<AccountLayout />}>

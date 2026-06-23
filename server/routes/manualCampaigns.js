@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { shuffleArray, pickNextSender } from '../services/senderShuffle.js';
 import { recordEmailSent } from '../services/streakService.js';
 import { logActivity } from './activity.js';
 
@@ -61,30 +60,13 @@ async function loadPresets(db, userId, templateIds) {
   return { subjects, templates };
 }
 
-async function loadGroupEmails(db, groupId, userId) {
-  const result = await db.query(
-    `SELECT s.email FROM senders s
-     JOIN sender_group_members sgm ON sgm.sender_id = s.id
-     JOIN sender_groups sg ON sg.id = sgm.group_id
-     WHERE sg.id = $1 AND sg.user_id = $2 AND s.is_active = 1
-       AND COALESCE(s.verification_status, 'verified') = 'verified'
-     ORDER BY s.created_at`,
-    [groupId, userId]
-  );
-  return (result.rows || []).map((r) => r.email).filter(Boolean);
-}
-
 function rowToRun(row) {
   return {
     id: row.id,
     emailListId: row.email_list_id,
-    senderGroupId: row.sender_group_id,
     templateIds: parseJson(row.template_ids, []),
     recipientQueue: parseJson(row.recipient_queue, []),
     currentIndex: row.current_index || 0,
-    senderOrder: parseJson(row.sender_order, []),
-    lastSenderEmail: row.last_sender_email || null,
-    senderCycleIndex: row.sender_cycle_index || 0,
     status: row.status,
     totalSent: row.total_sent || 0,
     createdAt: row.created_at,
@@ -92,7 +74,7 @@ function rowToRun(row) {
   };
 }
 
-async function getRunTrackingStats(db, runId, row) {
+async function getRunTrackingStats(db, row) {
   const queue = parseJson(row.recipient_queue, []);
   return {
     totalSent: row.total_sent || 0,
@@ -100,7 +82,54 @@ async function getRunTrackingStats(db, runId, row) {
   };
 }
 
-async function advanceRunAfterSkip(db, userId, row) {
+function buildCardContent(recipient, subjects, templates, meta) {
+  const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
+  const subjectRaw = subjects.length
+    ? subjects[Math.floor(Math.random() * subjects.length)]
+    : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
+  const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
+
+  return {
+    currentIndex: meta.idx,
+    totalQueued: meta.totalQueued,
+    totalSent: meta.totalSent,
+    recipient,
+    subject: fillTemplate(subjectRaw, recipient),
+    body: fillTemplate(bodyRaw, recipient),
+  };
+}
+
+async function buildDeckForRun(db, userId, row, fromIndex = 0) {
+  const queue = parseJson(row.recipient_queue, []);
+  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+  const start = Math.max(fromIndex, row.current_index || 0);
+  const deck = [];
+
+  for (let idx = start; idx < queue.length; idx++) {
+    deck.push(
+      buildCardContent(queue[idx], subjects, templates, {
+        idx,
+        totalQueued: queue.length,
+        totalSent: row.total_sent || 0,
+      })
+    );
+  }
+
+  return deck;
+}
+
+async function buildCardAtIndex(db, userId, row, idx) {
+  const queue = parseJson(row.recipient_queue, []);
+  if (idx >= queue.length) return null;
+  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
+  return buildCardContent(queue[idx], subjects, templates, {
+    idx,
+    totalQueued: queue.length,
+    totalSent: row.total_sent || 0,
+  });
+}
+
+async function advanceRunAfterSkip(db, row) {
   const queue = parseJson(row.recipient_queue, []);
   const idx = row.current_index || 0;
   if (idx >= queue.length) {
@@ -127,13 +156,13 @@ async function advanceRunAfterSkip(db, userId, row) {
   let next = null;
   let prefetch = null;
   if (!completed) {
-    next = await buildCardAtIndex(db, userId, updatedRow, nextIndex);
+    next = await buildCardAtIndex(db, row.user_id, updatedRow, nextIndex);
     if (nextIndex + 1 < queue.length) {
-      prefetch = await buildCardAtIndex(db, userId, updatedRow, nextIndex + 1);
+      prefetch = await buildCardAtIndex(db, row.user_id, updatedRow, nextIndex + 1);
     }
   }
 
-  const tracking = await getRunTrackingStats(db, row.id, updatedRow);
+  const tracking = await getRunTrackingStats(db, updatedRow);
 
   return {
     ok: true,
@@ -143,82 +172,6 @@ async function advanceRunAfterSkip(db, userId, row) {
     next,
     prefetch,
   };
-}
-
-function buildCardContent(recipient, pick, subjects, templates, meta) {
-  const tmpl = randomTemplate(templates.length ? templates : subjects.map((s) => ({ subject: s, body: '' })));
-  const subjectRaw = subjects.length
-    ? subjects[Math.floor(Math.random() * subjects.length)]
-    : (typeof tmpl.subject === 'string' ? tmpl.subject : '{{store_url}}');
-  const bodyRaw = tmpl.body || `Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards`;
-  const senderOrder = pick.order;
-
-  return {
-    currentIndex: meta.idx,
-    totalQueued: meta.totalQueued,
-    totalSent: meta.totalSent,
-    recipient,
-    senderEmail: pick.email || senderOrder[0],
-    subject: fillTemplate(subjectRaw, recipient),
-    body: fillTemplate(bodyRaw, recipient),
-    senderOrder,
-    senderPickIndex: pick.index,
-  };
-}
-
-function simulateSenderState(row, upToIndex) {
-  let order = parseJson(row.sender_order, []);
-  let cycleIndex = row.sender_cycle_index || 0;
-  let lastSender = row.last_sender_email;
-  const start = row.current_index || 0;
-
-  for (let i = start; i < upToIndex; i++) {
-    const step = pickNextSender(order, cycleIndex, lastSender);
-    order = step.order;
-    cycleIndex = step.index + 1;
-    lastSender = step.email;
-  }
-  return { order, cycleIndex, lastSender };
-}
-
-async function buildDeckForRun(db, userId, row, fromIndex = 0) {
-  const queue = parseJson(row.recipient_queue, []);
-  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
-  const start = Math.max(fromIndex, row.current_index || 0);
-
-  let { order, cycleIndex, lastSender } = simulateSenderState(row, start);
-  const deck = [];
-
-  for (let idx = start; idx < queue.length; idx++) {
-    const pick = pickNextSender(order, cycleIndex, lastSender);
-    order = pick.order;
-    deck.push(
-      buildCardContent(queue[idx], pick, subjects, templates, {
-        idx,
-        totalQueued: queue.length,
-        totalSent: row.total_sent || 0,
-      })
-    );
-    cycleIndex = pick.index + 1;
-    lastSender = pick.email;
-  }
-
-  return deck;
-}
-
-async function buildCardAtIndex(db, userId, row, idx) {
-  const queue = parseJson(row.recipient_queue, []);
-  if (idx >= queue.length) return null;
-
-  const { subjects, templates } = await loadPresets(db, userId, parseJson(row.template_ids, []));
-  let { order, cycleIndex, lastSender } = simulateSenderState(row, idx);
-  const pick = pickNextSender(order, cycleIndex, lastSender);
-
-  return buildCardContent(queue[idx], pick, subjects, templates, {
-    idx,
-    totalQueued: queue.length,
-    totalSent: row.total_sent || 0,
-  });
 }
 
 manualCampaignRoutes.get('/', requireAuth, async (req, res) => {
@@ -240,24 +193,18 @@ manualCampaignRoutes.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// POST /start before /:runId
 manualCampaignRoutes.post('/start', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
     const userId = req.user.id;
-    const { emailListId, senderGroupId, templateIds = [], recipients = [] } = req.body || {};
+    const { emailListId, templateIds = [], recipients = [] } = req.body || {};
 
-    if (!emailListId || !senderGroupId || !recipients?.length) {
-      return res.status(400).json({ error: 'emailListId, senderGroupId, and recipients required' });
+    if (!emailListId || !recipients?.length) {
+      return res.status(400).json({ error: 'emailListId and recipients required' });
     }
     if (!templateIds?.length) {
       return res.status(400).json({ error: 'Select at least one template' });
-    }
-
-    const groupEmails = await loadGroupEmails(db, senderGroupId, userId);
-    if (!groupEmails.length) {
-      return res.status(400).json({ error: 'Sender group has no verified emails' });
     }
 
     const existing = await db.query(
@@ -279,17 +226,11 @@ manualCampaignRoutes.post('/start', requireAuth, async (req, res) => {
     }
 
     const id = uuidv4();
-    const senderOrder = shuffleArray(groupEmails);
     await db.query(
       `INSERT INTO manual_campaign_runs
-        (id, user_id, email_list_id, sender_group_id, template_ids, recipient_queue, current_index, sender_order, status, total_sent)
-       VALUES ($1, $2, $3, $4, $5, $6, 0, $7, 'in_progress', 0)`,
-      [
-        id, userId, emailListId, senderGroupId,
-        JSON.stringify(templateIds),
-        JSON.stringify(recipients),
-        JSON.stringify(senderOrder),
-      ]
+        (id, user_id, email_list_id, template_ids, recipient_queue, current_index, status, total_sent)
+       VALUES ($1, $2, $3, $4, $5, 0, 'in_progress', 0)`,
+      [id, userId, emailListId, JSON.stringify(templateIds), JSON.stringify(recipients)]
     );
     logActivity('manual_campaign_start', { runId: id, emailListId, total: recipients.length }, userId);
     const row = (await db.query('SELECT * FROM manual_campaign_runs WHERE id = $1', [id])).rows[0];
@@ -311,7 +252,7 @@ manualCampaignRoutes.get('/:runId', requireAuth, async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'Run not found' });
     const events = await db.query(
-      'SELECT recipient_email, sender_email, sent_at, opened_at FROM manual_send_events WHERE run_id = $1 ORDER BY sent_at',
+      'SELECT recipient_email, subject, sent_at, opened_at FROM manual_send_events WHERE run_id = $1 ORDER BY sent_at',
       [row.id]
     );
     res.json({ run: rowToRun(row), sendLog: events.rows || [] });
@@ -330,7 +271,7 @@ manualCampaignRoutes.get('/:runId/stats', requireAuth, async (req, res) => {
     );
     const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'Run not found' });
-    res.json(await getRunTrackingStats(db, row.id, row));
+    res.json(await getRunTrackingStats(db, row));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -347,11 +288,11 @@ manualCampaignRoutes.get('/:runId/deck', requireAuth, async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'Run not found' });
     if (row.status === 'completed') {
-      const tracking = await getRunTrackingStats(db, row.id, row);
+      const tracking = await getRunTrackingStats(db, row);
       return res.json({ completed: true, deck: [], ...tracking });
     }
     const deck = await buildDeckForRun(db, req.user.id, row, row.current_index || 0);
-    const tracking = await getRunTrackingStats(db, row.id, row);
+    const tracking = await getRunTrackingStats(db, row);
     res.json({ completed: false, deck, ...tracking });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -375,7 +316,7 @@ manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
       );
     }
     if (row.status === 'completed') {
-      const tracking = await getRunTrackingStats(db, row.id, row);
+      const tracking = await getRunTrackingStats(db, row);
       return res.json({ completed: true, ...tracking });
     }
 
@@ -386,13 +327,13 @@ manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
         "UPDATE manual_campaign_runs SET status = 'completed', updated_at = NOW() WHERE id = $1",
         [row.id]
       );
-      const tracking = await getRunTrackingStats(db, row.id, row);
+      const tracking = await getRunTrackingStats(db, row);
       return res.json({ completed: true, ...tracking });
     }
 
     const card = await buildCardAtIndex(db, req.user.id, row, idx);
     if (!card) {
-      const tracking = await getRunTrackingStats(db, row.id, row);
+      const tracking = await getRunTrackingStats(db, row);
       return res.json({ completed: true, ...tracking });
     }
 
@@ -401,7 +342,7 @@ manualCampaignRoutes.get('/:runId/current', requireAuth, async (req, res) => {
       next = await buildCardAtIndex(db, req.user.id, row, idx + 1);
     }
 
-    const tracking = await getRunTrackingStats(db, row.id, row);
+    const tracking = await getRunTrackingStats(db, row);
 
     res.json({
       completed: false,
@@ -420,7 +361,7 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
     const db = getDb();
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
     const userId = req.user.id;
-    const { senderEmail, subject, body, senderOrder, senderPickIndex, skip } = req.body || {};
+    const { subject, body, skip } = req.body || {};
 
     const result = await db.query(
       'SELECT * FROM manual_campaign_runs WHERE id = $1 AND user_id = $2',
@@ -431,7 +372,7 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
     if (row.status === 'completed') return res.status(400).json({ error: 'Campaign already completed' });
 
     if (skip) {
-      const payload = await advanceRunAfterSkip(db, userId, row);
+      const payload = await advanceRunAfterSkip(db, row);
       if (payload.error) return res.status(payload.status || 400).json({ error: payload.error });
       return res.json(payload);
     }
@@ -447,37 +388,25 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
 
     await db.query(
       `INSERT INTO manual_send_events
-        (id, run_id, recipient_email, recipient_store_url, sender_email, subject, tracking_token)
-       VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
+        (id, run_id, recipient_email, recipient_store_url, subject, tracking_token)
+       VALUES ($1, $2, $3, $4, $5, NULL)`,
       [
         eventId, row.id, recipient.email,
         recipient.storeUrl || recipient.store_url || null,
-        senderEmail, subject,
+        subject,
       ]
     );
 
     const nextIndex = idx + 1;
     const completed = nextIndex >= queue.length;
-    const order = senderOrder || parseJson(row.sender_order, []);
-    const nextCycleIndex = (senderPickIndex != null ? senderPickIndex + 1 : (row.sender_cycle_index || 0) + 1);
     await db.query(
       `UPDATE manual_campaign_runs SET
         current_index = $2,
-        last_sender_email = $3,
-        sender_order = $4,
-        sender_cycle_index = $5,
         total_sent = total_sent + 1,
-        status = $6,
+        status = $3,
         updated_at = NOW()
        WHERE id = $1`,
-      [
-        row.id,
-        nextIndex,
-        senderEmail,
-        JSON.stringify(order),
-        nextCycleIndex,
-        completed ? 'completed' : row.status,
-      ]
+      [row.id, nextIndex, completed ? 'completed' : row.status]
     );
 
     await recordEmailSent(userId, 1);
@@ -486,9 +415,6 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
     const updatedRow = {
       ...row,
       current_index: nextIndex,
-      last_sender_email: senderEmail,
-      sender_order: JSON.stringify(order),
-      sender_cycle_index: nextCycleIndex,
       total_sent: totalSent,
       status: completed ? 'completed' : row.status,
     };
@@ -502,7 +428,7 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
       }
     }
 
-    const tracking = await getRunTrackingStats(db, row.id, updatedRow);
+    const tracking = await getRunTrackingStats(db, updatedRow);
 
     res.json({
       ok: true,

@@ -25,10 +25,25 @@ function GradientProgress({ processed, total, complete }) {
   );
 }
 
-function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
+function ScanBatchCard({ batch, onStartCampaign, onRemove, onFetchResults }) {
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportError, setExportError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const handleExport = async (fields) => {
+    setExportError('');
+    let results = batch.results;
+    if ((!results || results.length === 0) && onFetchResults) {
+      results = await onFetchResults(batch);
+    }
+    const rowCount = exportScanResultsCsv(results || [], fields, batch.extractOptions);
+    if (!rowCount) {
+      setExportError('No valid contact data to export for the selected fields.');
+      return;
+    }
+    setExportOpen(false);
+  };
 
   const isComplete = batch.status === 'completed';
   const isFailed = batch.status === 'failed';
@@ -130,18 +145,20 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove }) {
 
       {exportOpen ? (
         <ExportFieldsModal
-          onClose={() => setExportOpen(false)}
-          onConfirm={(fields) => {
-            exportScanResultsCsv(batch.results, fields, batch.extractOptions);
+          extractOptions={batch.extractOptions}
+          onClose={() => {
             setExportOpen(false);
+            setExportError('');
           }}
+          onConfirm={handleExport}
+          error={exportError}
         />
       ) : null}
     </>
   );
 }
 
-export function ScanBatchFeed({ batches, onStartCampaign, onRemoveBatch }) {
+export function ScanBatchFeed({ batches, onStartCampaign, onRemoveBatch, onFetchResults }) {
   return (
     <div className="border-t border-blaster-border">
       <div className="px-5 py-4 border-b border-blaster-border">
@@ -163,6 +180,7 @@ export function ScanBatchFeed({ batches, onStartCampaign, onRemoveBatch }) {
             batch={batch}
             onStartCampaign={onStartCampaign}
             onRemove={onRemoveBatch}
+            onFetchResults={onFetchResults}
           />
         ))
       )}

@@ -3,6 +3,13 @@
  * Uses the same page set as email extraction (HTML + Shopify policy JSON).
  */
 import { load } from 'cheerio';
+import {
+  sanitizeExtractedContacts,
+  validateInstagramUrl,
+  validatePhoneNumber,
+  validateTiktokUrl,
+  validateWhatsAppUrl,
+} from './contactValidation.js';
 
 const INSTAGRAM_PATH_RE = /instagram\.com\/([A-Za-z0-9._]+)/gi;
 const TIKTOK_PATH_RE = /tiktok\.com\/@?([A-Za-z0-9._]+)/gi;
@@ -10,12 +17,6 @@ const WA_ME_RE = /wa\.me\/(\d{8,15})/gi;
 const WA_API_RE = /api\.whatsapp\.com\/send\?[^"'\s]*/gi;
 const PHONE_TEXT_RE = /(?:\+?\d[\d\s().-]{7,}\d)/g;
 const IG_HANDLE_TEXT_RE = /(?:^|[\s(])(@)([A-Za-z0-9._]{2,30})\b/g;
-
-const IGNORE_IG = new Set([
-  'p', 'reel', 'reels', 'stories', 'explore', 'about', 'accounts', 'direct', 'login',
-  'tv', 'legal', 'privacy', 'terms', 'developer', 'directory',
-]);
-const IGNORE_TT = new Set(['video', 'discover', 'tag', 'music', 'live', 'login', 'signup']);
 
 const SOCIAL_SELECTORS =
   'footer, .footer, #footer, .site-footer, [role="contentinfo"], [class*="footer"], [id*="footer"], #shopify-section-footer, .social, [class*="social"], header, [class*="header-icons"]';
@@ -38,53 +39,19 @@ function storeBrandHint(storeHost) {
 }
 
 function normalizePhoneDigits(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  let s = decodeHtmlEntities(raw).trim();
-  if (!s) return null;
-
-  const telMatch = s.match(/^tel:([+\d\s().-]+)$/i);
-  if (telMatch) s = telMatch[1];
-
-  const digits = s.replace(/\D/g, '');
-  if (digits.length < 8 || digits.length > 15) return null;
-
-  const hasPlus = s.includes('+') || s.trim().startsWith('+');
-  if (hasPlus || digits.length >= 10) return `+${digits}`;
-  return `+${digits}`;
+  return validatePhoneNumber(raw);
 }
 
 function normalizeWhatsAppUrl(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  const decoded = decodeHtmlEntities(raw);
-  const waMe = decoded.match(/wa\.me\/(\d{8,15})/i);
-  if (waMe) return `https://wa.me/${waMe[1]}`;
-
-  const apiMatch = decoded.match(/phone=(\d{8,15})/i);
-  if (apiMatch) return `https://wa.me/${apiMatch[1]}`;
-
-  return null;
+  return validateWhatsAppUrl(raw);
 }
 
 function normalizeInstagram(usernameOrUrl) {
-  if (!usernameOrUrl || typeof usernameOrUrl !== 'string') return null;
-  let u = decodeHtmlEntities(usernameOrUrl).trim();
-  const pathMatch = u.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
-  if (pathMatch) u = pathMatch[1];
-  u = u.replace(/^@/, '').split('/')[0].split('?')[0].toLowerCase();
-  if (!u || u.length < 2 || IGNORE_IG.has(u)) return null;
-  if (!/^[a-z0-9._]+$/.test(u)) return null;
-  return `https://instagram.com/${u}`;
+  return validateInstagramUrl(usernameOrUrl);
 }
 
 function normalizeTiktok(usernameOrUrl) {
-  if (!usernameOrUrl || typeof usernameOrUrl !== 'string') return null;
-  let u = decodeHtmlEntities(usernameOrUrl).trim();
-  const pathMatch = u.match(/tiktok\.com\/@?([A-Za-z0-9._]+)/i);
-  if (pathMatch) u = pathMatch[1];
-  u = u.replace(/^@/, '').split('/')[0].split('?')[0].toLowerCase();
-  if (!u || u.length < 2 || IGNORE_TT.has(u)) return null;
-  if (!/^[a-z0-9._]+$/.test(u)) return null;
-  return `https://tiktok.com/@${u}`;
+  return validateTiktokUrl(usernameOrUrl);
 }
 
 function walkJsonLdContacts(node, collectors) {
@@ -220,8 +187,6 @@ function extractFromHtml(url, html, collectors) {
       scanTextForContacts(text, collectors);
     }
   });
-
-  scanTextForContacts(slice, collectors);
 }
 
 function rankSocialUrl(url, brand) {
@@ -285,11 +250,15 @@ export function extractContactsFromPages(storeUrl, pages, options = {}) {
     if (digits.length >= 8) phone = `+${digits}`;
   }
 
-  return {
+  const sanitized = sanitizeExtractedContacts({
     phone: wantPhone ? phone : null,
     whatsapp,
     instagram: wantInstagram ? pickBestSocial(collectors.instagram, brand) : null,
     tiktok: wantTiktok ? pickBestSocial(collectors.tiktok, brand) : null,
+  });
+
+  return {
+    ...sanitized,
     storeUrl,
   };
 }

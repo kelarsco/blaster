@@ -30,10 +30,7 @@ export function deckCardToUi(card) {
   if (!card) return null;
   return {
     recipient: card.recipient,
-    senderEmail: card.senderEmail,
     subject: card.subject,
     body: card.body,
-    senderOrder: card.senderOrder,
-    senderPickIndex: card.senderPickIndex,
   };
 }

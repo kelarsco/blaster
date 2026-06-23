@@ -9,14 +9,14 @@ const FIELD_OPTIONS = [
   { key: 'tiktok', label: 'TikTok' },
 ];
 
-export function ExportFieldsModal({ onClose, onConfirm }) {
+export function ExportFieldsModal({ onClose, onConfirm, extractOptions, error }) {
   const [fields, setFields] = useState({
     storeUrl: true,
-    email: true,
-    phone: true,
-    whatsapp: true,
-    instagram: true,
-    tiktok: true,
+    email: extractOptions?.email !== false,
+    phone: !!extractOptions?.phone,
+    whatsapp: !!extractOptions?.whatsapp,
+    instagram: !!extractOptions?.instagram,
+    tiktok: !!extractOptions?.tiktok,
   });
 
   const toggle = (key) => {
@@ -31,8 +31,11 @@ export function ExportFieldsModal({ onClose, onConfirm }) {
       <div className="w-full max-w-sm rounded-2xl border border-blaster-border bg-white shadow-xl p-5">
         <h3 className="text-sm font-semibold text-blaster-fg mb-1">Export scan results</h3>
         <p className="text-xs text-blaster-muted mb-4">
-          Only stores with extracted data are included. Store URL is always first.
+          Only stores with valid extracted data are included. Store URL is always first.
         </p>
+        {error ? (
+          <p className="text-xs text-red-600 mb-3">{error}</p>
+        ) : null}
         <div className="space-y-2">
           {FIELD_OPTIONS.map((opt) => (
             <label
