@@ -11,7 +11,7 @@ export const MARKETING_NAV_LINKS = [
 ];
 
 function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...props }) {
-  const classes = `inline-flex items-center justify-center h-[53px] px-6 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-poppins font-medium text-base tracking-wide shadow-blaster-cta transition hover:opacity-90 ${className}`;
+  const classes = `inline-flex items-center justify-center h-9 px-4 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-poppins font-medium text-sm tracking-wide shadow-blaster-cta transition hover:opacity-90 ${className}`;
   return (
     <Tag className={classes} {...props}>
       {children}
@@ -70,13 +70,13 @@ export function MarketingHeader() {
             )}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-5 shrink-0">
+          <div className="hidden lg:flex items-center gap-3 shrink-0">
             <PrimaryPillButton as={Link} to="/signup">
               Create account
             </PrimaryPillButton>
             <Link
               to="/login"
-              className="inline-flex items-center justify-center h-[45px] px-6 rounded-full border border-black font-medium text-base tracking-wide hover:bg-black/5 transition"
+              className="inline-flex items-center justify-center h-9 px-4 rounded-full font-medium text-sm tracking-wide hover:bg-black/5 transition"
             >
               Login
             </Link>
@@ -133,7 +133,7 @@ export function MarketingHeader() {
                 <Link
                   to="/login"
                   onClick={closeSidebar}
-                  className="inline-flex items-center justify-center h-[45px] px-6 rounded-full border border-black font-medium text-base tracking-wide hover:bg-black/5 transition w-full"
+                  className="inline-flex items-center justify-center h-9 px-4 rounded-full font-medium text-sm tracking-wide hover:bg-black/5 transition w-full"
                 >
                   Login
                 </Link>

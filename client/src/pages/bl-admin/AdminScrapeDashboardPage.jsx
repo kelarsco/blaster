@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Check, Loader, Clock, RefreshCw, X, Copy, PlusCircle } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
+import { AdminPageHeader, AdminPanel, adminPrimaryBtn, adminGhostBtn } from '../../components/admin';
 import {
   readScrapeSessionCache,
   writeScrapeSessionCache,
@@ -617,26 +618,15 @@ export function AdminScrapeDashboardPage() {
   const showEmpty = !job || (!isRunning && !isReady && !isAccepted && !isFailed && !starting);
 
   return (
-    <div className="max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link
-            to="/bl-admin/lead-engine"
-            className="inline-flex items-center gap-1.5 text-xs text-blaster-muted hover:text-blaster-fg mb-2"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Lead Engine
-          </Link>
-          <h1 className="text-xl font-semibold text-blaster-fg">Internet Scraping Dashboard</h1>
-          <p className="text-sm text-blaster-muted mt-1">
-            Two-step pipeline runs automatically: (1) 15 Shopify Google searches, then (2) Shopify API
-            confirmation. Verified stores are <strong>auto-queued in Lead Engine</strong> when scraping finishes.
-            You can also add individual stores early with <strong>Add to store</strong>.
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <AdminPageHeader
+        backTo="/bl-admin/lead-engine"
+        backLabel="Back to Lead Engine"
+        title="Internet Scraping Dashboard"
+        subtitle="Two-step pipeline: Google Shopify search, then API confirmation. Verified stores auto-queue in Lead Engine."
+      />
 
-      <div className="rounded-xl border border-blaster-border bg-blaster-sidebar/40 px-4 py-3 text-xs text-blaster-muted">
+      <div className="rounded-xl border border-blaster-border bg-blaster-bg-card px-4 py-3 text-xs text-blaster-muted shadow-sm">
         <p className="font-medium text-blaster-fg mb-1">How the two scrapers work</p>
         <ol className="list-decimal list-inside space-y-1">
           <li>

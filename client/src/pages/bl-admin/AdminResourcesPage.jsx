@@ -4,6 +4,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { ResourceTypeToggle } from '../../components/resources/ResourceTypeToggle.jsx';
 import { getYoutubeVideoId } from '../../utils/youtube.js';
 import { useConfirm } from '../../context/ConfirmDialogContext.jsx';
+import { AdminPageHeader, AdminPanel, adminInput, adminPrimaryBtn } from '../../components/admin';
 
 function formatAddedAt(iso) {
   if (!iso) return '';
@@ -140,13 +141,12 @@ export function AdminResourcesPage() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-blaster-fg mb-1">Resources</h1>
-      <p className="text-sm text-blaster-muted mb-6">
-        Add videos and PDFs shown on the app Resources page.
-      </p>
+      <AdminPageHeader
+        title="Resources"
+        subtitle="Add videos and PDFs shown on the app Resources page."
+      />
 
-      <section className="bg-white rounded-2xl border border-blaster-border p-5 sm:p-6 mb-6">
-        <h2 className="text-sm font-semibold text-blaster-fg mb-4">Add resource</h2>
+      <AdminPanel title="Add resource" className="mb-6" bodyClassName="p-5 sm:p-6">
         <form onSubmit={addResource} className="space-y-4">
           <div>
             <span className="text-xs font-medium text-blaster-muted block mb-2">Type</span>
@@ -168,7 +168,7 @@ export function AdminResourcesPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Getting started with wiblaster"
-              className="w-full px-3 py-2.5 rounded-xl border border-blaster-border text-sm text-blaster-fg bg-white focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
+              className={adminInput}
             />
           </div>
           <div>
@@ -181,7 +181,7 @@ export function AdminResourcesPage() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder={urlPlaceholder}
-              className="w-full px-3 py-2.5 rounded-xl border border-blaster-border text-sm text-blaster-fg bg-white focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
+              className={adminInput}
             />
           </div>
           {addType === 'video' ? (
@@ -210,21 +210,17 @@ export function AdminResourcesPage() {
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition disabled:opacity-50"
-          >
+          <button type="submit" disabled={saving} className={adminPrimaryBtn}>
             {saving ? 'Adding…' : 'Add resource'}
           </button>
         </form>
-      </section>
+      </AdminPanel>
 
-      <section className="bg-white rounded-2xl border border-blaster-border p-5 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h2 className="text-sm font-semibold text-blaster-fg">Published</h2>
-          <ResourceTypeToggle value={listTab} onChange={setListTab} />
-        </div>
+      <AdminPanel
+        title="Published"
+        actions={<ResourceTypeToggle value={listTab} onChange={setListTab} />}
+        bodyClassName="p-5 sm:p-6"
+      >
         {loading ? (
           <p className="text-sm text-blaster-muted">Loading…</p>
         ) : filtered.length === 0 ? (
@@ -277,7 +273,7 @@ export function AdminResourcesPage() {
             ))}
           </ul>
         )}
-      </section>
+      </AdminPanel>
     </div>
   );
 }

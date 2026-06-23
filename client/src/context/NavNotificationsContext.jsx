@@ -7,6 +7,10 @@ import {
   isScanBadgePending,
   NAV_BADGE_EVENT,
 } from '../utils/scanBadge.js';
+import {
+  isPriorityVideoDismissed,
+  markPriorityVideoDismissed,
+} from '../utils/priorityToastStorage.js';
 
 const NavNotificationsContext = createContext(null);
 
@@ -43,13 +47,36 @@ export function NavNotificationsProvider({ children }) {
         resources: Boolean(data?.badges?.resources),
         scanner: isScanBadgePending(),
       });
-      setPriorityVideo(data?.priorityVideo || null);
+      const pv = data?.priorityVideo || null;
+      if (pv?.id && isPriorityVideoDismissed(user.id, pv.id)) {
+        setPriorityVideo(null);
+      } else {
+        setPriorityVideo(pv);
+      }
     } catch (_) {
       syncScannerBadge();
     } finally {
       setLoaded(true);
     }
   }, [user, authFetch, syncScannerBadge]);
+
+  const dismissPriorityVideo = useCallback(
+    async (resourceId) => {
+      const id = resourceId || priorityVideo?.id;
+      if (!id) return;
+      setPriorityVideo(null);
+      if (user?.id) markPriorityVideoDismissed(user.id, id);
+      if (!authFetch) return;
+      try {
+        await authFetch(`${API}/user/notifications/dismiss-priority`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resourceId: id }),
+        });
+      } catch (_) {}
+    },
+    [authFetch, priorityVideo?.id, user?.id]
+  );
 
   const markSeen = useCallback(
     async (key) => {
@@ -62,28 +89,13 @@ export function NavNotificationsProvider({ children }) {
       try {
         await authFetch(`${API}/user/notifications/seen`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key }),
         });
       } catch (_) {}
       setBadges((prev) => ({ ...prev, [key]: false }));
     },
     [authFetch]
-  );
-
-  const dismissPriorityVideo = useCallback(
-    async (resourceId) => {
-      const id = resourceId || priorityVideo?.id;
-      if (!id) return;
-      setPriorityVideo(null);
-      if (!authFetch) return;
-      try {
-        await authFetch(`${API}/user/notifications/dismiss-priority`, {
-          method: 'POST',
-          body: JSON.stringify({ resourceId: id }),
-        });
-      } catch (_) {}
-    },
-    [authFetch, priorityVideo?.id]
   );
 
   useEffect(() => {
@@ -100,13 +112,21 @@ export function NavNotificationsProvider({ children }) {
 
   useEffect(() => {
     const path = location.pathname;
+    if (path === '/app/resources' || path.startsWith('/app/resources/')) {
+      markSeen('resources');
+      if (priorityVideo?.id) {
+        dismissPriorityVideo(priorityVideo.id);
+      }
+      return;
+    }
     for (const [route, key] of Object.entries(ROUTE_BADGE_KEYS)) {
+      if (route === '/app/resources') continue;
       if (path === route || path.startsWith(`${route}/`)) {
         markSeen(key);
         break;
       }
     }
-  }, [location.pathname, markSeen]);
+  }, [location.pathname, markSeen, dismissPriorityVideo, priorityVideo?.id]);
 
   const value = useMemo(
     () => ({

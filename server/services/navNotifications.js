@@ -25,7 +25,7 @@ export async function markNavSeen(db, userId, navKey, meta = null) {
      VALUES ($1, $2, NOW(), $3)
      ON CONFLICT (user_id, nav_key) DO UPDATE SET
        seen_at = NOW(),
-       meta = COALESCE(EXCLUDED.meta, user_nav_seen.meta)`,
+       meta = CASE WHEN EXCLUDED.meta IS NOT NULL THEN EXCLUDED.meta ELSE user_nav_seen.meta END`,
     [userId, navKey, metaJson]
   );
 }

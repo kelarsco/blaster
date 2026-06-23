@@ -1,5 +1,6 @@
 import { getDb } from '../db.js';
 import { addSendJob } from './queue.js';
+import { getSenderIdsForCampaignResume } from './campaignSenders.js';
 
 const MIN_SEND_INTERVAL_SEC = 10;
 
@@ -22,8 +23,13 @@ export async function resumePendingCampaignsOnStartup() {
     for (const c of campaigns.rows) {
       const delayMin = Math.max(MIN_SEND_INTERVAL_SEC, c.delay_min != null ? Number(c.delay_min) : MIN_SEND_INTERVAL_SEC);
       const delayMax = Math.max(delayMin, c.delay_max != null ? Number(c.delay_max) : delayMin);
+      const senderIds = await getSenderIdsForCampaignResume(db, c.id);
+      if (!senderIds.length) {
+        console.warn(`[campaign resume] No domain senders for campaign ${c.id} — skipping re-queue`);
+        continue;
+      }
       const pending = await db.query(
-        `SELECT p.store_url, p.email, p.sender_id, p.subject, p.body
+        `SELECT p.store_url, p.email, p.subject, p.body
          FROM campaign_pending_sends p
          WHERE p.campaign_id = $1
          AND NOT EXISTS (
@@ -36,12 +42,13 @@ export async function resumePendingCampaignsOnStartup() {
       if (pending.rows.length > 0) {
         for (let i = 0; i < pending.rows.length; i++) {
           const row = pending.rows[i];
+          const senderId = senderIds[i % senderIds.length];
           setTimeout(() => {
             addSendJob({
               campaignId: c.id,
               storeUrl: row.store_url,
               email: row.email,
-              senderId: row.sender_id,
+              senderId,
               subject: row.subject || row.store_url,
               body: row.body || '',
             });

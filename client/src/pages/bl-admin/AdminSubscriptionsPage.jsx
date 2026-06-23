@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { formatUTCDateOnly } from '../../utils/dateUtils';
+import { AdminPageHeader, AdminFilterSelect, AdminStatGrid, AdminPanel } from '../../components/admin';
+
+const PERIOD_OPTIONS = [
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_30_days', label: 'Last 30 days' },
+  { value: 'this_year', label: 'This year' },
+  { value: 'all_time', label: 'All time' },
+  { value: 'custom', label: 'Custom range' },
+];
 
 function formatDateOnly(isoOrDate) {
   const s = formatUTCDateOnly(isoOrDate);
@@ -172,55 +181,46 @@ export function AdminSubscriptionsPage() {
     if (rangePreset !== 'custom') setDateRange(applyPresetRange(rangePreset));
   }, [rangePreset]);
 
+  const planOptions = [
+    { value: '', label: 'All plans' },
+    ...(plans || []).map((p) => ({ value: p.id, label: p.name })),
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-blaster-fg mb-6">Subscriptions</h1>
-
-      <div className="flex flex-wrap items-center gap-4 mb-6">
-        <select
-          value={planFilter}
-          onChange={(e) => setPlanFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-blaster-border bg-blaster-input-bg text-blaster-fg text-sm"
-        >
-          <option value="">All plans</option>
-          {(plans || []).map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-2 text-sm text-blaster-muted">
-          <span className="font-medium text-blaster-fg">Show:</span>
-          <select
-            value={rangePreset}
-            onChange={(e) => {
-              const preset = e.target.value;
-              setRangePreset(preset);
-              setDateRange(applyPresetRange(preset));
-            }}
-            className="bg-blaster-bg border border-blaster-border rounded-xl pl-3 pr-8 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
-          >
-            <option value="last_7_days">Last 7 days</option>
-            <option value="last_30_days">Last 30 days</option>
-            <option value="this_year">This year</option>
-            <option value="all_time">All time</option>
-            <option value="custom">Custom range</option>
-          </select>
-        </div>
-
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              const base = dateRange.start ? new Date(dateRange.start) : new Date();
-              setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-              setPendingRange(dateRange);
-              setIsDatePickerOpen((open) => !open);
-            }}
-            className="inline-flex items-center justify-between gap-2 rounded-xl border border-blaster-border bg-blaster-bg px-3 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition"
-          >
-            <span className="text-blaster-muted">Custom range</span>
-            <span className="font-medium">{formatRangeLabel()}</span>
-          </button>
+      <AdminPageHeader
+        title="Subscriptions"
+        subtitle={totalCount ? `${totalCount} subscribers` : undefined}
+        actions={
+          <>
+            <AdminFilterSelect
+              value={planFilter}
+              onChange={setPlanFilter}
+              options={planOptions}
+              ariaLabel="Filter by plan"
+            />
+            <AdminFilterSelect
+              value={rangePreset}
+              onChange={(preset) => {
+                setRangePreset(preset);
+                setDateRange(applyPresetRange(preset));
+              }}
+              options={PERIOD_OPTIONS}
+              ariaLabel="Select period"
+            />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  const base = dateRange.start ? new Date(dateRange.start) : new Date();
+                  setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+                  setPendingRange(dateRange);
+                  setIsDatePickerOpen((open) => !open);
+                }}
+                className="inline-flex items-center justify-between gap-2 rounded-full border border-blaster-border/80 bg-blaster-bg-card px-3.5 py-2 text-sm text-blaster-fg shadow-sm hover:border-blaster-border hover:shadow transition-all"
+              >
+                <span className="font-medium truncate max-w-[140px]">{formatRangeLabel()}</span>
+              </button>
 
           {isDatePickerOpen && (
             <div className="absolute left-0 mt-2 z-40">
@@ -297,23 +297,20 @@ export function AdminSubscriptionsPage() {
               </div>
             </div>
           )}
-        </div>
-      </div>
+            </div>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <div className="rounded-xl border border-blaster-border bg-blaster-bg-card p-7 min-h-[7.7rem]">
-          <p className="text-sm text-blaster-muted">Total revenue (filtered)</p>
-          <p className="text-3xl font-bold text-blaster-fg mt-1">${(totalRevenueCents / 100).toFixed(2)}</p>
-        </div>
-        <div className="rounded-xl border border-blaster-border bg-blaster-bg-card p-7 min-h-[7.7rem]">
-          <p className="text-sm text-blaster-muted">Total revenue (NGN)</p>
-          <p className="text-3xl font-bold text-blaster-fg mt-1">₦{revenueNgn.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-blaster-border bg-blaster-bg-card p-7 min-h-[7.7rem]">
-          <p className="text-sm text-blaster-muted">Subscribers count</p>
-          <p className="text-3xl font-bold text-blaster-fg mt-1">{totalCount}</p>
-        </div>
-      </div>
+      <AdminStatGrid
+        className="mb-8"
+        columns={3}
+        items={[
+          { label: 'Total revenue (filtered)', value: `$${(totalRevenueCents / 100).toFixed(2)}` },
+          { label: 'Total revenue (NGN)', value: `₦${revenueNgn.toLocaleString()}` },
+          { label: 'Subscribers count', value: totalCount },
+        ]}
+      />
 
       {loading ? (
         <div className="space-y-2">
@@ -322,18 +319,19 @@ export function AdminSubscriptionsPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-blaster-border overflow-hidden">
+        <AdminPanel>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-blaster-bg-app border-b border-blaster-border">
-              <tr>
-                <th className="text-left p-3 font-medium text-blaster-fg">User</th>
-                <th className="text-left p-3 font-medium text-blaster-fg">Plan</th>
-                <th className="text-left p-3 font-medium text-blaster-fg">Amount</th>
-                <th className="text-left p-3 font-medium text-blaster-fg">Status</th>
-                <th className="text-left p-3 font-medium text-blaster-fg">Next billing date</th>
+            <thead>
+              <tr className="text-left text-blaster-muted border-b border-blaster-border">
+                <th className="p-3 font-medium">User</th>
+                <th className="p-3 font-medium">Plan</th>
+                <th className="p-3 font-medium">Amount</th>
+                <th className="p-3 font-medium">Status</th>
+                <th className="p-3 font-medium">Next billing date</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-blaster-border/60">
               {subscriptions.length === 0 ? (
                 <tr><td colSpan={5} className="p-6 text-center text-blaster-muted">No subscribers match the filter</td></tr>
               ) : (
@@ -353,7 +351,7 @@ export function AdminSubscriptionsPage() {
                       ? (s.currentPeriodEnd ? formatDateOnly(s.currentPeriodEnd) : '—')
                       : '—';
                   return (
-                    <tr key={s.id} className="border-b border-blaster-border last:border-0">
+                    <tr key={s.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
                       <td className="p-3 text-blaster-fg">{s.userName || s.userEmail}</td>
                       <td className="p-3 text-blaster-fg">{s.planName}</td>
                       <td className="p-3 text-blaster-fg">${(s.amount / 100).toFixed(2)}/{s.interval}</td>
@@ -365,7 +363,8 @@ export function AdminSubscriptionsPage() {
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+        </AdminPanel>
       )}
     </div>
   );

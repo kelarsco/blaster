@@ -27,6 +27,18 @@ import {
   applyAdminUserPlanChange,
   listAdminAssignablePlans,
 } from '../services/adminPlanChange.js';
+import {
+  mapSegmentRow,
+  newSegmentId,
+  countSegmentRecipients,
+} from '../services/adminSegments.js';
+import {
+  mapCampaignRow,
+  previewCampaignRecipients,
+  startCampaignSend,
+  getCampaignStatus,
+} from '../services/adminCampaignSender.js';
+import { isTransactionalEmailConfigured } from '../services/transactionalEmail.js';
 
 export const adminRoutes = Router();
 adminRoutes.use(requireAdmin);
@@ -106,7 +118,7 @@ adminRoutes.get('/sidebar-counts', async (req, res) => {
   }
 });
 
-/** GET /api/bl-admin/users - List users with search */
+/** GET /api/bl-admin/users - List users with search, sort, plan filter */
 adminRoutes.get('/users', async (req, res) => {
   try {
     const db = getDb();
@@ -114,25 +126,57 @@ adminRoutes.get('/users', async (req, res) => {
     const q = (req.query.q || '').trim().replace(/%/g, '\\%');
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const sort = (req.query.sort || 'newest').trim();
+    const planFilter = (req.query.planId || '').trim();
     const searchVal = q.length >= 1 ? '%' + q + '%' : null;
-    const whereList = searchVal ? " AND (u.email ILIKE $3 OR u.name ILIKE $3)" : '';
-    const whereCount = searchVal ? " AND (u.email ILIKE $1 OR u.name ILIKE $1)" : '';
-    const params = [limit, offset];
-    if (searchVal) params.push(searchVal);
-    const countRes = await db.query(
-      `SELECT COUNT(*) AS c FROM users u WHERE 1=1 ${whereCount}`,
-      searchVal ? [searchVal] : []
-    );
+
+    const conditions = ['1=1'];
+    const countParams = [];
+    let pIdx = 1;
+
+    if (searchVal) {
+      conditions.push(`(u.email ILIKE $${pIdx} OR u.name ILIKE $${pIdx})`);
+      countParams.push(searchVal);
+      pIdx += 1;
+    }
+
+    const planSub = `(SELECT s.plan_id FROM subscriptions s WHERE s.user_id = u.id AND s.status IN ('active','trialing') ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1)`;
+    const planNameSub = `(SELECT p.name FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.user_id = u.id AND s.status IN ('active','trialing') ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1)`;
+
+    if (planFilter) {
+      if (planFilter === 'free') {
+        conditions.push(`${planSub} IS NULL`);
+      } else {
+        conditions.push(`${planSub} = $${pIdx}`);
+        countParams.push(planFilter);
+        pIdx += 1;
+      }
+    }
+
+    const where = conditions.join(' AND ');
+    const countRes = await db.query(`SELECT COUNT(*) AS c FROM users u WHERE ${where}`, countParams);
     const total = parseInt(countRes.rows?.[0]?.c ?? '0', 10);
+
+    let orderBy = 'u.created_at DESC';
+    if (sort === 'oldest') orderBy = 'u.created_at ASC';
+    else if (sort === 'name_asc') orderBy = 'LOWER(COALESCE(u.name, u.email)) ASC';
+    else if (sort === 'name_desc') orderBy = 'LOWER(COALESCE(u.name, u.email)) DESC';
+    else if (sort === 'plan_asc') orderBy = `LOWER(COALESCE(${planNameSub}, 'Free')) ASC, u.created_at DESC`;
+    else if (sort === 'plan_desc') orderBy = `LOWER(COALESCE(${planNameSub}, 'Free')) DESC, u.created_at DESC`;
+
+    const listParams = [...countParams, limit, offset];
+    const limitIdx = pIdx;
+    const offsetIdx = pIdx + 1;
+
     const r = await db.query(
       `SELECT u.id, u.email, u.name, u.created_at, u.updated_at, u.deactivated_at, u.suspended_at,
-        (SELECT s.plan_id FROM subscriptions s WHERE s.user_id = u.id AND s.status IN ('active','trialing') ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1) AS plan_id,
-        (SELECT p.name FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.user_id = u.id AND s.status IN ('active','trialing') ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1) AS plan_name
+        ${planSub} AS plan_id,
+        COALESCE(${planNameSub}, 'Free') AS plan_name
        FROM users u
-       WHERE 1=1 ${whereList}
-       ORDER BY u.created_at DESC
-       LIMIT $1 OFFSET $2`,
-      params
+       WHERE ${where}
+       ORDER BY ${orderBy}
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      listParams
     );
     const users = (r.rows || []).map((row) => ({
       id: row.id,
@@ -868,5 +912,208 @@ adminRoutes.post('/lead-engine/scrape/enqueue', async (req, res) => {
   } catch (e) {
     console.error('[lead-engine scrape enqueue]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to enqueue stores' });
+  }
+});
+
+/** GET /api/bl-admin/segments */
+adminRoutes.get('/segments', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ segments: [] });
+    const r = await db.query(
+      'SELECT id, name, description, filter_json, is_system, created_at, updated_at FROM admin_segments ORDER BY is_system DESC, name ASC'
+    );
+    const segments = await Promise.all(
+      (r.rows || []).map(async (row) => {
+        const seg = mapSegmentRow(row);
+        const count = await countSegmentRecipients(db, seg.filter);
+        return { ...seg, recipientCount: count };
+      })
+    );
+    res.json({ segments });
+  } catch (e) {
+    console.error('[admin segments list]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load segments' });
+  }
+});
+
+/** POST /api/bl-admin/segments */
+adminRoutes.post('/segments', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const name = String(req.body?.name || '').trim();
+    const description = String(req.body?.description || '').trim();
+    const filter = req.body?.filter || {};
+    if (!name) return res.status(400).json({ error: 'name is required' });
+
+    const joinedWithinDays = filter.joinedWithinDays != null ? Number(filter.joinedWithinDays) : null;
+    const joinedOlderThanDays = filter.joinedOlderThanDays != null ? Number(filter.joinedOlderThanDays) : null;
+    const normalized = {
+      excludeDeactivated: filter.excludeDeactivated !== false,
+      excludeSuspended: filter.excludeSuspended !== false,
+      ...(Array.isArray(filter.planIds) && filter.planIds.length ? { planIds: filter.planIds } : {}),
+      ...(joinedWithinDays > 0 ? { joinedWithinDays } : {}),
+      ...(joinedOlderThanDays >= 0 ? { joinedOlderThanDays } : {}),
+    };
+
+    const id = newSegmentId();
+    await db.query(
+      `INSERT INTO admin_segments (id, name, description, filter_json) VALUES ($1, $2, $3, $4)`,
+      [id, name, description, JSON.stringify(normalized)]
+    );
+    const count = await countSegmentRecipients(db, normalized);
+    res.status(201).json({ segment: { id, name, description, filter: normalized, recipientCount: count } });
+  } catch (e) {
+    console.error('[admin segments create]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to create segment' });
+  }
+});
+
+/** DELETE /api/bl-admin/segments/:id */
+adminRoutes.delete('/segments/:id', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const id = String(req.params.id || '').trim();
+    const existing = await db.query('SELECT is_system FROM admin_segments WHERE id = $1', [id]);
+    if (!existing.rows?.[0]) return res.status(404).json({ error: 'Not found' });
+    if (existing.rows[0].is_system) return res.status(400).json({ error: 'System segments cannot be deleted' });
+    await db.query('DELETE FROM admin_segments WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin segments delete]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to delete segment' });
+  }
+});
+
+/** POST /api/bl-admin/segments/preview */
+adminRoutes.post('/segments/preview', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const { segmentId, manualUserIds, filter } = req.body || {};
+    const preview = await previewCampaignRecipients(db, { segmentId, manualUserIds, filterOverride: filter });
+    res.json(preview);
+  } catch (e) {
+    console.error('[admin segments preview]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to preview' });
+  }
+});
+
+/** GET /api/bl-admin/campaigns */
+adminRoutes.get('/campaigns', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.json({ campaigns: [], resendConfigured: isTransactionalEmailConfigured() });
+    const r = await db.query(
+      `SELECT c.*, s.name AS segment_name FROM admin_email_campaigns c
+       LEFT JOIN admin_segments s ON s.id = c.segment_id
+       ORDER BY c.created_at DESC LIMIT 50`
+    );
+    const campaigns = (r.rows || []).map((row) => ({
+      ...mapCampaignRow(row),
+      segmentName: row.segment_name || (row.manual_user_ids?.length ? 'Manual selection' : null),
+    }));
+    res.json({ campaigns, resendConfigured: isTransactionalEmailConfigured() });
+  } catch (e) {
+    console.error('[admin campaigns list]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load campaigns' });
+  }
+});
+
+/** POST /api/bl-admin/campaigns */
+adminRoutes.post('/campaigns', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const name = String(req.body?.name || '').trim() || 'Untitled campaign';
+    const subject = String(req.body?.subject || '').trim();
+    const htmlBody = String(req.body?.htmlBody || '').trim();
+    const segmentId = req.body?.segmentId ? String(req.body.segmentId).trim() : null;
+    const manualUserIds = Array.isArray(req.body?.manualUserIds) ? req.body.manualUserIds.map(String) : [];
+    const sendDelayMs = Math.max(400, Math.min(Number(req.body?.sendDelayMs) || 600, 5000));
+
+    if (!segmentId && !manualUserIds.length) {
+      return res.status(400).json({ error: 'Select a segment or specific users' });
+    }
+
+    const id = uuidv4();
+    await db.query(
+      `INSERT INTO admin_email_campaigns (id, name, subject, html_body, segment_id, manual_user_ids, send_delay_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, name, subject, htmlBody, segmentId, JSON.stringify(manualUserIds), sendDelayMs]
+    );
+    const preview = await previewCampaignRecipients(db, { segmentId, manualUserIds });
+    res.status(201).json({ campaign: { ...mapCampaignRow({ id, name, subject, html_body: htmlBody, segment_id: segmentId, manual_user_ids: manualUserIds, status: 'draft', send_delay_ms: sendDelayMs }), ...preview } });
+  } catch (e) {
+    console.error('[admin campaigns create]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to create campaign' });
+  }
+});
+
+/** PATCH /api/bl-admin/campaigns/:id */
+adminRoutes.patch('/campaigns/:id', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const id = String(req.params.id || '').trim();
+    const existing = await db.query('SELECT status FROM admin_email_campaigns WHERE id = $1', [id]);
+    if (!existing.rows?.[0]) return res.status(404).json({ error: 'Not found' });
+    if (existing.rows[0].status !== 'draft') {
+      return res.status(400).json({ error: 'Only draft campaigns can be edited' });
+    }
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    const body = req.body || {};
+    if (body.name != null) { fields.push(`name = $${idx++}`); values.push(String(body.name).trim()); }
+    if (body.subject != null) { fields.push(`subject = $${idx++}`); values.push(String(body.subject).trim()); }
+    if (body.htmlBody != null) { fields.push(`html_body = $${idx++}`); values.push(String(body.htmlBody)); }
+    if (body.segmentId !== undefined) { fields.push(`segment_id = $${idx++}`); values.push(body.segmentId || null); }
+    if (body.manualUserIds !== undefined) {
+      fields.push(`manual_user_ids = $${idx++}`);
+      values.push(JSON.stringify(Array.isArray(body.manualUserIds) ? body.manualUserIds : []));
+    }
+    if (body.sendDelayMs != null) {
+      fields.push(`send_delay_ms = $${idx++}`);
+      values.push(Math.max(400, Math.min(Number(body.sendDelayMs) || 600, 5000)));
+    }
+    if (!fields.length) return res.status(400).json({ error: 'No updates' });
+    fields.push('updated_at = NOW()');
+    values.push(id);
+    await db.query(`UPDATE admin_email_campaigns SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    const status = await getCampaignStatus(db, id);
+    res.json({ campaign: status });
+  } catch (e) {
+    console.error('[admin campaigns patch]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to update campaign' });
+  }
+});
+
+/** POST /api/bl-admin/campaigns/:id/send */
+adminRoutes.post('/campaigns/:id/send', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const result = await startCampaignSend(id);
+    res.json(result);
+  } catch (e) {
+    console.error('[admin campaigns send]', e?.message || e);
+    res.status(400).json({ error: e?.message || 'Failed to send campaign' });
+  }
+});
+
+/** GET /api/bl-admin/campaigns/:id */
+adminRoutes.get('/campaigns/:id', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const status = await getCampaignStatus(db, req.params.id);
+    if (!status) return res.status(404).json({ error: 'Not found' });
+    res.json({ campaign: status });
+  } catch (e) {
+    console.error('[admin campaigns get]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load campaign' });
   }
 });

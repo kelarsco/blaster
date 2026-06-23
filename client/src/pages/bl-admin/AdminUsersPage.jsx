@@ -1,9 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
-import { MoreVertical, Edit2, UserX, AlertCircle, Trash2 } from 'react-feather';
+import { MoreVertical, Edit2, UserX, AlertCircle, Trash2, Mail } from 'react-feather';
 import { AdminConfirmModal } from '../../components/AdminConfirmModal';
 import { AdminMessage } from '../../components/AdminMessage';
 import { ADMIN_PLAN_OPTIONS, normalizeAdminPlanId } from '../../data/adminPlanOptions.js';
+import {
+  AdminPageHeader,
+  AdminFilterSelect,
+  AdminSearchToggle,
+  AdminListCard,
+  AdminListSkeleton,
+  adminPrimaryBtn,
+  adminGhostBtn,
+} from '../../components/admin';
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'plan_asc', label: 'Plan A→Z' },
+  { value: 'plan_desc', label: 'Plan Z→A' },
+  { value: 'name_asc', label: 'Name A→Z' },
+];
+
+const PLAN_FILTER_OPTIONS = [
+  { value: '', label: 'All plans' },
+  ...ADMIN_PLAN_OPTIONS.map((p) => ({ value: p.id, label: p.label })),
+];
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -12,9 +35,13 @@ function formatDate(iso) {
 
 export function AdminUsersPage() {
   const { adminFetch } = useAdmin();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sort, setSort] = useState('newest');
+  const [planFilter, setPlanFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [menuUserId, setMenuUserId] = useState(null);
   const [editUser, setEditUser] = useState(null);
@@ -28,8 +55,12 @@ export function AdminUsersPage() {
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
-    const q = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : '';
-    adminFetch(`/users${q}`)
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('q', search.trim());
+    if (sort) params.set('sort', sort);
+    if (planFilter) params.set('planId', planFilter);
+    const qs = params.toString();
+    adminFetch(`/users${qs ? `?${qs}` : ''}`)
       .then((r) => (r.ok ? r.json() : { users: [], total: 0 }))
       .then((d) => {
         setUsers(d.users || []);
@@ -37,7 +68,7 @@ export function AdminUsersPage() {
       })
       .catch(() => setUsers([]))
       .finally(() => setLoading(false));
-  }, [adminFetch, search]);
+  }, [adminFetch, search, sort, planFilter]);
 
   useEffect(() => {
     fetchUsers();
@@ -166,11 +197,6 @@ export function AdminUsersPage() {
     });
   };
 
-  const enterSelectionMode = () => {
-    setSelectionMode(true);
-    setSelectedIds(new Set());
-  };
-
   const exitSelectionMode = () => {
     setSelectionMode(false);
     setSelectedIds(new Set());
@@ -181,89 +207,82 @@ export function AdminUsersPage() {
     else setSelectedIds(new Set(users.map((u) => u.id)));
   };
 
+  const handleMessageSelected = () => {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds].join(',');
+    navigate(`/bl-admin/campaign?userIds=${encodeURIComponent(ids)}`);
+  };
+
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-blaster-fg">Users</h1>
-        <div className="flex items-center gap-2">
-          <input
-            type="search"
-            placeholder="Search by name or email…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-blaster-border bg-blaster-input-bg text-blaster-fg w-full sm:w-64 text-sm"
-          />
-          {users.length > 0 && !selectionMode && (
-            <label className="flex items-center gap-2 text-sm text-blaster-muted cursor-pointer">
-              <input
-                type="checkbox"
-                checked={false}
-                onChange={enterSelectionMode}
-                className="rounded border-blaster-border"
-              />
-              Select multiple
-            </label>
-          )}
-          {selectionMode && (
-            <>
-              <label className="flex items-center gap-2 text-sm text-blaster-muted cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size === users.length}
-                  onChange={toggleSelectAll}
-                  className="rounded border-blaster-border"
-                />
-                Select all
-              </label>
-              <button
-                type="button"
-                onClick={exitSelectionMode}
-                className="text-sm text-blaster-muted hover:text-blaster-fg"
-              >
-                Done
-              </button>
-            </>
-          )}
-          {selectionMode && selectedIds.size > 0 && (
-            <button
-              type="button"
-              onClick={handleBulkDeleteClick}
-              className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
-            >
-              Delete {selectedIds.size} selected
-            </button>
-          )}
-        </div>
-      </div>
+      <AdminPageHeader
+        title="Users"
+        subtitle={`${total} total`}
+        actions={
+          <>
+            <AdminSearchToggle
+              value={search}
+              onChange={setSearch}
+              open={searchOpen}
+              onOpenChange={setSearchOpen}
+              placeholder="Search by name or email…"
+              ariaLabel="Search users"
+            />
+            <AdminFilterSelect value={sort} onChange={setSort} options={SORT_OPTIONS} ariaLabel="Sort users" />
+            <AdminFilterSelect
+              value={planFilter}
+              onChange={setPlanFilter}
+              options={PLAN_FILTER_OPTIONS}
+              ariaLabel="Filter by plan"
+            />
+            {selectionMode && (
+              <>
+                <label className="flex items-center gap-2 text-sm text-blaster-muted cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === users.length}
+                    onChange={toggleSelectAll}
+                    className="rounded border-blaster-border"
+                  />
+                  Select all
+                </label>
+                <button type="button" onClick={exitSelectionMode} className={adminGhostBtn}>
+                  Done
+                </button>
+              </>
+            )}
+            {selectionMode && selectedIds.size > 0 && (
+              <>
+                <button type="button" onClick={handleMessageSelected} className={adminPrimaryBtn}>
+                  <Mail className="w-4 h-4" />
+                  Message {selectedIds.size}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteClick}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+                >
+                  Delete {selectedIds.size} selected
+                </button>
+              </>
+            )}
+          </>
+        }
+      />
       <AdminMessage
         type={message?.type}
         message={message?.text}
         onDismiss={message ? () => setMessage(null) : undefined}
       />
       {loading ? (
-        <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-blaster-border bg-blaster-bg-card">
-              <div className="h-10 w-10 rounded-lg bg-blaster-border/40 animate-pulse shrink-0" />
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="h-4 w-32 rounded bg-blaster-border/40 animate-pulse" />
-                <div className="h-3 w-48 rounded bg-blaster-border/40 animate-pulse" />
-              </div>
-              <div className="h-4 w-24 rounded bg-blaster-border/40 animate-pulse shrink-0" />
-            </div>
-          ))}
-        </div>
+        <AdminListSkeleton rows={5} />
       ) : (
         <div className="space-y-2">
           {users.length === 0 ? (
             <p className="text-blaster-muted py-8 text-center">No users found</p>
           ) : (
             users.map((user) => (
-              <div
-                key={user.id}
-                onDoubleClick={() => fetchUserDetail(user.id)}
-                className="flex items-center gap-4 p-4 rounded-xl border border-blaster-border bg-blaster-bg-card hover:border-blaster-border/80"
-              >
+              <AdminListCard key={user.id} onDoubleClick={() => fetchUserDetail(user.id)}>
                 {selectionMode && (
                   <input
                     type="checkbox"
@@ -276,15 +295,14 @@ export function AdminUsersPage() {
                   <p className="font-medium text-blaster-fg truncate">{user.name || user.email || user.id}</p>
                   <p className="text-sm text-blaster-muted truncate">{user.email}</p>
                 </div>
-                <div className="flex flex-1 flex-col items-center justify-center min-w-0">
-                  <div className="flex flex-col text-left text-sm text-blaster-muted">
-                  <span>{formatDate(user.createdAt)}</span>
-                  <span className="mt-0.5">
-                    {user.planName}
-                    {user.deactivatedAt && <span className="text-amber-600 ml-1">(disabled)</span>}
-                    {user.suspendedAt && <span className="text-amber-600 ml-1">(suspended)</span>}
-                  </span>
-                  </div>
+                <div className="flex flex-col items-end sm:items-center justify-center min-w-[120px] shrink-0">
+                  <span className="text-sm font-medium text-blaster-fg">{user.planName}</span>
+                  <span className="text-xs text-blaster-muted mt-0.5">{formatDate(user.createdAt)}</span>
+                  {(user.deactivatedAt || user.suspendedAt) && (
+                    <span className="text-xs text-amber-600 mt-0.5">
+                      {user.deactivatedAt ? 'disabled' : 'suspended'}
+                    </span>
+                  )}
                 </div>
                 <div className="relative shrink-0">
                   <button
@@ -317,7 +335,7 @@ export function AdminUsersPage() {
                     </>
                   )}
                 </div>
-              </div>
+              </AdminListCard>
             ))
           )}
         </div>

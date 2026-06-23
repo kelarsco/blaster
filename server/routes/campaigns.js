@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { campaignRateLimit } from '../middleware/apiRateLimit.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
 import { checkCampaignLimit } from '../services/planAccess.js';
+import { resolveDomainSenderIds, getSenderIdsForCampaignResume } from '../services/campaignSenders.js';
 
 export const campaignRoutes = Router();
 
@@ -167,7 +168,6 @@ campaignRoutes.post('/start', requireAuth, campaignRateLimit, async (req, res) =
       scanId,
       recipients,
       senders,
-      senderGroupId,
       subjects,
       templates,
       delayMin = 10,
@@ -178,37 +178,12 @@ campaignRoutes.post('/start', requireAuth, campaignRateLimit, async (req, res) =
     if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ error: 'Recipients required' });
     }
-    let senderIds = [];
-    if (senderGroupId) {
-      const inUse = await db.query(
-        'SELECT 1 FROM campaigns WHERE sender_group_id = $1 AND user_id = $2 AND status IN (\'running\', \'paused\') LIMIT 1',
-        [senderGroupId, userId]
-      );
-      if (inUse.rows.length > 0) {
-        return res.status(400).json({ error: 'This sender group is already in use by another running campaign.' });
-      }
-      const groupSenders = await db.query(
-        'SELECT sgm.sender_id FROM sender_group_members sgm JOIN sender_groups sg ON sg.id = sgm.group_id WHERE sgm.group_id = $1 AND sg.user_id = $2',
-        [senderGroupId, userId]
-      );
-      senderIds = groupSenders.rows.map((r) => r.sender_id);
+
+    const senderResolve = await resolveDomainSenderIds(db, userId, senders);
+    if (!senderResolve.ok) {
+      return res.status(400).json({ error: senderResolve.error || 'No senders available' });
     }
-    if (senderIds.length === 0 && (!senders || !senders.length)) {
-      const senderList = (await db.query('SELECT id, email FROM senders WHERE user_id = $1 AND is_active = 1', [userId])).rows;
-      senderIds = senderList.map((s) => s.id);
-    } else if (senders && senders.length) {
-      const owned = await db.query(
-        'SELECT id FROM senders WHERE user_id = $1 AND id = ANY($2::text[]) AND is_active = 1',
-        [userId, senders]
-      );
-      if (owned.rows.length !== senders.length) {
-        return res.status(403).json({ error: 'Invalid sender selection' });
-      }
-      senderIds = senders;
-    }
-    if (senderIds.length === 0) {
-      return res.status(400).json({ error: 'Add at least one sender to a group in Senders, then select a group.' });
-    }
+    const senderIds = senderResolve.senderIds;
     let list = recipients;
     if (onePerStore) {
       const byStore = new Map();
@@ -266,8 +241,8 @@ campaignRoutes.post('/start', requireAuth, campaignRateLimit, async (req, res) =
     try {
       await client.query('BEGIN');
       await client.query(
-        'INSERT INTO campaigns (id, user_id, sender_group_id, status, total_queued, sent, failed, delay_min, delay_max) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7)',
-        [campaignId, userId, senderGroupId || null, 'running', list.length, delayMinSec, delayMaxSec]
+        'INSERT INTO campaigns (id, user_id, status, total_queued, sent, failed, delay_min, delay_max) VALUES ($1, $2, $3, $4, 0, 0, $5, $6)',
+        [campaignId, userId, 'running', list.length, delayMinSec, delayMaxSec]
       );
       const BATCH = 80;
       for (let b = 0; b < pendingRows.length; b += BATCH) {
@@ -275,12 +250,12 @@ campaignRoutes.post('/start', requireAuth, campaignRateLimit, async (req, res) =
         const values = [];
         const placeholders = [];
         chunk.forEach((row, i) => {
-          const base = i * 6 + 1;
-          placeholders.push(`($${base}, $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
-          values.push(row.campaignId, row.storeUrl, row.email, row.senderId, row.subject, row.body);
+          const base = i * 5 + 1;
+          placeholders.push(`($${base}, $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`);
+          values.push(row.campaignId, row.storeUrl, row.email, row.subject, row.body);
         });
         await client.query(
-          `INSERT INTO campaign_pending_sends (campaign_id, store_url, email, sender_id, subject, body) VALUES ${placeholders.join(', ')}`,
+          `INSERT INTO campaign_pending_sends (campaign_id, store_url, email, subject, body) VALUES ${placeholders.join(', ')}`,
           values
         );
       }
@@ -370,8 +345,12 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
   const campaignRow = (await db.query('SELECT id, delay_min, delay_max FROM campaigns WHERE id = $1 AND user_id = $2', [campaignId, req.user.id])).rows[0];
   if (!campaignRow) return res.status(404).json({ error: 'Campaign not found' });
   await db.query("UPDATE campaigns SET status = 'running', updated_at = NOW() WHERE id = $1 AND user_id = $2", [campaignId, req.user.id]);
+  const senderIds = await getSenderIdsForCampaignResume(db, campaignId);
+  if (!senderIds.length) {
+    return res.status(400).json({ error: 'No domain senders configured for this account' });
+  }
   const pending = await db.query(
-    `SELECT p.store_url, p.email, p.sender_id, p.subject, p.body
+    `SELECT p.store_url, p.email, p.subject, p.body
      FROM campaign_pending_sends p
      WHERE p.campaign_id = $1
      AND NOT EXISTS (
@@ -384,12 +363,13 @@ campaignRoutes.post('/:campaignId/resume', requireAuth, async (req, res) => {
   const delayMax = Math.max(delayMin, campaignRow.delay_max != null ? Number(campaignRow.delay_max) : delayMin);
   for (let i = 0; i < pending.rows.length; i++) {
     const row = pending.rows[i];
+    const senderId = senderIds[i % senderIds.length];
     setTimeout(async () => {
       await addSendJob({
         campaignId,
         storeUrl: row.store_url,
         email: row.email,
-        senderId: row.sender_id,
+        senderId,
         subject: row.subject || row.store_url,
         body: row.body || '',
       });

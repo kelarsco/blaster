@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { AdminPageHeader, adminPanel } from '../../components/admin';
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -67,8 +68,8 @@ export function AdminMessagesPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <h1 className="text-2xl font-bold text-blaster-fg mb-4">Messages</h1>
-      <div className="flex-1 flex min-h-0 rounded-xl border border-blaster-border bg-blaster-bg-card overflow-hidden">
+      <AdminPageHeader title="Messages" subtitle="Support conversations" />
+      <div className={`flex-1 flex min-h-0 ${adminPanel} overflow-hidden`}>
         {/* Thread list: on mobile hide when a thread is selected so chat can be full width */}
         <div className={`w-80 border-r border-blaster-border flex flex-col overflow-hidden flex-shrink-0 ${selectedThread ? 'hidden md:flex' : ''}`}>
           {loading ? (
@@ -86,8 +87,8 @@ export function AdminMessagesPage() {
                   key={t.threadId}
                   type="button"
                   onClick={() => setSelectedThread(t)}
-                  className={`w-full text-left px-4 py-3 border-b border-blaster-border/60 hover:bg-blaster-border/20 transition-colors ${
-                    selectedThread?.threadId === t.threadId ? 'bg-blaster-accent/10 border-l-2 border-l-blaster-accent' : ''
+                  className={`w-full text-left px-4 py-3 border-b border-blaster-border/60 hover:bg-blaster-sidebar-hover/50 transition-colors ${
+                    selectedThread?.threadId === t.threadId ? 'bg-black/5 border-l-2 border-l-black' : ''
                   }`}
                 >
                   <p className="font-medium text-blaster-fg truncate">{t.userName || t.userEmail}</p>
@@ -128,9 +129,9 @@ export function AdminMessagesPage() {
                     className={`flex ${m.sender === 'support' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                      className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
                         m.sender === 'support'
-                          ? 'bg-blaster-accent/20 text-blaster-fg'
+                          ? 'bg-black text-white'
                           : 'bg-blaster-border/30 text-blaster-fg'
                       }`}
                     >
@@ -148,13 +149,13 @@ export function AdminMessagesPage() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                     placeholder="Type a message…"
-                    className="flex-1 px-3 py-2 rounded-lg border border-blaster-border bg-blaster-input-bg text-blaster-fg text-sm"
+                    className="flex-1 px-4 py-2.5 rounded-full border border-blaster-border bg-blaster-bg-card text-blaster-fg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-black/10"
                   />
                   <button
                     type="button"
                     onClick={sendMessage}
                     disabled={!input.trim() || sending}
-                    className="px-4 py-2 rounded-lg bg-blaster-accent text-white text-sm font-medium disabled:opacity-50"
+                    className="px-5 py-2.5 rounded-full bg-black text-white text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
                     {sending ? 'Sending…' : 'Send'}
                   </button>

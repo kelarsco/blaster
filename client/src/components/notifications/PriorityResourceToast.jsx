@@ -28,7 +28,10 @@ export function PriorityResourceToast({ video, onDismiss }) {
 
         <button
           type="button"
-          onClick={() => onDismiss?.(video.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss?.(video.id);
+          }}
           className="absolute top-2.5 right-2.5 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-black/40 text-white hover:bg-black/55 transition-colors"
           aria-label="Dismiss"
         >
@@ -40,7 +43,7 @@ export function PriorityResourceToast({ video, onDismiss }) {
           onClick={goToResources}
           className="relative w-full text-left p-3 sm:p-4 group"
         >
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-gradient mb-2 pr-8">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-black mb-2 pr-8">
             Important resource
           </p>
           <div className="relative aspect-video rounded-xl overflow-hidden border border-white/40 shadow-md mb-3">

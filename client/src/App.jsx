@@ -46,6 +46,7 @@ import { AdminLeadEnginePage } from './pages/bl-admin/AdminLeadEnginePage';
 import { AdminScrapeDashboardPage } from './pages/bl-admin/AdminScrapeDashboardPage';
 import { AdminAddLeadsPage } from './pages/bl-admin/AdminAddLeadsPage';
 import { AdminReferralsPage } from './pages/bl-admin/AdminReferralsPage';
+import { AdminCampaignPage } from './pages/bl-admin/AdminCampaignPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
 import { PlanAccessProvider } from './context/PlanAccessContext.jsx';
 import { NavNotificationsProvider } from './context/NavNotificationsContext.jsx';
@@ -115,6 +116,7 @@ function AppRoutes() {
           <Route element={<AdminProtectedLayout />}>
             <Route path="overview" element={<AdminOverviewPage />} />
             <Route path="users" element={<AdminUsersPage />} />
+            <Route path="campaign" element={<AdminCampaignPage />} />
             <Route path="referrals" element={<AdminReferralsPage />} />
             <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
             <Route path="messages" element={<AdminMessagesPage />} />

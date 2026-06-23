@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import { Logo } from '../components/Logo.jsx';
@@ -8,6 +8,7 @@ const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
 const navItems = [
   { to: '/bl-admin/overview', label: 'Overview', end: true },
   { to: '/bl-admin/users', label: 'Users', end: false, countKey: 'users' },
+  { to: '/bl-admin/campaign', label: 'Campaign', end: false },
   { to: '/bl-admin/referrals', label: 'Referrals', end: false },
   { to: '/bl-admin/subscriptions', label: 'Subscriptions', end: false, countKey: 'subscriptions' },
   { to: '/bl-admin/messages', label: 'Messages', end: false, countKey: 'messages' },
@@ -72,6 +73,11 @@ function LayoutIcon({ name }) {
     referrals: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+    campaign: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
     ),
   };
@@ -139,6 +145,13 @@ export function AdminLayout() {
     } catch (_) {}
   };
 
+  const pageTitle = useMemo(() => {
+    const item = navItems.find(
+      (n) => location.pathname === n.to || (n.to !== '/bl-admin/overview' && location.pathname.startsWith(n.to))
+    );
+    return item?.label || 'Admin';
+  }, [location.pathname]);
+
   return (
     <div className="min-h-screen flex bg-blaster-bg-app font-inter dashboard-fonts">
       {sidebarOpen && (
@@ -156,20 +169,21 @@ export function AdminLayout() {
         <div className="p-4 border-b border-blaster-border">
           <div className="flex items-center gap-2 text-blaster-fg font-semibold text-lg">
             <Logo />
-            <span>Admin</span>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-0.5">
-          {navItems.map(({ to, label, end, countKey }) => (
+        <nav className="flex-1 p-3 space-y-1">
+          {navItems.map(({ to, label, end, countKey }) => {
+            const isLeadEngine = to === '/bl-admin/lead-engine' && location.pathname.startsWith('/bl-admin/lead-engine');
+            return (
             <NavLink
               key={to}
               to={to}
               end={end}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive || (to === '/bl-admin/lead-engine' && location.pathname.startsWith('/bl-admin/lead-engine'))
-                    ? 'bg-blaster-sidebar-hover text-blaster-fg'
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  isActive || isLeadEngine
+                    ? 'bg-black text-white shadow-sm'
                     : 'text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg'
                 }`
               }
@@ -177,16 +191,17 @@ export function AdminLayout() {
               <LayoutIcon name={to.replace('/bl-admin/', '').split('/')[0]} />
               <span className="flex-1 text-left">{label}</span>
               {countKey && hasUpdate[countKey] && (
-                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-hidden title="New updates" />
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isLeadEngine || location.pathname.startsWith(to) ? 'bg-red-400' : 'bg-red-500'}`} aria-hidden title="New updates" />
               )}
             </NavLink>
-          ))}
+            );
+          })}
         </nav>
         <div className="p-3 border-t border-blaster-border">
           <button
             type="button"
             onClick={logout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg w-full"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg w-full transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -196,18 +211,19 @@ export function AdminLayout() {
         </div>
       </aside>
       <div className="flex-1 min-w-0 md:ml-64 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-10 flex items-center justify-between h-14 px-4 border-b border-blaster-border bg-blaster-bg-app">
+        <header className="sticky top-0 z-10 flex items-center justify-between h-14 px-4 md:px-6 border-b border-blaster-border/80 bg-blaster-bg-app/95 backdrop-blur-sm">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="md:hidden p-2 rounded-lg text-blaster-fg hover:bg-blaster-border/50"
+            className="md:hidden p-2 rounded-full text-blaster-fg hover:bg-blaster-border/50 transition-colors"
             aria-label="Open menu"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-blaster-muted text-sm font-medium">Admin</span>
+          <span className="text-blaster-fg text-sm font-semibold tracking-tight">{pageTitle}</span>
+          <span className="hidden md:block w-10" aria-hidden />
         </header>
         <main className="flex-1 overflow-auto p-4 md:p-6">
           <Outlet />

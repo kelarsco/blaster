@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { getDb } from '../db.js';
 import { sendEmailViaProvider } from './domainEmailProviders.js';
 import { recordEmailSent } from './streakService.js';
+import { buildSenderRowFromDomain } from './campaignSenders.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -187,15 +188,9 @@ export async function processSendEmail(payload) {
   if (!db) return;
   const statusRow = await db.query('SELECT status FROM campaigns WHERE id = $1', [campaignId]);
   if (!statusRow.rows[0] || statusRow.rows[0].status !== 'running') return;
-  const senderResult = await db.query(
-    `SELECT s.* FROM senders s
-     JOIN campaigns c ON c.user_id = s.user_id
-     WHERE s.id = $1 AND c.id = $2`,
-    [senderId, campaignId]
-  );
-  const senderRow = senderResult.rows[0];
+  const senderRow = await buildSenderRowFromDomain(db, senderId, campaignId);
   if (!senderRow) {
-    console.error('[send] Sender not found:', senderId, '– Add the sender again in Automation Setup (with DB running).');
+    console.error('[send] Domain sender not found:', senderId, '– Add a verified domain sender in Settings.');
     await safeInsertCampaignSend(db, campaignId, storeUrl, email, null, 'failed', 'Sender not found');
     return;
   }

@@ -15,7 +15,7 @@ export function Logo({ className = '', variant = 'full' }) {
     <img
       src="/logo new.png"
       alt="wiblaster"
-      className={`w-[170px] h-auto ${className}`}
+      className={`w-[154px] h-auto ${className}`}
     />
   );
 }

@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { AdminPageHeader, AdminFilterSelect, AdminStatGrid, AdminStatGridSkeleton } from '../../components/admin';
+
+const PERIOD_OPTIONS = [
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_30_days', label: 'Last 30 days' },
+  { value: 'this_year', label: 'This year' },
+  { value: 'all_time', label: 'All time' },
+  { value: 'custom', label: 'Custom range' },
+];
 
 const applyPresetRange = (preset) => {
   const today = new Date();
@@ -145,14 +154,8 @@ export function AdminOverviewPage() {
   if (loading && stats.totalUsers === 0 && stats.totalSubscribers === 0) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-blaster-fg mb-6">Overview</h1>
-        <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-blaster-border/30 animate-pulse" />
-            ))}
-          </div>
-        </div>
+        <AdminPageHeader title="Overview" />
+        <AdminStatGridSkeleton count={4} />
       </div>
     );
   }
@@ -166,39 +169,33 @@ export function AdminOverviewPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-blaster-fg">Overview</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-blaster-muted font-medium">Period:</span>
-          <select
-            value={rangePreset}
-            onChange={(e) => {
-              const preset = e.target.value;
-              setRangePreset(preset);
-              setDateRange(applyPresetRange(preset));
-            }}
-            className="bg-blaster-bg border border-blaster-border rounded-xl pl-3 pr-8 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
-          >
-            <option value="last_7_days">Last 7 days</option>
-            <option value="last_30_days">Last 30 days</option>
-            <option value="this_year">This year</option>
-            <option value="all_time">All time</option>
-            <option value="custom">Custom range</option>
-          </select>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                const base = dateRange.start ? new Date(dateRange.start) : new Date();
-                setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-                setPendingRange(dateRange);
-                setIsDatePickerOpen((open) => !open);
+      <AdminPageHeader
+        title="Overview"
+        actions={
+          <>
+            <AdminFilterSelect
+              value={rangePreset}
+              onChange={(preset) => {
+                setRangePreset(preset);
+                setDateRange(applyPresetRange(preset));
               }}
-              className="inline-flex items-center justify-between gap-2 rounded-xl border border-blaster-border bg-blaster-bg px-3 py-2 text-sm text-blaster-fg shadow-sm hover:bg-blaster-bg-app transition"
-            >
-              <span className="text-blaster-muted">Custom range</span>
-              <span className="font-medium">{formatRangeLabel()}</span>
-            </button>
+              options={PERIOD_OPTIONS}
+              ariaLabel="Select period"
+            />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  const base = dateRange.start ? new Date(dateRange.start) : new Date();
+                  setCalendarMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+                  setPendingRange(dateRange);
+                  setIsDatePickerOpen((open) => !open);
+                }}
+                className="inline-flex items-center justify-between gap-2 rounded-full border border-blaster-border/80 bg-blaster-bg-card px-3.5 py-2 text-sm text-blaster-fg shadow-sm hover:border-blaster-border hover:shadow transition-all"
+              >
+                <span className="text-blaster-muted hidden sm:inline">Range</span>
+                <span className="font-medium truncate max-w-[140px]">{formatRangeLabel()}</span>
+              </button>
             {isDatePickerOpen && (
               <div className="absolute right-0 mt-2 z-40">
                 <div className="bg-gradient-to-b from-white via-blaster-bg-app to-blaster-bg rounded-3xl border border-blaster-border shadow-glass p-4 sm:p-5 w-80 sm:w-96">
@@ -275,19 +272,11 @@ export function AdminOverviewPage() {
               </div>
             )}
           </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-blaster-border">
-          {cards.map(({ label, value }) => (
-            <div key={label} className="px-5 sm:px-6 py-5 sm:py-6">
-              <p className="text-sm text-blaster-muted">{label}</p>
-              <p className="text-2xl font-bold text-blaster-fg mt-1 tracking-tight">{value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <AdminStatGrid items={cards} className="mb-0" />
     </div>
   );
 }

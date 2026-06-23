@@ -2,16 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Play, RefreshCw, Trash2 } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
+import {
+  AdminPageHeader,
+  AdminButton,
+  AdminStatGrid,
+  AdminPanel,
+  AdminBadge,
+  adminGhostBtn,
+  adminPrimaryBtn,
+} from '../../components/admin';
 
-function statusBadge(status) {
-  const map = {
-    qualified: 'bg-green-100 text-green-800',
-    pending: 'bg-yellow-100 text-yellow-800',
-    processing: 'bg-blue-100 text-blue-800',
-    rejected: 'bg-gray-100 text-gray-600',
-    failed: 'bg-red-100 text-red-800',
-  };
-  return map[status] || 'bg-gray-100 text-gray-600';
+function statusVariant(status, qualified) {
+  if (qualified || status === 'qualified') return 'qualified';
+  return status || 'default';
 }
 
 export function AdminLeadEnginePage() {
@@ -141,95 +144,53 @@ export function AdminLeadEnginePage() {
   const filteredStores = stores.filter(matchesFilter);
   const activeCard = cards.find((c) => c.id === statusFilter);
 
+  const statItems = cards.map((c) => ({
+    label: c.label,
+    value: c.value.toLocaleString(),
+    onClick: () => setStatusFilter(c.id),
+    active: statusFilter === c.id,
+  }));
+
   return (
-    <div className="max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-blaster-fg">Lead Engine</h1>
-          <p className="text-sm text-blaster-muted mt-1">
-            Track stores, run the qualification pipeline, and publish qualified leads to the Store Leads page.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to="/bl-admin/lead-engine/add"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blaster-fg text-white hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" />
-            Add leads
-          </Link>
-          <Link
-            to="/bl-admin/lead-engine/scrape"
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar"
-          >
-            <Play className="w-4 h-4" />
-            Start scraping
-          </Link>
-          <button
-            type="button"
-            onClick={load}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
-            aria-label="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <AdminPageHeader
+        title="Lead Engine"
+        subtitle="Track stores, run the qualification pipeline, and publish qualified leads to the Store Leads page."
+        actions={
+          <>
+            <AdminButton to="/bl-admin/lead-engine/add">
+              <Plus className="w-4 h-4" />
+              Add leads
+            </AdminButton>
+            <Link to="/bl-admin/lead-engine/scrape" className={adminGhostBtn}>
+              <Play className="w-4 h-4" />
+              Start scraping
+            </Link>
+            <button type="button" onClick={load} className={adminGhostBtn} aria-label="Refresh">
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </>
+        }
+      />
 
       {message ? (
-        <p className="text-sm text-blaster-muted bg-blaster-sidebar border border-blaster-border rounded-lg px-4 py-3">
+        <p className="text-sm text-blaster-muted bg-blaster-bg-card border border-blaster-border rounded-xl px-4 py-3 shadow-sm">
           {message}
         </p>
       ) : null}
 
-      <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y divide-blaster-border">
-          {cards.map((c) => {
-            const isActive = statusFilter === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setStatusFilter(c.id)}
-                className={`px-5 sm:px-6 py-5 sm:py-6 text-left transition-colors hover:bg-blaster-sidebar/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blaster-accent/40 ${
-                  isActive ? 'bg-blaster-sidebar/80' : ''
-                }`}
-                aria-pressed={isActive}
-              >
-                <p className="text-xs sm:text-sm text-blaster-muted">{c.label}</p>
-                <p className="text-2xl font-semibold text-blaster-fg mt-1 tracking-tight">{c.value.toLocaleString()}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <AdminStatGrid items={statItems} columns={5} />
 
-      <div className="rounded-2xl border border-blaster-border bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b border-blaster-border flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-blaster-fg">
-              {activeCard?.id === 'all' ? 'All tracked stores' : activeCard?.label}
-            </h2>
-            <p className="text-xs text-blaster-muted mt-0.5">
-              {filteredStores.length.toLocaleString()} store{filteredStores.length === 1 ? '' : 's'}
-              {statusFilter === 'qualified'
-                ? ' · shown on the public Leads page when qualified'
-                : statusFilter === 'rejected'
-                  ? ' · re-check or delete rejected stores'
-                  : statusFilter === 'failed'
-                    ? ' · delete failed stores to clear pipeline errors'
-                    : statusFilter !== 'all'
-                    ? ` · ${activeCard?.label}`
-                    : ' · click a stat above to filter'}
-            </p>
-          </div>
-          {statusFilter === 'rejected' ? (
+      <AdminPanel
+        title={activeCard?.id === 'all' ? 'All tracked stores' : activeCard?.label}
+        actions={
+          statusFilter === 'rejected' ? (
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={requeueRejected}
                 disabled={requeueing || deleting || (stats?.rejected ?? 0) === 0}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar disabled:opacity-50"
+                className={`${adminGhostBtn} !text-xs !py-1.5`}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${requeueing ? 'animate-spin' : ''}`} />
                 {requeueing ? 'Re-checking…' : 'Re-check rejected'}
@@ -238,7 +199,7 @@ export function AdminLeadEnginePage() {
                 type="button"
                 onClick={() => deleteByStatus('rejected')}
                 disabled={deleting || requeueing || (stats?.rejected ?? 0) === 0}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 px-3 py-1.5 rounded-full border border-red-200 hover:bg-red-50 disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 {deleting ? 'Deleting…' : 'Delete rejected'}
@@ -250,44 +211,49 @@ export function AdminLeadEnginePage() {
                 type="button"
                 onClick={() => deleteByStatus('failed')}
                 disabled={deleting || (stats?.failed ?? 0) === 0}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-800 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 px-3 py-1.5 rounded-full border border-red-200 hover:bg-red-50 disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 {deleting ? 'Deleting…' : 'Delete failed'}
               </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className="text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
-              >
+              <button type="button" onClick={() => setStatusFilter('all')} className={`${adminGhostBtn} !text-xs !py-1.5`}>
                 Show all
               </button>
             </div>
           ) : statusFilter !== 'all' ? (
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className="text-xs font-medium text-blaster-muted hover:text-blaster-fg px-3 py-1.5 rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
-            >
+            <button type="button" onClick={() => setStatusFilter('all')} className={`${adminGhostBtn} !text-xs !py-1.5`}>
               Show all
             </button>
-          ) : null}
-        </div>
+          ) : null
+        }
+      >
+        <p className="px-4 py-2 text-xs text-blaster-muted border-b border-blaster-border/60">
+          {filteredStores.length.toLocaleString()} store{filteredStores.length === 1 ? '' : 's'}
+          {statusFilter === 'qualified'
+            ? ' · shown on the public Leads page when qualified'
+            : statusFilter === 'rejected'
+              ? ' · re-check or delete rejected stores'
+              : statusFilter === 'failed'
+                ? ' · delete failed stores to clear pipeline errors'
+                : statusFilter !== 'all'
+                  ? ` · ${activeCard?.label}`
+                  : ' · click a stat above to filter'}
+        </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-blaster-sidebar text-left text-xs text-blaster-muted">
-              <tr>
-                <th className="px-4 py-2">Store</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Phase</th>
-                <th className="px-4 py-2">Score</th>
-                <th className="px-4 py-2">Platform</th>
-                <th className="px-4 py-2">Country</th>
-                <th className="px-4 py-2">Products</th>
-                <th className="px-4 py-2">Source</th>
+            <thead>
+              <tr className="text-left text-xs text-blaster-muted border-b border-blaster-border">
+                <th className="px-4 py-3 font-medium">Store</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Phase</th>
+                <th className="px-4 py-3 font-medium">Score</th>
+                <th className="px-4 py-3 font-medium">Platform</th>
+                <th className="px-4 py-3 font-medium">Country</th>
+                <th className="px-4 py-3 font-medium">Products</th>
+                <th className="px-4 py-3 font-medium">Source</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-blaster-border">
+            <tbody className="divide-y divide-blaster-border/60">
               {filteredStores.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-blaster-muted">
@@ -298,30 +264,30 @@ export function AdminLeadEnginePage() {
                 </tr>
               ) : (
                 filteredStores.map((s) => (
-                  <tr key={s.id} className="hover:bg-blaster-sidebar/50">
-                    <td className="px-4 py-2 max-w-xs truncate">
+                  <tr key={s.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
+                    <td className="px-4 py-3 max-w-xs truncate">
                       <a href={s.storeUrl} target="_blank" rel="noopener noreferrer" className="text-blaster-fg hover:underline">
                         {s.storeUrl}
                       </a>
                     </td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusBadge(s.status)}`}>
+                    <td className="px-4 py-3">
+                      <AdminBadge variant={statusVariant(s.status, s.qualified)}>
                         {s.qualified ? 'qualified' : s.status}
-                      </span>
+                      </AdminBadge>
                     </td>
-                    <td className="px-4 py-2 text-blaster-muted">{s.currentPhase ?? 0}</td>
-                    <td className="px-4 py-2">{s.activeScore ?? '—'}</td>
-                    <td className="px-4 py-2">{s.platform || '—'}</td>
-                    <td className="px-4 py-2">{s.countryCode || '—'}</td>
-                    <td className="px-4 py-2">{s.productCount ?? '—'}</td>
-                    <td className="px-4 py-2 text-blaster-muted">{s.source}</td>
+                    <td className="px-4 py-3 text-blaster-muted">{s.currentPhase ?? 0}</td>
+                    <td className="px-4 py-3">{s.activeScore ?? '—'}</td>
+                    <td className="px-4 py-3">{s.platform || '—'}</td>
+                    <td className="px-4 py-3">{s.countryCode || '—'}</td>
+                    <td className="px-4 py-3">{s.productCount ?? '—'}</td>
+                    <td className="px-4 py-3 text-blaster-muted">{s.source}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </AdminPanel>
     </div>
   );
 }

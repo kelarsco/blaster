@@ -158,6 +158,25 @@ export function isTransactionalEmailConfigured() {
   return hasResend;
 }
 
+/**
+ * Admin broadcast email to app users (rate-limited by caller).
+ */
+export async function sendAdminBroadcastEmail({ to, subject, html, campaignId }) {
+  if (!resendClient) throw new Error('Resend is not configured');
+  const payload = {
+    from: getFrom(),
+    to,
+    subject,
+    html,
+  };
+  if (campaignId) {
+    payload.tags = [{ name: 'admin_campaign', value: String(campaignId).slice(0, 50) }];
+  }
+  const { data, error } = await resendClient.emails.send(payload);
+  if (error) throw new Error(error.message || 'Failed to send email');
+  return { ok: true, id: data?.id };
+}
+
 const STREAK_EMAIL_THEMES = {
   3: {
     emoji: '✨',

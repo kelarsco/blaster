@@ -82,9 +82,9 @@ export async function initDb() {
   pool = new Pool({
     connectionString: url,
     ssl: url.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
-    max: 8,
+    max: Number(process.env.DB_POOL_MAX) || 8,
     idleTimeoutMillis: 60000,
-    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 10000,
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 30000,
     keepAlive: true,
   });
 
@@ -96,7 +96,12 @@ export async function initDb() {
   const maxAttempts = Number(process.env.DB_INIT_ATTEMPTS) || 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await runSchema(pool);
+      await warmupPool(pool);
+      const skipBase = shouldSkipBaseSchema() && (await isSchemaReady(pool));
+      if (skipBase) {
+        console.log('[db] Tables exist — skipping base DDL (running migrations only).');
+      }
+      await runSchema(pool, { skipBase });
       console.log('Neon DB connected and schema ready.');
       return pool;
     } catch (err) {
@@ -116,10 +121,56 @@ export async function initDb() {
   return null;
 }
 
-async function runSchema(p) {
+/** Wake Neon compute before heavy DDL (cold starts can exceed 10s). */
+async function warmupPool(p) {
+  const attempts = Number(process.env.DB_WARMUP_ATTEMPTS) || 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let client;
+    try {
+      client = await p.connect();
+      await client.query('SELECT 1');
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < attempts) {
+        const delay = Math.min(3000 * attempt, 12000);
+        console.warn(`[db] warmup ${attempt}/${attempts} failed: ${err.message} — retrying in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    } finally {
+      client?.release();
+    }
+  }
+  throw lastErr;
+}
+
+function shouldSkipBaseSchema() {
+  if (process.env.DB_FORCE_SCHEMA === '1') return false;
+  if (process.env.DB_SKIP_SCHEMA_IF_READY === '1') return true;
+  if (process.env.DB_SKIP_SCHEMA_IF_READY === '0') return false;
+  return process.env.NODE_ENV !== 'production';
+}
+
+async function isSchemaReady(p) {
   const client = await p.connect();
   try {
-    await client.query(`
+    const { rows } = await client.query(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'users'
+      LIMIT 1
+    `);
+    return rows.length > 0;
+  } finally {
+    client.release();
+  }
+}
+
+async function runSchema(p, { skipBase = false } = {}) {
+  const client = await p.connect();
+  try {
+    if (!skipBase) {
+      await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
@@ -639,6 +690,7 @@ async function runSchema(p) {
       UPDATE users SET email_verified = 1, email_verified_at = COALESCE(updated_at, created_at) WHERE auth_provider = 'google' AND (email_verified IS NULL OR email_verified = 0);
       UPDATE users SET email_verified = 1 WHERE password_hash IS NOT NULL AND (email_verified IS NULL OR email_verified = 0);
     `);
+    }
     await migrateStoreNotesPK(p);
     await migrateScanResultsCascade(p);
     await migrateScanResultsContactColumns(p);
@@ -651,6 +703,7 @@ async function runSchema(p) {
     await migrateLeadScrapeSettings(p);
     await migratePricingPlans2026(p);
     await migrateNavNotifications(p);
+    await migrateAdminCampaigns(p);
   } finally {
     client.release();
   }
@@ -935,5 +988,59 @@ async function migrateNavNotifications(pool) {
     `);
   } catch (e) {
     console.warn('[migrateNavNotifications]', e?.message || e);
+  }
+}
+
+async function migrateAdminCampaigns(pool) {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS admin_segments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        filter_json JSONB NOT NULL DEFAULT '{}',
+        is_system SMALLINT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_email_campaigns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        html_body TEXT NOT NULL DEFAULT '',
+        segment_id TEXT REFERENCES admin_segments(id) ON DELETE SET NULL,
+        manual_user_ids JSONB DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'draft',
+        total_recipients INTEGER NOT NULL DEFAULT 0,
+        sent_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        send_delay_ms INTEGER NOT NULL DEFAULT 600,
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_campaigns_status ON admin_email_campaigns(status);
+      CREATE INDEX IF NOT EXISTS idx_admin_campaigns_created ON admin_email_campaigns(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS admin_email_sends (
+        id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES admin_email_campaigns(id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        email TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        resend_id TEXT,
+        error TEXT,
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_email_sends_campaign ON admin_email_sends(campaign_id);
+      CREATE INDEX IF NOT EXISTS idx_admin_email_sends_status ON admin_email_sends(campaign_id, status);
+    `);
+    const { seedDefaultSegments } = await import('./services/adminSegments.js');
+    await seedDefaultSegments(pool);
+  } catch (e) {
+    console.warn('[migrateAdminCampaigns]', e?.message || e);
   }
 }
