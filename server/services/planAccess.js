@@ -97,12 +97,12 @@ async function ensureUsageRow(db, userId, periodStart, periodEnd) {
 
 function tierLimitsForTier(tier) {
   const limits = {
-    [TIER_TRIAL]: { sendersMax: 3, groupsMax: 1, campaignsActiveMax: 1 },
-    [TIER_BASIC]: { sendersMax: 5, groupsMax: 3, campaignsActiveMax: 3 },
-    [TIER_GROWTH]: { sendersMax: 15, groupsMax: 10, campaignsActiveMax: 10 },
-    [TIER_PRO]: { sendersMax: 999999, groupsMax: 999999, campaignsActiveMax: 999999 },
+    [TIER_TRIAL]: { campaignsActiveMax: 1 },
+    [TIER_BASIC]: { campaignsActiveMax: 3 },
+    [TIER_GROWTH]: { campaignsActiveMax: 10 },
+    [TIER_PRO]: { campaignsActiveMax: 999999 },
   };
-  return limits[tier] || { sendersMax: 0, groupsMax: 0, campaignsActiveMax: 0 };
+  return limits[tier] || { campaignsActiveMax: 0 };
 }
 
 function buildAccessFlags(tier, hasAccess) {
@@ -115,8 +115,6 @@ function buildAccessFlags(tier, hasAccess) {
       analytics: false,
       referral: false,
       streak: true,
-      sendersMax: 0,
-      groupsMax: 0,
       campaignsActiveMax: 0,
       filterLimit: 0,
       filtersBlocked: true,
@@ -135,8 +133,6 @@ function buildAccessFlags(tier, hasAccess) {
     analytics: false,
     referral: false,
     streak: false,
-    sendersMax: tierLimits.sendersMax,
-    groupsMax: tierLimits.groupsMax,
     campaignsActiveMax: tierLimits.campaignsActiveMax,
     filterLimit,
     filtersBlocked: false,
@@ -212,8 +208,6 @@ export async function getPlanStatusForUser(userId) {
     }
   }
 
-  const sendersCount = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
-  const groupsCount = await db.query('SELECT COUNT(*) AS c FROM sender_groups WHERE user_id = $1', [userId]);
   const campaignsCount = await db.query(
     `SELECT COUNT(*) AS c FROM campaigns WHERE user_id = $1 AND status IN ('running', 'paused')`,
     [userId]
@@ -257,10 +251,10 @@ export async function getPlanStatusForUser(userId) {
     paygPendingInvoiceCents,
     filtersBlocked,
     exportCopyBlocked,
-    sendersUsed: parseInt(sendersCount.rows?.[0]?.c ?? '0', 10),
-    sendersMax: access.sendersMax,
-    groupsUsed: parseInt(groupsCount.rows?.[0]?.c ?? '0', 10),
-    groupsMax: access.groupsMax,
+    sendersUsed: 0,
+    sendersMax: 0,
+    groupsUsed: 0,
+    groupsMax: 0,
     campaignsActive: parseInt(campaignsCount.rows?.[0]?.c ?? '0', 10),
     campaignsActiveMax: access.campaignsActiveMax,
     scansUsed,
@@ -342,20 +336,12 @@ export async function activatePaygFilters(userId) {
   return { ok: true, status: await getPlanStatusForUser(userId) };
 }
 
-export async function checkSenderLimit(userId) {
-  const status = await getPlanStatusForUser(userId);
-  if (!status.trialExpired && status.sendersUsed >= status.sendersMax) {
-    return { ok: false, reason: 'sender_limit', status, upgradeTier: TIER_BASIC };
-  }
-  return { ok: true, status };
+export async function checkSenderLimit() {
+  return { ok: true };
 }
 
-export async function checkGroupLimit(userId) {
-  const status = await getPlanStatusForUser(userId);
-  if (!status.trialExpired && status.groupsUsed >= status.groupsMax) {
-    return { ok: false, reason: 'group_limit', status, upgradeTier: TIER_BASIC };
-  }
-  return { ok: true, status };
+export async function checkGroupLimit() {
+  return { ok: true };
 }
 
 export async function checkCampaignLimit(userId) {

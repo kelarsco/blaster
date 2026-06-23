@@ -102,8 +102,8 @@ export async function getPlanLimitsForUser(userId) {
     defaults.campaignsLimit = s === 'unlimited' || s === '∞' ? UNLIMITED_NUM : Math.max(0, parseInt(camp, 10) || 1);
   }
 
-  const sendersLimit = await getSenderLimitForUser(userId).then((r) => r.limit);
-  defaults.sendersLimit = sendersLimit;
+  defaults.sendersLimit = 0;
+  defaults.sendersUsed = 0;
 
   if (!row) {
     defaults.isTrial = false;
@@ -139,12 +139,6 @@ export async function getPlanLimitsForUser(userId) {
   defaults.scansUsed = parseInt(scansRes.rows?.[0]?.total ?? '0', 10);
   defaults.campaignsActive = parseInt(campaignsRes.rows?.[0]?.c ?? '0', 10);
 
-  const sendersCount = await db.query(
-    'SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1',
-    [userId]
-  );
-  defaults.sendersUsed = parseInt(sendersCount.rows?.[0]?.c ?? '0', 10);
-
   const overageScans = Math.max(0, defaults.scansUsed - defaults.scansLimit);
   const overageEmails = Math.max(0, defaults.emailsUsed - defaults.emailsLimit);
   const extraOwed = Math.floor(overageScans / 500) + Math.floor(overageEmails / 300);
@@ -163,37 +157,10 @@ export async function getPlanLimitsForUser(userId) {
 }
 
 /**
- * Get the sender limit for a user based on their active subscription plan.
- * @param {string} userId
- * @returns {Promise<{ limit: number, planId: string | null }>}
+ * @deprecated Legacy sender accounts removed — always returns zero limit.
  */
 export async function getSenderLimitForUser(userId) {
-  const db = getDb();
-  if (!db) return { limit: DEFAULT_SENDER_LIMIT, planId: null };
-
-  const sub = await db.query(
-    `SELECT s.plan_id, p.features
-     FROM subscriptions s
-     JOIN plans p ON p.id = s.plan_id
-     WHERE s.user_id = $1 AND s.status IN ('active', 'trialing')
-       AND s.current_period_end > NOW()
-     ORDER BY s.current_period_end DESC NULLS LAST
-     LIMIT 1`,
-    [userId]
-  );
-  const row = sub.rows?.[0];
-  if (!row) {
-    return { limit: 0, planId: null };
-  }
-
-  const features = row.features || {};
-  const senders = features.senders;
-  if (senders == null) return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
-  const str = String(senders).toLowerCase();
-  if (str === 'unlimited' || str === '∞') return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
-  const num = parseInt(senders, 10);
-  if (Number.isNaN(num) || num < 0) return { limit: UNLIMITED_SENDERS, planId: row.plan_id };
-  return { limit: Math.min(num, UNLIMITED_SENDERS), planId: row.plan_id };
+  return { limit: 0, planId: null };
 }
 
 /**

@@ -154,8 +154,6 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
       [userId, start, end]
     );
     const scansUsed = parseInt(scansResult.rows?.[0]?.total ?? '0', 10);
-    const sendersCount = await db.query('SELECT COUNT(*) AS c FROM senders WHERE user_id = $1 AND is_active = 1', [userId]);
-    const sendersUsed = parseInt(sendersCount.rows?.[0]?.c ?? '0', 10);
     const emailsResult = await db.query(
       `SELECT COUNT(*) AS total FROM campaign_sends cs JOIN campaigns c ON c.id = cs.campaign_id AND c.user_id = $1 WHERE cs.status = 'sent' AND cs.sent_at >= $2 AND cs.sent_at <= $3`,
       [userId, start, end]
@@ -169,14 +167,6 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
       if (str === 'unlimited' || str === '∞') return 999999;
       const n = parseInt(s, 10);
       return Number.isNaN(n) || n < 0 ? 200 : n;
-    })();
-    const sendersLimit = (() => {
-      const s = plan?.features?.senders;
-      if (s == null) return 1;
-      const str = String(s).toLowerCase();
-      if (str === 'unlimited' || str === '∞') return 999;
-      const n = parseInt(s, 10);
-      return Number.isNaN(n) || n < 0 ? 1 : Math.min(n, 999);
     })();
     const emailsLimit = (() => {
       const e = plan?.features?.emails;
@@ -200,7 +190,7 @@ billingRoutes.get('/overview', requireAuth, async (req, res) => {
     res.json({
       subscription,
       plan,
-      usage: { scansUsed, scansLimit, sendersUsed, sendersLimit, emailsUsed, emailsLimit },
+      usage: { scansUsed, scansLimit, emailsUsed, emailsLimit },
       extraCredit: {
         owed: extraCreditOwed,
         paidCents,
