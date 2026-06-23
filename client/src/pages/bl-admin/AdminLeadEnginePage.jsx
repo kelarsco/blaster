@@ -10,6 +10,7 @@ import {
   AdminBadge,
   adminGhostBtn,
   adminPrimaryBtn,
+  adminHoverBg,
 } from '../../components/admin';
 
 function statusVariant(status, qualified) {
@@ -264,7 +265,7 @@ export function AdminLeadEnginePage() {
                 </tr>
               ) : (
                 filteredStores.map((s) => (
-                  <tr key={s.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
+                  <tr key={s.id} className={`${adminHoverBg} transition-colors`}>
                     <td className="px-4 py-3 max-w-xs truncate">
                       <a href={s.storeUrl} target="_blank" rel="noopener noreferrer" className="text-blaster-fg hover:underline">
                         {s.storeUrl}

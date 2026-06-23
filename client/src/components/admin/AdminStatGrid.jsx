@@ -1,5 +1,5 @@
 import React from 'react';
-import { adminPanel } from './adminStyles.js';
+import { adminPanel, adminHoverBg } from './adminStyles.js';
 
 export function AdminStatGrid({ items, columns = 4, className = '' }) {
   const colClass =
@@ -21,7 +21,7 @@ export function AdminStatGrid({ items, columns = 4, className = '' }) {
             tabIndex={onClick ? 0 : undefined}
             onClick={onClick}
             onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
-            className={`px-5 sm:px-6 py-5 sm:py-6 ${onClick ? 'cursor-pointer hover:bg-blaster-sidebar-hover/50 transition-colors' : ''} ${
+            className={`px-5 sm:px-6 py-5 sm:py-6 ${onClick ? `cursor-pointer ${adminHoverBg} transition-colors` : ''} ${
               active ? 'bg-blaster-accent/5' : ''
             }`}
           >

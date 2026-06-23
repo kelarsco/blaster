@@ -16,7 +16,7 @@ import {
 import { useAdmin } from '../../context/AdminContext';
 import { AdminMessage } from '../../components/AdminMessage';
 import { ADMIN_PLAN_OPTIONS } from '../../data/adminPlanOptions.js';
-import { AdminPageHeader, AdminButton, AdminPanel, AdminBadge, adminPanel, adminGhostBtn } from '../../components/admin';
+import { AdminPageHeader, AdminButton, AdminPanel, AdminBadge, adminPanel, adminGhostBtn, adminHoverBg } from '../../components/admin';
 
 const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
@@ -82,6 +82,7 @@ export function AdminCampaignPage() {
   const [sending, setSending] = useState(false);
   const [showNewSegment, setShowNewSegment] = useState(false);
   const [pollingId, setPollingId] = useState(null);
+  const [opensCampaign, setOpensCampaign] = useState(null);
 
   useEffect(() => {
     if (preselectedIds.length) setManualUserIds(preselectedIds);
@@ -297,7 +298,7 @@ export function AdminCampaignPage() {
                       className={`w-full text-left p-3 rounded-xl border transition-all ${
                         selected
                           ? 'border-black bg-black/5 shadow-sm'
-                          : 'border-blaster-border hover:border-blaster-border hover:bg-blaster-sidebar-hover/50'
+                          : `border-blaster-border hover:border-blaster-border ${adminHoverBg}`
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -435,10 +436,13 @@ export function AdminCampaignPage() {
 
       {/* Campaign history */}
       <section className={`${adminPanel} p-5`}>
-        <h2 className="text-sm font-semibold text-blaster-fg mb-4 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-blaster-fg mb-1 flex items-center gap-2">
           <Zap className="w-4 h-4 text-blaster-orange" />
           Recent campaigns
         </h2>
+        <p className="text-xs text-blaster-muted mb-4">
+          A tracking pixel is added automatically when each campaign is sent so you can see who opened it.
+        </p>
         {campaigns.length === 0 ? (
           <p className="text-sm text-blaster-muted">No campaigns yet.</p>
         ) : (
@@ -450,12 +454,20 @@ export function AdminCampaignPage() {
                   <th className="pb-2 font-medium">Audience</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium">Sent</th>
+                  <th className="pb-2 font-medium">Opened</th>
                   <th className="pb-2 font-medium">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-blaster-border">
-                {campaigns.map((c) => (
-                  <tr key={c.id}>
+                {campaigns.map((c) => {
+                  const canReview = c.status === 'sent' || c.status === 'sending';
+                  const unopened = Math.max(0, (c.sentCount ?? 0) - (c.openCount ?? 0));
+                  return (
+                  <tr
+                    key={c.id}
+                    className={canReview ? `cursor-pointer ${adminHoverBg} transition-colors` : undefined}
+                    onClick={canReview ? () => setOpensCampaign(c) : undefined}
+                  >
                     <td className="py-3 pr-4">
                       <p className="font-medium text-blaster-fg truncate max-w-[200px]">{c.name}</p>
                       <p className="text-xs text-blaster-muted truncate max-w-[200px]">{c.subject}</p>
@@ -468,14 +480,33 @@ export function AdminCampaignPage() {
                         <span className="text-red-600 ml-1">({c.failedCount} failed)</span>
                       )}
                     </td>
+                    <td className="py-3 pr-4 text-blaster-muted">
+                      {c.sentCount > 0 ? (
+                        <span>
+                          <span className="text-emerald-700 font-medium">{c.openCount ?? 0}</span>
+                          <span className="text-blaster-muted"> / {unopened} not yet</span>
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="py-3 text-blaster-muted whitespace-nowrap">{formatDate(c.createdAt)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </section>
+
+      {opensCampaign && (
+        <CampaignOpensModal
+          campaign={opensCampaign}
+          adminFetch={adminFetch}
+          onClose={() => setOpensCampaign(null)}
+        />
+      )}
 
       {showNewSegment && (
         <NewSegmentModal
@@ -487,6 +518,111 @@ export function AdminCampaignPage() {
           adminFetch={adminFetch}
         />
       )}
+    </div>
+  );
+}
+
+function CampaignOpensModal({ campaign, adminFetch, onClose }) {
+  const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sends, setSends] = useState([]);
+  const [stats, setStats] = useState({ sent: 0, opened: 0, unopened: 0, failed: 0 });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = filter ? `?filter=${encodeURIComponent(filter)}` : '';
+      const res = await adminFetch(`/campaigns/${campaign.id}/sends${qs}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSends(data.sends || []);
+        setStats(data.stats || { sent: 0, opened: 0, unopened: 0, failed: 0 });
+      }
+    } catch (_) {}
+    setLoading(false);
+  }, [adminFetch, campaign.id, filter]);
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, campaign.status === 'sending' ? 8000 : 30000);
+    return () => clearInterval(interval);
+  }, [load, campaign.status]);
+
+  const tabs = [
+    { id: '', label: 'All sent', count: stats.sent },
+    { id: 'opened', label: 'Viewed', count: stats.opened },
+    { id: 'unopened', label: 'Not viewed', count: stats.unopened },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div
+        className="bg-blaster-bg-card rounded-2xl border border-blaster-border shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-blaster-border flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-blaster-fg truncate">{campaign.name}</h2>
+            <p className="text-sm text-blaster-muted mt-0.5 truncate">{campaign.subject}</p>
+            <p className="text-xs text-blaster-muted mt-2">
+              {stats.opened} viewed · {stats.unopened} not viewed · {stats.sent} delivered
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className={`p-2 rounded-full ${adminHoverBg} text-blaster-muted`} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div className="px-5 pt-3 flex flex-wrap gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFilter(tab.id)}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                filter === tab.id
+                  ? 'bg-black text-white border-black'
+                  : `border-blaster-border text-blaster-muted ${adminHoverBg}`
+              }`}
+            >
+              {tab.label}
+              <span className={filter === tab.id ? 'text-white/80' : 'text-blaster-muted'}>{tab.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 pt-3">
+          {loading && sends.length === 0 ? (
+            <p className="text-sm text-blaster-muted">Loading recipients…</p>
+          ) : sends.length === 0 ? (
+            <p className="text-sm text-blaster-muted">No recipients in this view.</p>
+          ) : (
+            <ul className="space-y-2">
+              {sends.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl border border-blaster-border bg-blaster-bg-app"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-blaster-fg truncate">{s.userName || s.email}</p>
+                    <p className="text-xs text-blaster-muted truncate">{s.email}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {s.openedAt ? (
+                      <AdminBadge variant="sent">Viewed</AdminBadge>
+                    ) : (
+                      <AdminBadge variant="draft">Not viewed</AdminBadge>
+                    )}
+                    <p className="text-[11px] text-blaster-muted mt-1">
+                      {s.openedAt ? formatDate(s.openedAt) : formatDate(s.sentAt)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

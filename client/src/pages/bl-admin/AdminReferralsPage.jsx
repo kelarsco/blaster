@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { formatUTCDateOnly } from '../../utils/dateUtils';
-import { AdminPageHeader, AdminStatGrid, AdminPanel } from '../../components/admin';
+import { AdminPageHeader, AdminStatGrid, AdminPanel, adminHoverBg } from '../../components/admin';
 
 export function AdminReferralsPage() {
   const { adminFetch } = useAdmin();
@@ -68,7 +68,7 @@ export function AdminReferralsPage() {
                       </tr>
                     ) : (
                       topReferrers.map((r) => (
-                        <tr key={r.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
+                        <tr key={r.id} className={`${adminHoverBg} transition-colors`}>
                           <td className="px-4 py-3">
                             <div className="font-medium text-blaster-fg">{r.name || '—'}</div>
                             <div className="text-xs text-blaster-muted">{r.email}</div>
@@ -109,7 +109,7 @@ export function AdminReferralsPage() {
                       </tr>
                     ) : (
                       recentReferrals.map((r) => (
-                        <tr key={r.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
+                        <tr key={r.id} className={`${adminHoverBg} transition-colors`}>
                           <td className="px-4 py-3 text-xs">{r.referred_email}</td>
                           <td className="px-4 py-3 text-xs">
                             <div>{r.referrer_email}</div>

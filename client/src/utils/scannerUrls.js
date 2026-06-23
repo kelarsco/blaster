@@ -227,7 +227,8 @@ export function exportScanResultsCsv(results, fields, extractOptions) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `scan-export-${Date.now()}.csv`;
+  const suffix = String(Math.floor(1000 + Math.random() * 9000));
+  a.download = `wiblaster-kel${suffix}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -13,6 +13,7 @@ import {
   AdminListSkeleton,
   adminPrimaryBtn,
   adminGhostBtn,
+  adminHoverBg,
 } from '../../components/admin';
 
 const SORT_OPTIONS = [
@@ -308,7 +309,7 @@ export function AdminUsersPage() {
                   <button
                     type="button"
                     onClick={() => setMenuUserId(menuUserId === user.id ? null : user.id)}
-                    className="p-2 rounded-lg text-blaster-muted hover:bg-blaster-border/50"
+                    className={`p-2 rounded-lg text-blaster-muted ${adminHoverBg}`}
                     aria-label="Actions"
                   >
                     <MoreVertical className="w-5 h-5" />
@@ -320,14 +321,14 @@ export function AdminUsersPage() {
                         <button
                           type="button"
                           onClick={() => { setEditUser(user); setMenuUserId(null); }}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-blaster-fg hover:bg-blaster-border/50"
+                          className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-blaster-fg ${adminHoverBg}`}
                         >
                           <Edit2 className="w-4 h-4" /> Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => { setOtherActionUser(user); setMenuUserId(null); }}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-blaster-fg hover:bg-blaster-border/50"
+                          className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-blaster-fg ${adminHoverBg}`}
                         >
                           <AlertCircle className="w-4 h-4" /> Others
                         </button>
@@ -360,7 +361,7 @@ export function AdminUsersPage() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-blaster-fg">User details</h2>
-              <button type="button" onClick={() => setDetailUser(null)} className="p-2 rounded-lg hover:bg-blaster-border/50 text-blaster-muted">
+              <button type="button" onClick={() => setDetailUser(null)} className={`p-2 rounded-lg ${adminHoverBg} text-blaster-muted`}>
                 ✕
               </button>
             </div>
@@ -402,7 +403,7 @@ export function AdminUsersPage() {
             <h2 className="text-lg font-bold text-blaster-fg mb-2">Actions</h2>
             <p className="text-sm text-blaster-muted mb-4">{otherActionUser.email}</p>
             <div className="space-y-2">
-              <button type="button" onClick={() => handleDisable(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-border/30 text-sm">
+              <button type="button" onClick={() => handleDisable(otherActionUser.id)} className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border ${adminHoverBg} text-sm`}>
                 <UserX className="w-4 h-4" /> Disable account
               </button>
               {otherActionUser.suspendedAt ? (
@@ -410,7 +411,7 @@ export function AdminUsersPage() {
                   <AlertCircle className="w-4 h-4" /> Reactivate
                 </button>
               ) : (
-                <button type="button" onClick={() => handleSuspend(otherActionUser.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-border/30 text-sm">
+                <button type="button" onClick={() => handleSuspend(otherActionUser.id)} className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-blaster-border ${adminHoverBg} text-sm`}>
                   <AlertCircle className="w-4 h-4" /> Suspend
                 </button>
               )}

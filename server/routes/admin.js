@@ -37,6 +37,7 @@ import {
   previewCampaignRecipients,
   startCampaignSend,
   getCampaignStatus,
+  listCampaignSends,
 } from '../services/adminCampaignSender.js';
 import { isTransactionalEmailConfigured } from '../services/transactionalEmail.js';
 
@@ -1007,7 +1008,10 @@ adminRoutes.get('/campaigns', async (req, res) => {
     const db = getDb();
     if (!db) return res.json({ campaigns: [], resendConfigured: isTransactionalEmailConfigured() });
     const r = await db.query(
-      `SELECT c.*, s.name AS segment_name FROM admin_email_campaigns c
+      `SELECT c.*, s.name AS segment_name,
+         (SELECT COUNT(*)::int FROM admin_email_sends es
+          WHERE es.campaign_id = c.id AND es.status = 'sent' AND es.opened_at IS NOT NULL) AS open_count
+       FROM admin_email_campaigns c
        LEFT JOIN admin_segments s ON s.id = c.segment_id
        ORDER BY c.created_at DESC LIMIT 50`
     );
@@ -1101,6 +1105,27 @@ adminRoutes.post('/campaigns/:id/send', async (req, res) => {
   } catch (e) {
     console.error('[admin campaigns send]', e?.message || e);
     res.status(400).json({ error: e?.message || 'Failed to send campaign' });
+  }
+});
+
+/** GET /api/bl-admin/campaigns/:id/sends?filter=opened|unopened */
+adminRoutes.get('/campaigns/:id/sends', async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const id = String(req.params.id || '').trim();
+    const filter = String(req.query.filter || '').trim().toLowerCase();
+    const allowed = ['', 'opened', 'unopened'];
+    if (!allowed.includes(filter)) {
+      return res.status(400).json({ error: 'Invalid filter' });
+    }
+    const exists = await db.query('SELECT id FROM admin_email_campaigns WHERE id = $1', [id]);
+    if (!exists.rows?.[0]) return res.status(404).json({ error: 'Not found' });
+    const data = await listCampaignSends(db, id, { filter: filter || undefined });
+    res.json(data);
+  } catch (e) {
+    console.error('[admin campaigns sends]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to load sends' });
   }
 });
 

@@ -1,7 +1,9 @@
 /** Shared Tailwind class strings for the admin dashboard design system. */
 
+export const adminHoverBg = 'hover:bg-black/[0.01]';
+
 export const adminCard =
-  'rounded-xl border border-blaster-border bg-blaster-bg-card hover:border-blaster-border/80 transition-colors';
+  `rounded-xl border border-blaster-border bg-blaster-bg-card hover:border-blaster-border/80 ${adminHoverBg} transition-colors`;
 
 export const adminPanel =
   'rounded-2xl border border-blaster-border bg-blaster-bg-card shadow-sm overflow-hidden';
@@ -16,7 +18,7 @@ export const adminPrimaryBtn =
   'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-black text-white text-sm font-medium shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50';
 
 export const adminGhostBtn =
-  'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-blaster-fg hover:bg-blaster-border/40 transition-colors disabled:opacity-50';
+  `inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-blaster-fg ${adminHoverBg} transition-colors disabled:opacity-50`;
 
 export const adminIconBtn =
   'flex items-center justify-center w-9 h-9 rounded-full bg-black text-white hover:opacity-90 transition-opacity shadow-sm';

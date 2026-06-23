@@ -4,7 +4,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { ResourceTypeToggle } from '../../components/resources/ResourceTypeToggle.jsx';
 import { getYoutubeVideoId } from '../../utils/youtube.js';
 import { useConfirm } from '../../context/ConfirmDialogContext.jsx';
-import { AdminPageHeader, AdminPanel, adminInput, adminPrimaryBtn } from '../../components/admin';
+import { AdminPageHeader, AdminPanel, adminInput, adminPrimaryBtn, adminHoverBg } from '../../components/admin';
 
 function formatAddedAt(iso) {
   if (!iso) return '';
@@ -192,7 +192,7 @@ export function AdminResourcesPage() {
                 className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
                   isPriority
                     ? 'border-amber-400 bg-amber-50 text-amber-700'
-                    : 'border-blaster-border text-blaster-muted hover:text-blaster-fg hover:bg-blaster-bg-app'
+                    : `border-blaster-border text-blaster-muted hover:text-blaster-fg ${adminHoverBg}`
                 }`}
                 aria-pressed={isPriority}
               >
@@ -264,7 +264,7 @@ export function AdminResourcesPage() {
                 <button
                   type="button"
                   onClick={() => deleteResource(r.id)}
-                  className="p-2 rounded-lg text-blaster-muted hover:text-red-600 hover:bg-red-50 shrink-0"
+                  className={`p-2 rounded-lg text-blaster-muted hover:text-red-600 ${adminHoverBg} shrink-0`}
                   aria-label="Delete"
                 >
                   <Trash2 className="w-4 h-4" strokeWidth={1.75} />

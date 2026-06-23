@@ -1037,6 +1037,10 @@ async function migrateAdminCampaigns(pool) {
       );
       CREATE INDEX IF NOT EXISTS idx_admin_email_sends_campaign ON admin_email_sends(campaign_id);
       CREATE INDEX IF NOT EXISTS idx_admin_email_sends_status ON admin_email_sends(campaign_id, status);
+
+      ALTER TABLE admin_email_sends ADD COLUMN IF NOT EXISTS tracking_token TEXT;
+      ALTER TABLE admin_email_sends ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_email_sends_token ON admin_email_sends(tracking_token) WHERE tracking_token IS NOT NULL;
     `);
     const { seedDefaultSegments } = await import('./services/adminSegments.js');
     await seedDefaultSegments(pool);

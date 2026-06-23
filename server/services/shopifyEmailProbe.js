@@ -4,7 +4,26 @@
  */
 import { fetchHtml, normalizeStoreUrl } from './crawler.js';
 
-const PROBE_TIMEOUT_MS = Number(process.env.SHOPIFY_EMAIL_PROBE_TIMEOUT_MS) || 10000;
+const PROBE_TIMEOUT_MS = Number(process.env.SHOPIFY_EMAIL_PROBE_TIMEOUT_MS) || 12000;
+const PROBE_PARALLEL = Math.min(
+  Math.max(Number(process.env.SHOPIFY_PROBE_PARALLEL) || 2, 1),
+  6
+);
+const PROBE_DELAY_MS =
+  Number(process.env.SHOPIFY_PROBE_DELAY_MS) ||
+  Number(process.env.CRAWL_PAGE_DELAY_MS) ||
+  300;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function runProbeTasks(tasks) {
+  for (let i = 0; i < tasks.length; i += PROBE_PARALLEL) {
+    if (i > 0 && PROBE_DELAY_MS > 0) await sleep(PROBE_DELAY_MS);
+    await Promise.all(tasks.slice(i, i + PROBE_PARALLEL).map((fn) => fn()));
+  }
+}
 
 const UA_HEADERS = {
   'User-Agent':
@@ -116,13 +135,13 @@ export async function probeShopifyEmails(storeUrl) {
     pages.push(page);
   };
 
-  const policyJsonFetches = POLICY_HANDLES.map(async (handle) => {
+  const policyJsonTasks = POLICY_HANDLES.map((handle) => async () => {
     const data = await fetchJson(`${origin}/policies/${handle}.json`);
     const page = pageFromPolicyJson(origin, handle, data);
     if (page) addPage(page);
   });
 
-  const htmlFetches = HTML_POLICY_PATHS.map(async (path) => {
+  const htmlTasks = HTML_POLICY_PATHS.map((path) => async () => {
     const url = path === '/' ? `${origin}/` : `${origin}${path}`;
     if (seenUrls.has(url)) return;
     let html = (await fetchHtml(url, { timeout: PROBE_TIMEOUT_MS })).html;
@@ -132,7 +151,7 @@ export async function probeShopifyEmails(storeUrl) {
     if (html) addPage({ url, html, probeSource: 'shopify_policy_html' });
   });
 
-  const metaFetch = (async () => {
+  const metaTask = async () => {
     const meta = await fetchJson(`${origin}/meta.json`);
     if (meta && typeof meta === 'object') {
       addPage({
@@ -141,9 +160,9 @@ export async function probeShopifyEmails(storeUrl) {
         probeSource: 'shopify_meta_json',
       });
     }
-  })();
+  };
 
-  const homeFetch = (async () => {
+  const homeTask = async () => {
     const url = `${origin}/`;
     let html = (await fetchHtml(url, { timeout: PROBE_TIMEOUT_MS })).html;
     if (!html || html.length < 500) {
@@ -154,9 +173,9 @@ export async function probeShopifyEmails(storeUrl) {
       const shopHint = extractShopifyShopObjectEmail(html, url);
       if (shopHint) hints.push(shopHint);
     }
-  })();
+  };
 
-  await Promise.all([...policyJsonFetches, ...htmlFetches, metaFetch, homeFetch]);
+  await runProbeTasks([...policyJsonTasks, ...htmlTasks, metaTask, homeTask]);
 
   return { pages, hints };
 }

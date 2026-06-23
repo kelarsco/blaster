@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { AdminPageHeader, adminPanel } from '../../components/admin';
+import { AdminPageHeader, adminPanel, adminHoverBg } from '../../components/admin';
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -87,7 +87,7 @@ export function AdminMessagesPage() {
                   key={t.threadId}
                   type="button"
                   onClick={() => setSelectedThread(t)}
-                  className={`w-full text-left px-4 py-3 border-b border-blaster-border/60 hover:bg-blaster-sidebar-hover/50 transition-colors ${
+                  className={`w-full text-left px-4 py-3 border-b border-blaster-border/60 ${adminHoverBg} transition-colors ${
                     selectedThread?.threadId === t.threadId ? 'bg-black/5 border-l-2 border-l-black' : ''
                   }`}
                 >
@@ -110,7 +110,7 @@ export function AdminMessagesPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedThread(null)}
-                  className="md:hidden p-2 -ml-2 rounded-lg text-blaster-fg hover:bg-blaster-border/50"
+                  className={`md:hidden p-2 -ml-2 rounded-lg text-blaster-fg ${adminHoverBg}`}
                   aria-label="Back to list"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

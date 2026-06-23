@@ -55,7 +55,6 @@ export default function ScannerPage() {
     setIsStarting(true);
 
     try {
-      const maxConcurrentCrawlers = 5;
       const maxUrlsPerScan = 500;
 
       const urls = parseUrls(rawUrls);
@@ -66,7 +65,6 @@ export default function ScannerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rawUrls: urls.join('\n'),
-          maxConcurrentCrawlers,
           maxUrlsPerScan,
           extractOptions: { ...extractOptions },
         }),

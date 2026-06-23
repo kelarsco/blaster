@@ -10,11 +10,12 @@ import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
-  Number(process.env.SCAN_CONCURRENCY) || (process.env.NODE_ENV === 'production' ? 3 : 5),
+  Number(process.env.SCAN_CONCURRENCY) || 2,
   10
 );
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 200;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 45000;
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 800;
+const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 500;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
@@ -177,10 +178,8 @@ async function processScanWork(payload) {
     });
     const workPromise = (async () => {
       try {
-        const [crawl, shopify] = await Promise.all([
-          crawlStore(storeUrl),
-          probeShopifyEmails(storeUrl),
-        ]);
+        const crawl = await crawlStore(storeUrl);
+        const shopify = await probeShopifyEmails(storeUrl);
 
         const pageByUrl = new Map();
         for (const p of [...crawl.pages, ...shopify.pages]) {
@@ -239,7 +238,11 @@ async function processScanWork(payload) {
         `[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`
       );
     }
-    const settled = await Promise.allSettled(batch.map((storeUrl) => processOneWithTimeout(storeUrl)));
+    const settled = await Promise.allSettled(
+      batch.map((storeUrl, batchIdx) =>
+        sleep(batchIdx * STORE_STAGGER_MS).then(() => processOneWithTimeout(storeUrl))
+      )
+    );
     const outcomes = settled.map((s, idx) => {
       if (s.status === 'fulfilled') return s.value;
       console.error('[scanProcessor] store failed:', batch[idx], s.reason?.message || s.reason);

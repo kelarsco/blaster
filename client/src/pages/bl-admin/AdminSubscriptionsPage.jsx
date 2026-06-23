@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { formatUTCDateOnly } from '../../utils/dateUtils';
-import { AdminPageHeader, AdminFilterSelect, AdminStatGrid, AdminPanel } from '../../components/admin';
+import { AdminPageHeader, AdminFilterSelect, AdminStatGrid, AdminPanel, adminHoverBg } from '../../components/admin';
 
 const PERIOD_OPTIONS = [
   { value: 'last_7_days', label: 'Last 7 days' },
@@ -228,7 +228,7 @@ export function AdminSubscriptionsPage() {
                 <div className="flex items-center justify-between mb-3 text-sm text-blaster-fg">
                   <button
                     type="button"
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-blaster-bg-app text-blaster-muted"
+                    className={`w-8 h-8 flex items-center justify-center rounded-full ${adminHoverBg} text-blaster-muted`}
                     onClick={() => changeMonth(-1)}
                   >
                     ‹
@@ -236,7 +236,7 @@ export function AdminSubscriptionsPage() {
                   <p className="font-semibold">{calendarTitle}</p>
                   <button
                     type="button"
-                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-blaster-bg-app text-blaster-muted"
+                    className={`w-8 h-8 flex items-center justify-center rounded-full ${adminHoverBg} text-blaster-muted`}
                     onClick={() => changeMonth(1)}
                   >
                     ›
@@ -259,7 +259,7 @@ export function AdminSubscriptionsPage() {
                     else cellClasses += 'text-blaster-fg ';
                     if (inRange && !isSelected) cellClasses += 'bg-blaster-accent/10 ';
                     if (isSelected) cellClasses += 'bg-[#1a1a21] text-white shadow-sm ';
-                    else cellClasses += 'hover:bg-blaster-bg-app ';
+                    else cellClasses += `${adminHoverBg} `;
                     return (
                       <button
                         key={date.toISOString()}
@@ -275,7 +275,7 @@ export function AdminSubscriptionsPage() {
                 <div className="mt-4 flex items-center justify-end gap-3 text-sm">
                   <button
                     type="button"
-                    className="px-3 py-1.5 rounded-xl text-blaster-muted hover:bg-blaster-bg transition"
+                    className={`px-3 py-1.5 rounded-xl text-blaster-muted ${adminHoverBg} transition`}
                     onClick={() => setIsDatePickerOpen(false)}
                   >
                     Cancel
@@ -351,7 +351,7 @@ export function AdminSubscriptionsPage() {
                       ? (s.currentPeriodEnd ? formatDateOnly(s.currentPeriodEnd) : '—')
                       : '—';
                   return (
-                    <tr key={s.id} className="hover:bg-blaster-sidebar-hover/30 transition-colors">
+                    <tr key={s.id} className={`${adminHoverBg} transition-colors`}>
                       <td className="p-3 text-blaster-fg">{s.userName || s.userEmail}</td>
                       <td className="p-3 text-blaster-fg">{s.planName}</td>
                       <td className="p-3 text-blaster-fg">${(s.amount / 100).toFixed(2)}/{s.interval}</td>

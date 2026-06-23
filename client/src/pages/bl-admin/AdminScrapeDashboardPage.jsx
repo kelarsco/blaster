@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Check, Loader, Clock, RefreshCw, X, Copy, PlusCircle } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext.jsx';
-import { AdminPageHeader, AdminPanel, adminPrimaryBtn, adminGhostBtn } from '../../components/admin';
+import { AdminPageHeader, AdminPanel, adminPrimaryBtn, adminGhostBtn, adminHoverBg } from '../../components/admin';
 import {
   readScrapeSessionCache,
   writeScrapeSessionCache,
@@ -90,7 +90,7 @@ function SourceLinksModal({ source, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-sidebar"
+            className={`shrink-0 p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg ${adminHoverBg}`}
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -180,7 +180,7 @@ function ConfirmedLinksPanel({
               <button
                 type="button"
                 onClick={onCopyAll}
-                className="inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-blaster-border hover:bg-blaster-sidebar"
+                className={`inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-blaster-border ${adminHoverBg}`}
               >
                 <Copy className="w-3.5 h-3.5" />
                 Copy all URLs
@@ -223,7 +223,7 @@ function ConfirmedLinksPanel({
                 const queued = enqueuedSet.has(lead.storeUrl);
                 const isEnqueueing = enqueueingUrls.has(lead.storeUrl);
                 return (
-                  <li key={lead.storeUrl} className="px-4 py-3 flex items-start gap-3 hover:bg-blaster-sidebar/30">
+                  <li key={lead.storeUrl} className={`px-4 py-3 flex items-start gap-3 ${adminHoverBg}`}>
                     <div className="flex-1 min-w-0">
                       <a
                         href={lead.storeUrl}
@@ -245,7 +245,7 @@ function ConfirmedLinksPanel({
                       <button
                         type="button"
                         onClick={() => onCopy(lead.storeUrl)}
-                        className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-sidebar"
+                        className={`p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg ${adminHoverBg}`}
                         aria-label="Copy URL"
                         title="Copy URL"
                       >
@@ -264,7 +264,7 @@ function ConfirmedLinksPanel({
                           type="button"
                           onClick={() => onEnqueue(lead.storeUrl)}
                           disabled={isEnqueueing}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border border-blaster-border hover:bg-blaster-sidebar disabled:opacity-50 whitespace-nowrap"
+                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border border-blaster-border ${adminHoverBg} disabled:opacity-50 whitespace-nowrap`}
                         >
                           <PlusCircle className="w-3 h-3" />
                           {isEnqueueing ? 'Adding…' : 'Add to store'}
@@ -666,7 +666,7 @@ export function AdminScrapeDashboardPage() {
             type="button"
             onClick={saveSchedule}
             disabled={savingSchedule}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-blaster-sidebar hover:bg-white disabled:opacity-50"
+            className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-blaster-bg-card ${adminHoverBg} disabled:opacity-50`}
           >
             {savingSchedule ? 'Saving…' : 'Save automation'}
           </button>
@@ -932,7 +932,7 @@ export function AdminScrapeDashboardPage() {
                   type="button"
                   onClick={startScrape}
                   disabled={starting || resuming || isRunning}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-white hover:bg-blaster-sidebar disabled:opacity-50"
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blaster-border bg-blaster-bg-card ${adminHoverBg} disabled:opacity-50`}
                 >
                   <RefreshCw className="w-4 h-4" />
                   {starting ? 'Starting…' : 'Start fresh scrape'}

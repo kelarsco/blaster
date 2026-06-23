@@ -92,7 +92,6 @@ export function UrlInput({
     setIsScanning(true);
     
     try {
-      const maxConcurrentCrawlers = 5;
       const maxUrlsPerScan = 1000;
 
       const urls = parseUrls(rawUrls);
@@ -104,7 +103,6 @@ export function UrlInput({
 
       const requestBody = {
         rawUrls: urls.join('\n'),
-        maxConcurrentCrawlers,
         maxUrlsPerScan,
       };
 

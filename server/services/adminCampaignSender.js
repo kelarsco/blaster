@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import { sendAdminBroadcastEmail, isTransactionalEmailConfigured } from './transactionalEmail.js';
 import { buildRecipientQuery, countSegmentRecipients, listSegmentRecipients } from './adminSegments.js';
+import { buildOpenTrackUrl, injectTrackingPixel } from '../utils/emailTracking.js';
 
 const DEFAULT_DELAY_MS = 600;
 const activeCampaigns = new Set();
@@ -26,6 +27,21 @@ export function mapCampaignRow(row) {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    openCount: row.open_count ?? row.openCount ?? 0,
+  };
+}
+
+function mapSendRow(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    userId: row.user_id,
+    email: row.email,
+    status: row.status,
+    sentAt: row.sent_at,
+    openedAt: row.opened_at,
+    error: row.error,
+    userName: row.user_name || null,
   };
 }
 
@@ -102,10 +118,12 @@ export async function startCampaignSend(campaignId) {
 
   for (const user of recipients) {
     if (existingIds.has(user.id)) continue;
+    const sendId = uuidv4();
+    const trackingToken = uuidv4().replace(/-/g, '');
     await db.query(
-      `INSERT INTO admin_email_sends (id, campaign_id, user_id, email, status)
-       VALUES ($1, $2, $3, $4, 'pending')`,
-      [uuidv4(), campaignId, user.id, user.email]
+      `INSERT INTO admin_email_sends (id, campaign_id, user_id, email, status, tracking_token)
+       VALUES ($1, $2, $3, $4, 'pending', $5)`,
+      [sendId, campaignId, user.id, user.email, trackingToken]
     );
   }
 
@@ -132,7 +150,7 @@ async function processCampaignQueue(campaignId) {
 
     while (true) {
       const pending = await db.query(
-        `SELECT s.id, s.email, s.user_id FROM admin_email_sends s
+        `SELECT s.id, s.email, s.user_id, s.tracking_token FROM admin_email_sends s
          WHERE s.campaign_id = $1 AND s.status = 'pending'
          ORDER BY s.created_at ASC LIMIT 1`,
         [campaignId]
@@ -141,10 +159,20 @@ async function processCampaignQueue(campaignId) {
       if (!row) break;
 
       try {
+        let trackingToken = row.tracking_token;
+        if (!trackingToken) {
+          trackingToken = uuidv4().replace(/-/g, '');
+          await db.query(
+            'UPDATE admin_email_sends SET tracking_token = $2 WHERE id = $1',
+            [row.id, trackingToken]
+          );
+        }
+        const trackUrl = buildOpenTrackUrl(trackingToken);
+        const htmlWithPixel = injectTrackingPixel(campaign.html_body, trackUrl);
         const result = await sendAdminBroadcastEmail({
           to: row.email,
           subject: campaign.subject,
-          html: campaign.html_body,
+          html: htmlWithPixel,
           campaignId,
         });
         await db.query(
@@ -197,7 +225,52 @@ function sleep(ms) {
 }
 
 export async function getCampaignStatus(db, campaignId) {
-  const r = await db.query('SELECT * FROM admin_email_campaigns WHERE id = $1', [campaignId]);
+  const r = await db.query(
+    `SELECT c.*,
+       (SELECT COUNT(*)::int FROM admin_email_sends s
+        WHERE s.campaign_id = c.id AND s.status = 'sent' AND s.opened_at IS NOT NULL) AS open_count
+     FROM admin_email_campaigns c WHERE c.id = $1`,
+    [campaignId]
+  );
   if (!r.rows?.[0]) return null;
   return mapCampaignRow(r.rows[0]);
+}
+
+export async function listCampaignSends(db, campaignId, { filter } = {}) {
+  const params = [campaignId];
+  let where = 's.campaign_id = $1 AND s.status = $2';
+  params.push('sent');
+  if (filter === 'opened') {
+    where += ' AND s.opened_at IS NOT NULL';
+  } else if (filter === 'unopened') {
+    where += ' AND s.opened_at IS NULL';
+  }
+  const r = await db.query(
+    `SELECT s.*, u.name AS user_name
+     FROM admin_email_sends s
+     LEFT JOIN users u ON u.id = s.user_id
+     WHERE ${where}
+     ORDER BY s.sent_at DESC NULLS LAST, s.created_at DESC`,
+    params
+  );
+  const sends = (r.rows || []).map(mapSendRow);
+  const stats = await db.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status = 'sent')::int AS sent,
+       COUNT(*) FILTER (WHERE status = 'sent' AND opened_at IS NOT NULL)::int AS opened,
+       COUNT(*) FILTER (WHERE status = 'sent' AND opened_at IS NULL)::int AS unopened,
+       COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+     FROM admin_email_sends WHERE campaign_id = $1`,
+    [campaignId]
+  );
+  const s = stats.rows?.[0] || {};
+  return {
+    sends,
+    stats: {
+      sent: s.sent ?? 0,
+      opened: s.opened ?? 0,
+      unopened: s.unopened ?? 0,
+      failed: s.failed ?? 0,
+    },
+  };
 }

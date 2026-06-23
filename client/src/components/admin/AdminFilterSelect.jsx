@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Check } from 'react-feather';
-import { adminPillBtn } from './adminStyles.js';
+import { adminPillBtn, adminHoverBg } from './adminStyles.js';
 
 export function AdminFilterSelect({ value, onChange, options, ariaLabel, align = 'right', className = '' }) {
   const [open, setOpen] = useState(false);
@@ -45,7 +45,7 @@ export function AdminFilterSelect({ value, onChange, options, ariaLabel, align =
               className={`flex items-center justify-between gap-3 w-full px-3.5 py-2 text-left text-sm transition-colors ${
                 value === o.value
                   ? 'text-blaster-fg bg-blaster-sidebar-hover font-medium'
-                  : 'text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg'
+                  : `text-blaster-muted ${adminHoverBg} hover:text-blaster-fg`
               }`}
             >
               <span className="truncate">{o.label}</span>

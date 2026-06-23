@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import { Logo } from '../components/Logo.jsx';
+import { adminHoverBg } from '../components/admin/adminStyles.js';
 
 const LAST_SEEN_KEY = 'bl_admin_sidebar_last_seen';
 
@@ -184,7 +185,7 @@ export function AdminLayout() {
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive || isLeadEngine
                     ? 'bg-black text-white shadow-sm'
-                    : 'text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg'
+                    : `text-blaster-muted ${adminHoverBg} hover:text-blaster-fg`
                 }`
               }
             >
@@ -201,7 +202,7 @@ export function AdminLayout() {
           <button
             type="button"
             onClick={logout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-blaster-muted hover:bg-blaster-sidebar-hover hover:text-blaster-fg w-full transition-colors"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-blaster-muted ${adminHoverBg} hover:text-blaster-fg w-full transition-colors`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -215,7 +216,7 @@ export function AdminLayout() {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="md:hidden p-2 rounded-full text-blaster-fg hover:bg-blaster-border/50 transition-colors"
+            className={`md:hidden p-2 rounded-full text-blaster-fg ${adminHoverBg} transition-colors`}
             aria-label="Open menu"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -5,13 +5,10 @@
 import https from 'https';
 import http from 'http';
 
-const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 10000;
-const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 0;
+const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 12000;
+const DELAY_BETWEEN_PAGES_MS = Number(process.env.CRAWL_PAGE_DELAY_MS) || 300;
 const PARALLEL_PAGES = Math.min(
-  Math.max(
-    Number(process.env.CRAWL_PARALLEL_PAGES) || (process.env.NODE_ENV === 'production' ? 4 : 6),
-    1
-  ),
+  Math.max(Number(process.env.CRAWL_PARALLEL_PAGES) || 2, 1),
   12
 );
 

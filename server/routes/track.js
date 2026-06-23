@@ -13,10 +13,16 @@ trackRoutes.get('/open/:token', async (req, res) => {
   const db = getDb();
   if (db && token) {
     try {
-      await db.query(
-        `UPDATE manual_send_events SET opened_at = COALESCE(opened_at, NOW()) WHERE tracking_token = $1`,
+      const admin = await db.query(
+        `UPDATE admin_email_sends SET opened_at = COALESCE(opened_at, NOW()) WHERE tracking_token = $1`,
         [token]
       );
+      if (!admin.rowCount) {
+        await db.query(
+          `UPDATE manual_send_events SET opened_at = COALESCE(opened_at, NOW()) WHERE tracking_token = $1`,
+          [token]
+        );
+      }
     } catch (e) {
       console.warn('[track/open]', e?.message || e);
     }

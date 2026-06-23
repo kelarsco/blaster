@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Search, X } from 'react-feather';
-import { adminIconBtn } from './adminStyles.js';
+import { adminIconBtn, adminHoverBg } from './adminStyles.js';
 
 export function AdminSearchToggle({
   value,
@@ -52,7 +52,7 @@ export function AdminSearchToggle({
           <button
             type="button"
             onClick={close}
-            className="flex items-center justify-center w-8 h-8 rounded-full text-blaster-muted hover:bg-blaster-border/50 hover:text-blaster-fg transition-colors"
+            className={`flex items-center justify-center w-8 h-8 rounded-full text-blaster-muted ${adminHoverBg} hover:text-blaster-fg transition-colors`}
             aria-label="Close search"
           >
             <X className="w-4 h-4" />
