@@ -4,9 +4,7 @@ import { getPeriodForUser } from './planLimitsPeriod.js';
 /** Default sender limit when user has no subscription. */
 const DEFAULT_SENDER_LIMIT = 999999;
 const DEFAULT_DOMAIN_LIMIT = 5;
-const TRIAL_FILTER_LIMIT = 20;
-
-/** No automatic signup trial — access requires trial_3day or paid plan. */
+/** No automatic signup trial — access requires trial_7day or paid plan. */
 const FREE_TRIAL_EMAILS_LIMIT = 0;
 const FREE_TRIAL_SCANS_LIMIT = 0;
 
@@ -33,7 +31,7 @@ async function getPeriodForUserLocal(db, userId) {
 async function getFreeTrialState(db, userId) {
   const sub = await db.query(
     `SELECT current_period_end FROM subscriptions
-     WHERE user_id = $1 AND plan_id = 'trial_3day' AND status IN ('active', 'trialing')
+     WHERE user_id = $1 AND plan_id IN ('trial_7day', 'trial_3day') AND status IN ('active', 'trialing')
        AND current_period_end > NOW()
      ORDER BY current_period_end DESC LIMIT 1`,
     [userId]
@@ -89,7 +87,7 @@ export async function getPlanLimitsForUser(userId) {
   defaults.emailsLimit = parseFeatureNum(feats, 'emails', FREE_TRIAL_EMAILS_LIMIT);
   defaults.scansLimit = parseFeatureNum(feats, 'scans', FREE_TRIAL_SCANS_LIMIT);
 
-  if (row && (planId.startsWith('essentials') || planId.startsWith('standard') || planId.startsWith('premium') || planId === 'trial_3day')) {
+  if (row && (planId.startsWith('essentials') || planId.startsWith('standard') || planId.startsWith('premium') || planId === 'trial_7day' || planId === 'trial_3day')) {
     defaults.emailsLimit = UNLIMITED_NUM;
     defaults.scansLimit = UNLIMITED_NUM;
     defaults.campaignsLimit = UNLIMITED_NUM;
@@ -110,7 +108,7 @@ export async function getPlanLimitsForUser(userId) {
     defaults.trialEndsAt = null;
     defaults.emailsLimit = 0;
     defaults.scansLimit = 0;
-  } else if (planId === 'trial_3day') {
+  } else if (planId === 'trial_7day' || planId === 'trial_3day') {
     const trial = await getFreeTrialState(db, userId);
     defaults.isTrial = trial.active;
     defaults.trialEndsAt = trial.endsAt;

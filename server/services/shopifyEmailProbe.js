@@ -24,10 +24,15 @@ const POLICY_HANDLES = [
 ];
 
 const HTML_POLICY_PATHS = [
-  '/policies/contact-information',
-  '/policies/privacy-policy',
   '/pages/contact',
   '/pages/contact-us',
+  '/pages/contact-information',
+  '/pages/about-us',
+  '/pages/shipping-policy',
+  '/pages/refund-policy',
+  '/pages/privacy-policy',
+  '/policies/contact-information',
+  '/policies/privacy-policy',
 ];
 
 async function fetchJson(url) {

@@ -12,6 +12,8 @@ import {
   getDisplayPrice,
   getBillingPlanId,
   getSubscribeButtonLabel,
+  TRIAL_PLAN_ID,
+  isTrialPlanId,
 } from '../data/plans';
 
 function PlanPrice({ plan, isAnnually }) {
@@ -158,13 +160,78 @@ export function PricingPlansPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+        {/* Trial — same card layout as paid plans */}
+        {(() => {
+          const plan = TRIAL_PLAN;
+          const isCurrent = isTrialPlanId(currentPlanId);
+
+          return (
+            <div
+              className={`bg-blaster-bg-card rounded-xl md:rounded-2xl border card-body-mobile relative flex flex-col h-full ${
+                isCurrent
+                  ? 'border-emerald-500/60 ring-2 ring-emerald-500/25'
+                  : plan.tag
+                    ? 'border-black/20 ring-2 ring-black/5'
+                    : 'border-blaster-border'
+              }`}
+              aria-current={isCurrent ? 'true' : undefined}
+            >
+              {isCurrent && (
+                <span className="absolute -top-3 right-4 px-3 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-medium">
+                  Current plan
+                </span>
+              )}
+              {plan.tag && !isCurrent && (
+                <span className="absolute -top-3 left-4 px-3 py-0.5 rounded-full bg-black text-white text-xs font-medium">
+                  {plan.tag}
+                </span>
+              )}
+              <h3 className="card-title-mobile text-base md:text-lg">{plan.name}</h3>
+              <div className="mb-4 mt-2">
+                <PlanPrice plan={plan} isAnnually={false} />
+              </div>
+              {plan.highlights?.length > 0 && (
+                <ul className="space-y-2 text-sm text-blaster-fg mb-4 flex-1">
+                  {plan.highlights.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" strokeWidth={2.5} />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {isCurrent ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
+                    <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} />
+                    Your current trial
+                  </div>
+                  {subscription?.planName && (
+                    <p className="text-xs text-blaster-muted">{subscription.planName}</p>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSubscribe(plan)}
+                  disabled={subscribingPlanId != null || (hasActivePlan && !isTrialPlanId(currentPlanId))}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-black text-white hover:bg-gray-800 disabled:opacity-50 transition"
+                >
+                  {subscribingPlanId === TRIAL_PLAN_ID ? 'Redirecting…' : 'Start for $1'}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         {PLANS.map((plan) => {
           const planIdForCard = getBillingPlanId(plan, isAnnually);
           const isCurrent = subscription?.planId === planIdForCard;
           const intervalMatches =
             !currentPlanId ||
-            currentPlanId === 'trial_3day' ||
+            currentPlanId === TRIAL_PLAN_ID ||
+            isTrialPlanId(currentPlanId) ||
             (currentPlanId.endsWith('_annual') ? isAnnually : !isAnnually);
 
           return (
@@ -234,33 +301,6 @@ export function PricingPlansPage() {
             </div>
           );
         })}
-      </div>
-
-      <div className="mb-12 rounded-xl md:rounded-2xl border border-blaster-border bg-blaster-bg-card p-5 md:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h3 className="card-title-mobile text-base md:text-lg">{TRIAL_PLAN.name}</h3>
-          <p className="text-sm text-blaster-muted mt-1">
-            Unlimited scans & campaigns · {TRIAL_PLAN.features.filters} store filters · ${TRIAL_PLAN.price} for 3 days
-          </p>
-        </div>
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="text-right">
-            <span className="text-xl font-bold text-blaster-fg">${formatPriceNum(TRIAL_PLAN.price)}</span>
-            <span className="text-sm text-blaster-muted block">/ 3 days</span>
-          </div>
-          {currentPlanId === 'trial_3day' ? (
-            <span className="text-sm font-medium text-emerald-600">Current trial</span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleSubscribe(TRIAL_PLAN)}
-              disabled={subscribingPlanId != null || (hasActivePlan && currentPlanId !== 'trial_3day')}
-              className="px-5 py-2.5 rounded-xl border-2 border-black text-sm font-semibold hover:bg-black hover:text-white transition disabled:opacity-50"
-            >
-              {subscribingPlanId === 'trial_3day' ? 'Redirecting…' : 'Start for $1'}
-            </button>
-          )}
-        </div>
       </div>
 
       <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border overflow-hidden">

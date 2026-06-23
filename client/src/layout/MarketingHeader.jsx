@@ -5,9 +5,8 @@ import { Logo } from '../components/Logo.jsx';
 const SIDEBAR_DURATION_MS = 300;
 
 export const MARKETING_NAV_LINKS = [
-  { href: '/#how', label: 'Product' },
-  { href: '/#how', label: 'Flow' },
-  { href: '/#how', label: 'Solutions' },
+  { href: '/#how', label: 'How it works' },
+  { href: '/#demo', label: 'Demo' },
   { href: '/pricing', label: 'Pricing', isRoute: true },
 ];
 
@@ -72,8 +71,8 @@ export function MarketingHeader() {
           </nav>
 
           <div className="hidden lg:flex items-center gap-5 shrink-0">
-            <PrimaryPillButton as={Link} to="/pricing">
-              Start Blasting
+            <PrimaryPillButton as={Link} to="/signup">
+              Create account
             </PrimaryPillButton>
             <Link
               to="/login"
@@ -128,8 +127,8 @@ export function MarketingHeader() {
                 )}
               </div>
               <div className="mt-auto pt-6 flex flex-col gap-3">
-                <PrimaryPillButton as={Link} to="/pricing" onClick={closeSidebar} className="w-full">
-                  Start Blasting
+                <PrimaryPillButton as={Link} to="/signup" onClick={closeSidebar} className="w-full">
+                  Create account
                 </PrimaryPillButton>
                 <Link
                   to="/login"

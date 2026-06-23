@@ -10,16 +10,18 @@ import { TrialCountdown } from '../components/access/TrialCountdown.jsx';
 import { isFreeUserAllowedRoute } from '../components/access/PlanAccessUI.jsx';
 import { Logo } from '../components/Logo.jsx';
 import { SidebarReferralPromo } from '../components/referral/SidebarReferralPromo.jsx';
+import { useNavNotifications } from '../context/NavNotificationsContext.jsx';
+import { NavBadgeDot } from '../components/nav/NavBadgeDot.jsx';
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { to: '/app/analytics', label: 'Analytics', icon: AnalyticsIcon },
   { to: '/app/stores', label: 'Stores', icon: StoresIcon },
-  { to: '/app/scanner', label: 'Scanner', icon: ScannerIcon },
+  { to: '/app/scanner', label: 'Scanner', icon: ScannerIcon, badgeKey: 'scanner' },
   { to: '/app/campaigns', label: 'Campaigns', icon: CampaignsIcon },
   { to: '/app/templates', label: 'Templates', icon: TemplatesIcon },
-  { to: '/app/resources', label: 'Resources', icon: ResourcesIcon },
-  { to: '/app/referral', label: 'Referral', icon: ReferralIcon },
+  { to: '/app/resources', label: 'Resources', icon: ResourcesIcon, badgeKey: 'resources' },
+  { to: '/app/referral', label: 'Referral', icon: ReferralIcon, badgeKey: 'referral' },
 ];
 
 function DashboardIcon() {
@@ -138,6 +140,7 @@ function daysUntilDate(endDate) {
 export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
   const { user, authFetch } = useAuth();
   const { status: planStatus, openTrialUpgradeModal } = usePlanAccess();
+  const { badges } = useNavNotifications();
   const [subscription, setSubscription] = useState(null);
   const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
   const [promoDaysLeft, setPromoDaysLeft] = useState(computePromoDaysLeft);
@@ -219,7 +222,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
     if (promoDaysLeft > 0) {
       return `${promoDaysLeft} days left for 50% off`;
     }
-    return 'Plans from $29/month';
+    return 'Plans from $19/month';
   })();
 
   const handleNavClick = (e, to) => {
@@ -282,7 +285,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
           </>
         ) : (
           <>
-            {navItems.map(({ to, label, icon: Icon }) => (
+            {navItems.map(({ to, label, icon: Icon, badgeKey }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -305,7 +308,8 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
                 }
               >
                 <Icon />
-                {label}
+                <span className="flex-1 min-w-0 truncate">{label}</span>
+                {badgeKey ? <NavBadgeDot show={badges[badgeKey]} /> : null}
               </NavLink>
             ))}
           </>

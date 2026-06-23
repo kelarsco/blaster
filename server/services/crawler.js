@@ -1,6 +1,6 @@
 /**
- * Store crawler: fetches privacy, contact, and homepage paths in parallel waves.
- * Visits every configured path (not just the first that loads) for fuller email coverage.
+ * Store crawler: fetches common contact/policy paths, then Shopify fallbacks.
+ * Visits every configured path (not just the first that loads) for fuller coverage.
  */
 import https from 'https';
 import http from 'http';
@@ -18,41 +18,32 @@ const PARALLEL_PAGES = Math.min(
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const PRIVACY_PATHS = [
-  '/policies/privacy-policy',
-  '/privacy-policy',
-  '/policies/privacy',
-  '/policies',
-  '/pages/privacy-policy',
-  '/privacy',
-];
-
-const CONTACT_PATHS = [
+/**
+ * Common store paths checked on every scan (contact + policy pages).
+ * Ordered by typical email/contact yield.
+ */
+export const COMMON_STORE_PATHS = [
   '/contact',
-  '/contact-us',
   '/pages/contact',
   '/pages/contact-us',
-  '/pages/get-in-touch',
-  '/get-in-touch',
-  '/policies/contact-information',
-];
-
-const EXTRA_PATHS = [
-  '/about',
-  '/about-us',
-  '/pages/about',
+  '/pages/contact-information',
   '/pages/about-us',
-  '/policies/refund-policy',
-  '/policies/terms-of-service',
-  '/pages/terms-of-service',
-  '/terms',
-  '/faq',
-  '/pages/faq',
+  '/pages/shipping-policy',
+  '/pages/refund-policy',
+  '/pages/privacy-policy',
+  '/home',
 ];
 
-const HOME_PATHS = ['/', '/home'];
+/** Shopify policy mirrors and homepage when /pages/* variants are missing */
+const FALLBACK_PATHS = [
+  '/',
+  '/policies/contact-information',
+  '/policies/privacy-policy',
+  '/policies/refund-policy',
+  '/policies/shipping-policy',
+];
 
-const PRIVACY_URL_HINTS = /privacy|policies/i;
+const PRIVACY_URL_HINTS = /privacy|policies\/privacy|pages\/privacy/i;
 
 const URL_TOKEN_REGEX =
   /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
@@ -170,7 +161,7 @@ async function fetchPathsWave(origin, paths, seen) {
 }
 
 /**
- * Crawl privacy → contact → extra → homepage paths. All paths in each wave are fetched.
+ * Crawl common contact/policy paths first, then Shopify policy fallbacks + homepage.
  */
 export async function crawlStore(storeUrl) {
   const seen = new Set();
@@ -181,9 +172,7 @@ export async function crawlStore(storeUrl) {
   }
 
   const pages = [];
-  const waves = [PRIVACY_PATHS, CONTACT_PATHS, EXTRA_PATHS, HOME_PATHS];
-
-  for (const paths of waves) {
+  for (const paths of [COMMON_STORE_PATHS, FALLBACK_PATHS]) {
     const wavePages = await fetchPathsWave(normalized, paths, seen);
     pages.push(...wavePages);
   }

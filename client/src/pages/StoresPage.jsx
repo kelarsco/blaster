@@ -10,6 +10,7 @@ import {
   buildFilterTags,
   buildStoresQuery,
 } from '../utils/storeLeadFilters.js';
+import { SEARCH_LIMIT_LABEL } from '../data/plans.js';
 import { StoresFilterPanel } from '../components/stores/StoresFilterPanel.jsx';
 import { StoreCard } from '../components/stores/StoreCard.jsx';
 import { StoresBulkActions } from '../components/stores/StoresBulkActions.jsx';
@@ -69,7 +70,7 @@ export function StoresPage() {
   const exportCopyBlocked = status?.exportCopyBlocked ?? false;
   const paygActive = status?.paygActive ?? false;
   const filterUses = status?.filterUses ?? 0;
-  const filterLimit = status?.filterLimit ?? 500;
+  const filterLimit = status?.filterLimit ?? 1000;
   const paygChargesCents = status?.paygChargesCents ?? 0;
   const paygCapCents = status?.paygCapCents ?? 1000;
   const showPaygOffer =
@@ -88,8 +89,8 @@ export function StoresPage() {
     openUpgradeModal({
       title: 'Filter limit reached',
       message: paygActive
-        ? `You've reached your pay-as-you-go filter cap for this period. Upgrade for unlimited store filters.`
-        : `You've used all ${filterLimit} store filters for this period. Upgrade your plan for more filters.`,
+        ? `You've reached your pay-as-you-go search cap for this period. Upgrade to Pro for unlimited ${SEARCH_LIMIT_LABEL}.`
+        : `You've used all ${filterLimit} ${SEARCH_LIMIT_LABEL} for this billing period. Upgrade your plan for more.`,
       tierName: tier?.name,
       tierPrice: tier?.price,
     });

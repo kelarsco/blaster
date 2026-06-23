@@ -48,6 +48,7 @@ import { AdminAddLeadsPage } from './pages/bl-admin/AdminAddLeadsPage';
 import { AdminReferralsPage } from './pages/bl-admin/AdminReferralsPage';
 import { GlobalPreloaderGate } from './components/GlobalPreloaderGate';
 import { PlanAccessProvider } from './context/PlanAccessContext.jsx';
+import { NavNotificationsProvider } from './context/NavNotificationsContext.jsx';
 import { ConfirmDialogProvider } from './context/ConfirmDialogContext.jsx';
 
 function ScrollToTop() {
@@ -129,7 +130,9 @@ function AppRoutes() {
             <ProtectedRoute>
             <ToolStateProvider>
               <PlanAccessProvider>
-                <AppLayout />
+                <NavNotificationsProvider>
+                  <AppLayout />
+                </NavNotificationsProvider>
               </PlanAccessProvider>
             </ToolStateProvider>
           </ProtectedRoute>

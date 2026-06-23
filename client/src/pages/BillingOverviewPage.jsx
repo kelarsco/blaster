@@ -125,7 +125,7 @@ export function BillingOverviewPage() {
   const paygChargesCents = planStatus?.paygChargesCents ?? 0;
   const paygCapCents = planStatus?.paygCapCents ?? 1000;
   const paygPct = paygCapCents > 0 ? Math.min(100, (paygChargesCents / paygCapCents) * 100) : 0;
-  const showFilterUsage = planStatus?.tier != null && planStatus.tier < 3;
+  const showFilterUsage = planStatus?.tier === 1 || planStatus?.tier === 2;
   const showPaygUsage = (planStatus?.tier === 1 || planStatus?.tier === 2) && (planStatus?.paygActive || paygChargesCents > 0);
   const paygInvoiceCents = planStatus?.paygPendingInvoiceCents ?? paygChargesCents;
 
@@ -202,23 +202,23 @@ export function BillingOverviewPage() {
                 {showFilterUsage && (
                   <div>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-blaster-muted">Store filter uses</span>
+                      <span className="text-blaster-muted">Store searches</span>
                       <span className="text-blaster-fg">
-                        {filterUses} of {filterLimit} used this period
+                        {filterUses} of {filterLimit.toLocaleString()} used this period
                       </span>
                     </div>
                     <div className="h-2 rounded-full bg-blaster-bg-app overflow-hidden">
                       <div className="h-full bg-blaster-accent/40 rounded-full transition-[width]" style={{ width: `${filterPct}%` }} />
                     </div>
                     <p className="text-xs text-blaster-muted mt-1">
-                      Filter, copy, and export actions on the Stores page share this monthly limit.
+                      Each search on the Stores page counts toward your monthly quota. Copy and export share the same limit.
                     </p>
                   </div>
                 )}
                 {showPaygUsage && (
                   <div>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-blaster-muted">Pay-as-you-go filtering</span>
+                      <span className="text-blaster-muted">Pay-as-you-go searches</span>
                       <span className="text-blaster-fg">
                         ${(paygChargesCents / 100).toFixed(2)} of ${(paygCapCents / 100).toFixed(2)} used
                         {planStatus?.paygActive ? ' · Active' : ''}
@@ -228,7 +228,7 @@ export function BillingOverviewPage() {
                       <div className="h-full bg-indigo-500/50 rounded-full transition-[width]" style={{ width: `${paygPct}%` }} />
                     </div>
                     <p className="text-xs text-blaster-muted mt-1">
-                      $0.01 per filter beyond {filterLimit} (100 searches = $1). Charges are added to your next subscription invoice.
+                      $0.01 per search beyond {filterLimit.toLocaleString()} (100 searches = $1). Charges are added to your next subscription invoice.
                     </p>
                   </div>
                 )}

@@ -190,7 +190,7 @@ async function processScanWork(payload) {
 
         const privacyPageFound =
           crawl.privacyPageFound ||
-          mergedPages.some((p) => /privacy|policies\/contact-information|policies\/privacy/i.test(p.url));
+          mergedPages.some((p) => /privacy|policies\/contact-information|pages\/privacy|pages\/contact/i.test(p.url));
 
         const results = extractOptions.email
           ? extractEmailsFromPages(storeUrl, mergedPages, {

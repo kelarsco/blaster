@@ -6,6 +6,7 @@ import { syncReferralUpgradeFromSubscription } from './referralService.js';
 
 export const ADMIN_ASSIGNABLE_PLAN_IDS = [
   'free',
+  'trial_7day',
   'trial_3day',
   'essentials_monthly',
   'essentials_annual',

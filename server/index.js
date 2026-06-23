@@ -34,6 +34,7 @@ import { trackRoutes } from './routes/track.js';
 import { leadsRoutes } from './routes/leads.js';
 import { referralRoutes } from './routes/referral.js';
 import { planStatusRoutes } from './routes/planStatus.js';
+import { notificationRoutes } from './routes/notifications.js';
 import { resolveAuth } from './middleware/resolveAuth.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './services/cookiePolicy.js';
 
@@ -177,6 +178,7 @@ async function start() {
   app.use('/api/streaks', streakRoutes);
   app.use('/api/notes', notesRoutes);
   app.use('/api/user', planStatusRoutes);
+  app.use('/api/user/notifications', notificationRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/support', supportRoutes);
   app.use('/api/email-lists', emailListRoutes);

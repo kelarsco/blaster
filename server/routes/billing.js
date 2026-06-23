@@ -22,8 +22,99 @@ async function getPlanIdByPaystackCode(paystackPlanCode) {
 }
 
 function periodDaysForPlanInterval(interval, planId) {
-  if (planId === 'trial_3day') return 3;
+  if (planId === 'trial_7day' || planId === 'trial_3day') return 7;
   return interval === 'annually' ? 365 : 31;
+}
+
+const TRIAL_PLAN_ID = 'trial_7day';
+const LEGACY_TRIAL_PLAN_IDS = ['trial_3day', 'trial_weekly'];
+
+function isTrialPlanId(planId) {
+  return planId === TRIAL_PLAN_ID || LEGACY_TRIAL_PLAN_IDS.includes(planId);
+}
+
+function normalizeCardBrand(brand) {
+  if (!brand || brand === 'card') return 'Card';
+  const s = String(brand).toLowerCase();
+  if (s.includes('visa')) return 'Visa';
+  if (s.includes('master')) return 'Mastercard';
+  if (s.includes('verve')) return 'Verve';
+  if (s.includes('amex') || s.includes('american')) return 'Amex';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function cardFromPaystackAuth(auth, { isDefault = false } = {}) {
+  if (!auth?.last4) return null;
+  return {
+    last4: String(auth.last4),
+    brand: normalizeCardBrand(auth.brand || auth.card_type || 'card'),
+    expMonth: auth.exp_month ? String(auth.exp_month).padStart(2, '0') : null,
+    expYear: auth.exp_year ? String(auth.exp_year) : null,
+    bank: auth.bank ? String(auth.bank) : null,
+    isDefault: Boolean(isDefault),
+  };
+}
+
+async function paystackGet(path) {
+  if (!PAYSTACK_SECRET) return null;
+  try {
+    const response = await fetch(`${PAYSTACK_BASE}${path}`, {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET },
+    });
+    const data = await response.json();
+    return data?.status ? data.data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getPaymentMethodsForUser(db, userId, email) {
+  const empty = { cards: [], canUpdateCard: false };
+  if (!db || !PAYSTACK_SECRET) return empty;
+
+  const subRow = await db.query(
+    `SELECT paystack_subscription_code, paystack_customer_code FROM subscriptions
+     WHERE user_id = $1 AND status IN ('active', 'trialing')
+     ORDER BY current_period_end DESC NULLS LAST LIMIT 1`,
+    [userId]
+  );
+  const row = subRow.rows?.[0];
+  const cards = [];
+  const seen = new Set();
+
+  const pushCard = (auth, isDefault) => {
+    const card = cardFromPaystackAuth(auth, { isDefault });
+    if (!card) return;
+    const key = `${card.brand}-${card.last4}-${card.expMonth}-${card.expYear}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    cards.push(card);
+  };
+
+  if (row?.paystack_subscription_code) {
+    const subData = await paystackGet(`/subscription/${encodeURIComponent(row.paystack_subscription_code)}`);
+    if (subData?.authorization) pushCard(subData.authorization, true);
+  }
+
+  const customerKeys = [row?.paystack_customer_code, email].filter(Boolean);
+  for (const key of customerKeys) {
+    const customer = await paystackGet(`/customer/${encodeURIComponent(key)}`);
+    for (const auth of customer?.authorizations || []) {
+      if (auth.reusable === false) continue;
+      pushCard(auth, cards.length === 0);
+    }
+    if (cards.length > 0) break;
+  }
+
+  if (cards.length > 0 && !cards.some((c) => c.isDefault)) {
+    cards[0].isDefault = true;
+  }
+
+  return {
+    cards,
+    canUpdateCard: Boolean(row?.paystack_subscription_code),
+  };
 }
 
 async function createUserSubscription(db, userId, planId, { periodStart, periodEnd, paystackSubscriptionCode = null, paystackCustomerCode = null }) {
@@ -70,7 +161,7 @@ async function cancelActivePaidSubscriptions(db, userId) {
 }
 
 export const billingRoutes = Router();
-const TRIAL_DAYS = 3;
+const TRIAL_DAYS = 7;
 
 /** List all plans (from DB; Paystack plan codes are created automatically when PAYSTACK_SECRET_KEY is set). */
 billingRoutes.get('/plans', async (_req, res) => {
@@ -292,6 +383,16 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
     if (!planId) return res.status(400).json({ error: 'planId is required' });
     const userId = req.user.id;
 
+    if (isTrialPlanId(planId)) {
+      const existingTrial = await db.query(
+        `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = ANY($2::text[]) AND status IN ('active', 'trialing') AND current_period_end > NOW() LIMIT 1`,
+        [userId, [TRIAL_PLAN_ID, ...LEGACY_TRIAL_PLAN_IDS]]
+      );
+      if (existingTrial.rows.length > 0) {
+        return res.status(400).json({ error: 'You already have an active trial.' });
+      }
+    }
+
     const existingSame = await db.query(
       `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = $2 AND status IN ('active', 'trialing') LIMIT 1`,
       [userId, planId]
@@ -309,7 +410,7 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
     const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
     const amountSubunit = amountForPaystack(plan.amount, PAYSTACK_CURRENCY, usdToNgn);
 
-    if (planId === 'trial_3day') {
+    if (isTrialPlanId(planId)) {
       const reference = `trial_${uuidv4().replace(/-/g, '')}`;
       const response = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
         method: 'POST',
@@ -323,7 +424,7 @@ billingRoutes.post('/initialize', requireAuth, async (req, res) => {
           currency: PAYSTACK_CURRENCY,
           reference,
           callback_url: callbackUrl,
-          metadata: { plan_id: 'trial_3day', user_id: userId },
+          metadata: { plan_id: TRIAL_PLAN_ID, user_id: userId },
         }),
       });
       const data = await response.json();
@@ -399,6 +500,9 @@ billingRoutes.post('/subscription/pause', requireAuth, async (req, res) => {
       `SELECT s.id, s.paystack_subscription_code, s.plan_id, p.amount FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
        WHERE s.user_id = $1 AND s.status IN ('active', 'trialing') AND p.amount > 0
+         AND p.interval != 'trial'
+         AND s.plan_id NOT IN ('trial_7day', 'trial_3day', 'trial_weekly')
+         AND s.paystack_subscription_code IS NOT NULL
        ORDER BY s.current_period_end DESC NULLS LAST LIMIT 1`,
       [userId]
     );
@@ -417,37 +521,15 @@ billingRoutes.post('/subscription/pause', requireAuth, async (req, res) => {
   }
 });
 
-/** Get user's payment methods (masked card from active Paystack subscription). Never exposes full PAN or authorization codes. */
+/** Get user's payment methods (masked card from Paystack). Never exposes full PAN or authorization codes. */
 billingRoutes.get('/payment-methods', requireAuth, async (req, res) => {
   try {
     const db = getDb();
-    if (!db) return res.json({ cards: [] });
-    if (!PAYSTACK_SECRET) return res.json({ cards: [] });
-    const sub = await db.query(
-      `SELECT paystack_subscription_code FROM subscriptions
-       WHERE user_id = $1 AND status IN ('active', 'trialing') AND paystack_subscription_code IS NOT NULL
-       ORDER BY current_period_end DESC NULLS LAST LIMIT 1`,
-      [req.user.id]
-    );
-    const code = sub.rows?.[0]?.paystack_subscription_code;
-    if (!code) return res.json({ cards: [] });
-    const response = await fetch(`${PAYSTACK_BASE}/subscription/${encodeURIComponent(code)}`, {
-      method: 'GET',
-      headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET },
-    });
-    const data = await response.json();
-    const auth = data?.data?.authorization;
-    if (!auth || !auth.last4) return res.json({ cards: [] });
-    const cards = [{
-      last4: String(auth.last4),
-      brand: (auth.brand || auth.card_type || 'card').toString().toLowerCase().replace(/\s+/g, ' ').trim() || 'card',
-      expMonth: auth.exp_month ? String(auth.exp_month).padStart(2, '0') : null,
-      expYear: auth.exp_year ? String(auth.exp_year) : null,
-    }];
-    res.json({ cards });
+    const result = await getPaymentMethodsForUser(db, req.user.id, req.user.email);
+    res.json(result);
   } catch (e) {
     console.error('[billing payment-methods]', e?.message || e);
-    res.json({ cards: [] });
+    res.json({ cards: [], canUpdateCard: false });
   }
 });
 
@@ -605,28 +687,28 @@ billingRoutes.post('/verify-payment', requireAuth, async (req, res) => {
     const userId = req.user.id;
     const paymentRef = reference.trim();
 
-    if (paymentRef.startsWith('trial_') || tx.metadata?.plan_id === 'trial_3day') {
+    if (paymentRef.startsWith('trial_') || isTrialPlanId(tx.metadata?.plan_id)) {
       const existingTrial = await db.query(
-        `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = 'trial_3day' AND status = 'active' AND current_period_end > NOW() LIMIT 1`,
-        [userId]
+        `SELECT id FROM subscriptions WHERE user_id = $1 AND plan_id = ANY($2::text[]) AND status = 'active' AND current_period_end > NOW() LIMIT 1`,
+        [userId, [TRIAL_PLAN_ID, ...LEGACY_TRIAL_PLAN_IDS]]
       );
       if (existingTrial.rows.length > 0) {
-        return res.json({ ok: true, planId: 'trial_3day' });
+        return res.json({ ok: true, planId: TRIAL_PLAN_ID });
       }
       const now = new Date();
       const periodEnd = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
-      await createUserSubscription(db, userId, 'trial_3day', {
+      await createUserSubscription(db, userId, TRIAL_PLAN_ID, {
         periodStart: now,
         periodEnd,
         paystackCustomerCode: tx.authorization?.customer_code ?? null,
       });
-      const planMeta = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', ['trial_3day']);
+      const planMeta = await db.query('SELECT name, amount, interval FROM plans WHERE id = $1', [TRIAL_PLAN_ID]);
       const plan = planMeta.rows?.[0];
       const toEmail = req.user?.email;
       if (toEmail && plan) {
-        sendSubscriptionConfirmation(toEmail, plan.name || 'trial_3day', '$1.00', '3 days').catch((e) => console.warn('[transactional trial email]', e?.message || e));
+        sendSubscriptionConfirmation(toEmail, plan.name || TRIAL_PLAN_ID, '$1.00', '7 days').catch((e) => console.warn('[transactional trial email]', e?.message || e));
       }
-      return res.json({ ok: true, planId: 'trial_3day' });
+      return res.json({ ok: true, planId: TRIAL_PLAN_ID });
     }
 
     const planRef = tx.plan;

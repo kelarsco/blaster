@@ -7,6 +7,8 @@ import { SupportChatPanel } from '../components/SupportChatPanel';
 import { PageTransitionWrapper } from '../components/PageTransitionWrapper';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { TrialBanner } from '../components/access/PlanAccessUI.jsx';
+import { useNavNotifications } from '../context/NavNotificationsContext.jsx';
+import { PriorityResourceToast } from '../components/notifications/PriorityResourceToast.jsx';
 
 const LAYOUT_SKELETON_MS = 1500;
 const SCROLL_THRESHOLD = 10;
@@ -39,6 +41,7 @@ function MobileNavToggle({ open, visible, onToggle }) {
 export function AppLayout() {
   const location = useLocation();
   const { status } = usePlanAccess();
+  const { priorityVideo, dismissPriorityVideo } = useNavNotifications();
   const [showHelp, setShowHelp] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [layoutLoading, setLayoutLoading] = useState(true);
@@ -141,6 +144,7 @@ export function AppLayout() {
       </div>
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showSupport && <SupportChatPanel onClose={() => setShowSupport(false)} />}
+      <PriorityResourceToast video={priorityVideo} onDismiss={dismissPriorityVideo} />
     </div>
   );
 }

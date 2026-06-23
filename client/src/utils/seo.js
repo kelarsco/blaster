@@ -26,7 +26,7 @@ export const PAGE_SEO = {
   pricing: {
     title: 'Pricing | Wiblaster – Store Email Scanner & Outreach Plans',
     description:
-      'Compare Wiblaster plans for store email scanning, verified ecommerce leads, and automated outreach. Start with a $1 three-day trial.',
+      'Compare Wiblaster plans for store email scanning, verified ecommerce leads, and automated outreach. Start with a $1 seven-day trial.',
     path: '/pricing',
   },
   login: {

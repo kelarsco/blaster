@@ -69,7 +69,7 @@ export async function syncPaystackPlans() {
   const usdToNgn = PAYSTACK_CURRENCY === 'NGN' ? await getUsdToNgnRate() : 0;
 
   const r = await db.query(
-    `SELECT id, name, amount, interval, paystack_plan_code FROM plans WHERE amount > 0 AND id != 'trial_3day'`
+    `SELECT id, name, amount, interval, paystack_plan_code FROM plans WHERE amount > 0 AND id NOT IN ('trial_7day', 'trial_3day', 'trial_weekly')`
   );
   const plans = r.rows || [];
 

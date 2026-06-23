@@ -80,7 +80,7 @@ export function TrialUpgradeModal({ open, onUpgrade, onClose, loading = false, e
           Upgrade to free trial
         </h2>
         <p className="text-sm text-blaster-muted mt-2 text-center max-w-md mx-auto">
-          Start your $1 three-day trial to unlock Wiblaster — full scanner, campaigns, and more.
+          Start your $1 seven-day trial for full platform access — scanner, stores, campaigns, and more.
         </p>
         {error ? (
           <p className="text-sm text-red-600 mt-3 text-center">{error}</p>
@@ -187,9 +187,9 @@ export function PaygConfirmModal({ open, onConfirm, onCancel, loading }) {
     <div className="plan-upgrade-modal-root" role="dialog" aria-modal="true">
       <div className="plan-upgrade-modal-backdrop" aria-hidden />
       <div className="plan-upgrade-modal-card">
-        <h2 className="text-lg font-semibold text-blaster-fg text-center">Activate pay-as-you-go filtering</h2>
+        <h2 className="text-lg font-semibold text-blaster-fg text-center">Activate pay-as-you-go searches</h2>
         <p className="text-sm text-blaster-muted mt-2 text-center">
-          After your included filter uses, each additional filter costs <strong>$0.01</strong> (100 searches = $1).
+          After your included store searches, each additional search costs <strong>$0.01</strong> (100 searches = $1).
           Charges are capped per billing cycle and added to your next invoice.
         </p>
         <div className="flex flex-col gap-2 mt-6">

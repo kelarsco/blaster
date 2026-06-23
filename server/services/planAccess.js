@@ -1,41 +1,45 @@
 /**
- * Plan access: 3-Day Trial ($1), Basic, Growth, Pro.
+ * Plan access: 7-Day Trial ($1), Basic, Growth, Pro.
+ * All paid tiers get full platform access; limits are store-search quotas only.
  */
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
+
+export const TRIAL_PLAN_ID = 'trial_7day';
+export const LEGACY_TRIAL_PLAN_IDS = ['trial_3day', 'trial_weekly'];
 
 export const TIER_TRIAL = 0;
 export const TIER_BASIC = 1;
 export const TIER_GROWTH = 2;
 export const TIER_PRO = 3;
 
-export const TRIAL_DAYS = 3;
-export const TRIAL_FILTER_LIMIT = 20;
-export const BASIC_FILTER_LIMIT = 500;
-export const GROWTH_FILTER_LIMIT = 1500;
+export const TRIAL_DAYS = 7;
+export const BASIC_FILTER_LIMIT = 1000;
+export const GROWTH_FILTER_LIMIT = 3000;
+export const UNLIMITED_FILTER_LIMIT = 999999;
 export const PAYG_FILTER_CAP_CENTS = 10000;
 export const PAYG_PER_USE_CENTS = 1;
 export const PAYG_PACK_SIZE = 100;
 export const PAYG_PACK_CENTS = 100;
 
 const TIER_NAMES = {
-  [TIER_TRIAL]: '3-Day Trial',
+  [TIER_TRIAL]: '7-Day Trial',
   [TIER_BASIC]: 'Basic',
   [TIER_GROWTH]: 'Growth',
   [TIER_PRO]: 'Pro',
 };
 
 const UPGRADE_TIER_INFO = {
-  [TIER_BASIC]: { name: 'Basic', price: '$29/month', planId: 'essentials_monthly' },
-  [TIER_GROWTH]: { name: 'Growth', price: '$75/month', planId: 'standard_monthly' },
-  [TIER_PRO]: { name: 'Pro', price: '$120/month', planId: 'premium_monthly' },
+  [TIER_BASIC]: { name: 'Basic', price: '$19/month', planId: 'essentials_monthly' },
+  [TIER_GROWTH]: { name: 'Growth', price: '$49/month', planId: 'standard_monthly' },
+  [TIER_PRO]: { name: 'Pro', price: '$99/month', planId: 'premium_monthly' },
 };
 
 function filterLimitForTier(tier) {
-  if (tier === TIER_TRIAL) return TRIAL_FILTER_LIMIT;
+  if (tier === TIER_TRIAL || tier === TIER_PRO) return UNLIMITED_FILTER_LIMIT;
   if (tier === TIER_BASIC) return BASIC_FILTER_LIMIT;
   if (tier === TIER_GROWTH) return GROWTH_FILTER_LIMIT;
-  return 999999;
+  return 0;
 }
 
 function tierHasPayg(tier) {
@@ -43,7 +47,7 @@ function tierHasPayg(tier) {
 }
 
 function tierTracksFilters(tier) {
-  return tier === TIER_TRIAL || tier === TIER_BASIC || tier === TIER_GROWTH;
+  return tier === TIER_BASIC || tier === TIER_GROWTH;
 }
 
 async function getActiveSubscription(db, userId) {
@@ -61,7 +65,7 @@ async function getActiveSubscription(db, userId) {
 
 export function planIdToTier(planId) {
   if (!planId || planId === 'free') return null;
-  if (planId === 'trial_3day' || planId === 'trial_weekly') return TIER_TRIAL;
+  if (planId === TRIAL_PLAN_ID || LEGACY_TRIAL_PLAN_IDS.includes(planId)) return TIER_TRIAL;
   if (planId.startsWith('essentials')) return TIER_BASIC;
   if (planId.startsWith('standard')) return TIER_GROWTH;
   if (planId.startsWith('premium')) return TIER_PRO;
@@ -96,11 +100,12 @@ async function ensureUsageRow(db, userId, periodStart, periodEnd) {
 }
 
 function tierLimitsForTier(tier) {
+  const unlimited = 999999;
   const limits = {
-    [TIER_TRIAL]: { campaignsActiveMax: 1 },
-    [TIER_BASIC]: { campaignsActiveMax: 3 },
-    [TIER_GROWTH]: { campaignsActiveMax: 10 },
-    [TIER_PRO]: { campaignsActiveMax: 999999 },
+    [TIER_TRIAL]: { campaignsActiveMax: unlimited },
+    [TIER_BASIC]: { campaignsActiveMax: unlimited },
+    [TIER_GROWTH]: { campaignsActiveMax: unlimited },
+    [TIER_PRO]: { campaignsActiveMax: unlimited },
   };
   return limits[tier] || { campaignsActiveMax: 0 };
 }

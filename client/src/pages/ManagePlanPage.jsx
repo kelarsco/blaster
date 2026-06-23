@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { Pause, Trash2, X } from 'react-feather';
 import { API } from '../api.js';
 import { useAuth } from '../context/AuthContext';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
+import { BillingBackLink, BillingPrimaryButton } from '../components/billing/BillingBackLink.jsx';
+import { isTrialPlanId } from '../data/plans.js';
 
 const DEACTIVATE_PHRASE = 'DEACTIVATE THIS ACCOUNT';
 
@@ -31,10 +32,23 @@ export function ManagePlanPage() {
       .finally(() => setLoading(false));
   }, [authFetch]);
 
-  const hasPaidPlan = subscription && (subscription.amount ?? 0) > 0;
+  const isTrial = isTrialPlanId(subscription?.planId);
+  const canPause =
+    subscription &&
+    (subscription.amount ?? 0) > 0 &&
+    !isTrial &&
+    subscription.interval !== 'trial';
+
+  const pauseHint = (() => {
+    if (loading) return '';
+    if (canPause) return `You can pause your ${subscription?.planName || 'paid'} subscription below.`;
+    if (isTrial) return 'Trials are a one-time $1 charge and cannot be paused. Upgrade to a monthly plan or wait until your trial ends.';
+    if (subscription && (subscription.amount ?? 0) > 0) return 'Only recurring monthly or annual plans can be paused.';
+    return 'You do not have an active paid subscription to pause.';
+  })();
 
   const handlePause = async () => {
-    if (!authFetch || !hasPaidPlan) return;
+    if (!authFetch || !canPause) return;
     setPauseError('');
     setPauseLoading(true);
     try {
@@ -110,67 +124,57 @@ export function ManagePlanPage() {
         autoDismissMs={5000}
       />
       <div className="mb-6 md:mb-8">
-        <Link to="/app/account/billing" className="text-xs md:text-sm text-blaster-accent hover:underline mb-2 inline-block">← Back to billing</Link>
+        <BillingBackLink />
         <h1 className="page-title-mobile">Manage my plan</h1>
-        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Upgrade, pause, or cancel your subscription</p>
+        <p className="text-xs md:text-sm text-blaster-muted mt-0.5">Pause billing or deactivate your account</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        {/* Pause plan */}
         <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile">
           <div className="flex items-center gap-2 mb-2 md:mb-3">
             <Pause className="w-4 h-4 md:w-5 md:h-5 text-blaster-muted" strokeWidth={2} />
-            <h2 className="card-title-mobile">Temporarily pause my plan</h2>
+            <h2 className="card-title-mobile">Pause subscription</h2>
           </div>
           <p className="text-xs md:text-sm text-blaster-muted mb-3 md:mb-4">
-            When you pause your billing, you will still have access to your account and data, but you will not be able to send any emails. Billing stops immediately. You can resubscribe anytime from Pricing plans.
+            Pausing stops recurring billing immediately. Your account and data stay saved, but platform access
+            ends when the current billing period ends. Resubscribe anytime from Pricing plans.
           </p>
-          <p className="text-xs text-blaster-muted mb-4">Note: Plans can only be paused by stopping your subscription. You can resubscribe when ready.</p>
           {loading ? (
             <div className="h-10 rounded-xl bg-blaster-bg-app/80 animate-pulse" />
           ) : (
             <>
-              <div className="rounded-xl bg-blaster-bg-app/80 border border-blaster-border p-3 flex items-start gap-2 mb-4">
-                <span className="text-blaster-muted">i</span>
-                <p className="text-sm text-blaster-muted">
-                  {hasPaidPlan ? `You can pause your ${subscription?.planName || 'paid'} plan below.` : 'Free plans cannot be paused.'}
-                </p>
+              <div className="rounded-xl bg-blaster-bg-app/80 border border-blaster-border p-3 mb-4">
+                <p className="text-sm text-blaster-muted">{pauseHint}</p>
               </div>
               {pauseError && (
                 <p className="text-sm text-red-600 dark:text-red-400 mb-3">{pauseError}</p>
               )}
-              <button
-                type="button"
-                onClick={handlePause}
-                disabled={!hasPaidPlan || pauseLoading}
-                className="px-4 py-2 rounded-xl border border-blaster-border text-blaster-fg bg-blaster-bg-app hover:bg-blaster-border/30 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <BillingPrimaryButton onClick={handlePause} disabled={!canPause || pauseLoading}>
                 {pauseLoading ? 'Pausing…' : 'Pause my plan'}
-              </button>
+              </BillingPrimaryButton>
             </>
           )}
         </section>
 
-        {/* Deactivate account */}
         <section className="bg-blaster-bg-card rounded-xl md:rounded-2xl border border-blaster-border card-body-mobile">
           <div className="flex items-center gap-2 mb-2 md:mb-3">
             <Trash2 className="w-4 h-4 md:w-5 md:h-5 text-blaster-muted" strokeWidth={2} />
             <h2 className="card-title-mobile">Deactivate my account</h2>
           </div>
           <p className="text-xs md:text-sm text-blaster-muted mb-4 md:mb-6">
-            Deactivating your account will revoke access immediately. Your data remains in our system but you will not be able to sign in. Contact support if you want to reactivate later.
+            Deactivating revokes sign-in access immediately. Your data is retained but you will not be able to use
+            Wiblaster until support reactivates your account.
           </p>
           <button
             type="button"
             onClick={handleDeactivateOpen}
-            className="px-4 py-2 rounded-xl border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-sm transition"
+            className="px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-sm font-medium transition"
           >
             Deactivate my account
           </button>
         </section>
       </div>
 
-      {/* Deactivate confirmation modal */}
       {deactivateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" aria-modal="true" role="dialog">
           <div className="bg-blaster-bg-card rounded-2xl border border-blaster-border shadow-xl w-full max-w-md overflow-hidden">

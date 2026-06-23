@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /bl-admin/
+Disallow: /auth/callback
+Disallow: /invite/
+
+Sitemap: https://wiblaster.com/sitemap.xml

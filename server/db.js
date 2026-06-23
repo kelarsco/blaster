@@ -317,21 +317,20 @@ async function runSchema(p) {
 
       UPDATE plans SET name = 'No Plan', features = '{"scans":"0","stores":"0","campaigns":"0","senders":"0"}'::jsonb WHERE id = 'free';
       INSERT INTO plans (id, name, amount, interval, features) VALUES
-        ('trial_3day', '3-Day Trial', 100, 'trial', '{"scans":"unlimited","campaigns":"unlimited","senders":"unlimited","filters":"20"}'::jsonb)
+        ('trial_7day', '7-Day Trial', 100, 'trial', '{"scans":"unlimited","campaigns":"unlimited","filters":"unlimited"}'::jsonb)
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, amount = EXCLUDED.amount, interval = EXCLUDED.interval, features = EXCLUDED.features, paystack_plan_code = NULL;
-      UPDATE plans SET name = 'Basic', amount = 2900, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
-      UPDATE plans SET name = 'Basic', amount = 29000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
-      UPDATE plans SET name = 'Growth', amount = 7500, paystack_plan_code = NULL WHERE id = 'standard_monthly';
-      UPDATE plans SET name = 'Growth', amount = 75000, paystack_plan_code = NULL WHERE id = 'standard_annual';
-      UPDATE plans SET name = 'Pro', amount = 12000, paystack_plan_code = NULL WHERE id = 'premium_monthly';
-      UPDATE plans SET name = 'Pro', amount = 120000, paystack_plan_code = NULL WHERE id = 'premium_annual';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{senders}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%' OR id = 'trial_3day';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%' OR id = 'trial_3day';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%' OR id = 'trial_3day';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"500/month"') WHERE id LIKE 'essentials%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"1500/month"') WHERE id LIKE 'standard%';
+      UPDATE plans SET name = 'Basic', amount = 1900, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET name = 'Basic', amount = 19000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET name = 'Growth', amount = 4900, paystack_plan_code = NULL WHERE id = 'standard_monthly';
+      UPDATE plans SET name = 'Growth', amount = 49000, paystack_plan_code = NULL WHERE id = 'standard_annual';
+      UPDATE plans SET name = 'Pro', amount = 9900, paystack_plan_code = NULL WHERE id = 'premium_monthly';
+      UPDATE plans SET name = 'Pro', amount = 99000, paystack_plan_code = NULL WHERE id = 'premium_annual';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{emails}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%' OR id = 'trial_7day';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{scans}', '"unlimited"') WHERE id LIKE 'essentials%' OR id LIKE 'standard%' OR id LIKE 'premium%' OR id = 'trial_7day';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"1000/month"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"3000/month"') WHERE id LIKE 'standard%';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id LIKE 'premium%';
-      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"20"') WHERE id = 'trial_3day';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id = 'trial_7day';
       UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{campaigns}', '"unlimited"') WHERE id NOT IN ('free');
 
       ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
@@ -650,6 +649,8 @@ async function runSchema(p) {
     await migrateProcessedPayments(p);
     await migrateLeadScrapeJobSession(p);
     await migrateLeadScrapeSettings(p);
+    await migratePricingPlans2026(p);
+    await migrateNavNotifications(p);
   } finally {
     client.release();
   }
@@ -884,5 +885,55 @@ async function migrateLeadScrapeSettings(pool) {
     `);
   } catch (e) {
     console.warn('[migrateLeadScrapeSettings]', e?.message || e);
+  }
+}
+
+/** 7-day $1 trial, updated plan prices, and store-search quotas. */
+async function migratePricingPlans2026(pool) {
+  try {
+    await pool.query(`
+      INSERT INTO plans (id, name, amount, interval, features) VALUES
+        ('trial_7day', '7-Day Trial', 100, 'trial', '{"scans":"unlimited","campaigns":"unlimited","filters":"unlimited"}'::jsonb)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        amount = EXCLUDED.amount,
+        interval = EXCLUDED.interval,
+        features = EXCLUDED.features,
+        paystack_plan_code = NULL;
+
+      UPDATE plans SET name = 'Basic', amount = 1900, paystack_plan_code = NULL WHERE id = 'essentials_monthly';
+      UPDATE plans SET name = 'Basic', amount = 19000, paystack_plan_code = NULL WHERE id = 'essentials_annual';
+      UPDATE plans SET name = 'Growth', amount = 4900, paystack_plan_code = NULL WHERE id = 'standard_monthly';
+      UPDATE plans SET name = 'Growth', amount = 49000, paystack_plan_code = NULL WHERE id = 'standard_annual';
+      UPDATE plans SET name = 'Pro', amount = 9900, paystack_plan_code = NULL WHERE id = 'premium_monthly';
+      UPDATE plans SET name = 'Pro', amount = 99000, paystack_plan_code = NULL WHERE id = 'premium_annual';
+
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"1000/month"') WHERE id LIKE 'essentials%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"3000/month"') WHERE id LIKE 'standard%';
+      UPDATE plans SET features = jsonb_set(COALESCE(features, '{}'), '{filters}', '"unlimited"') WHERE id LIKE 'premium%' OR id = 'trial_7day';
+
+      UPDATE subscriptions SET plan_id = 'trial_7day' WHERE plan_id IN ('trial_3day', 'trial_weekly');
+    `);
+  } catch (e) {
+    console.warn('[migratePricingPlans2026]', e?.message || e);
+  }
+}
+
+async function migrateNavNotifications(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE resources ADD COLUMN IF NOT EXISTS is_priority SMALLINT NOT NULL DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS user_nav_seen (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        nav_key TEXT NOT NULL,
+        seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        meta TEXT,
+        PRIMARY KEY (user_id, nav_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_nav_seen_key ON user_nav_seen(nav_key);
+    `);
+  } catch (e) {
+    console.warn('[migrateNavNotifications]', e?.message || e);
   }
 }

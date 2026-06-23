@@ -488,6 +488,7 @@ function mapResourceRow(row) {
     type: row.type,
     title: row.title,
     url: row.url,
+    isPriority: Boolean(row.is_priority),
     createdAt: row.created_at,
   };
 }
@@ -508,7 +509,7 @@ adminRoutes.get('/resources', async (req, res) => {
       return res.json({ resources: items });
     }
     const result = await db.query(
-      'SELECT id, type, title, url, created_at FROM resources WHERE type = $1 ORDER BY created_at DESC',
+      'SELECT id, type, title, url, is_priority, created_at FROM resources WHERE type = $1 ORDER BY created_at DESC',
       [type]
     );
     res.json({ resources: result.rows.map(mapResourceRow) });
@@ -539,23 +540,79 @@ adminRoutes.post('/resources', async (req, res) => {
       return res.status(400).json({ error: 'Invalid PDF URL' });
     }
   }
+  const isPriority = type === 'video' && Boolean(req.body?.isPriority);
   try {
     const db = getDb();
     const id = uuidv4();
     const now = new Date().toISOString();
     if (!db) {
-      const row = { id, type, title, url, created_at: now };
+      if (isPriority) {
+        memoryStore.resources = (memoryStore.resources || []).map((r) =>
+          r.type === 'video' ? { ...r, is_priority: 0 } : r
+        );
+      }
+      const row = { id, type, title, url, is_priority: isPriority ? 1 : 0, created_at: now };
       memoryStore.resources = [...(memoryStore.resources || []), row];
       return res.status(201).json({ resource: mapResourceRow(row) });
     }
+    if (isPriority) {
+      await db.query('UPDATE resources SET is_priority = 0 WHERE type = $1', ['video']);
+    }
     const result = await db.query(
-      'INSERT INTO resources (id, type, title, url) VALUES ($1, $2, $3, $4) RETURNING id, type, title, url, created_at',
-      [id, type, title, url]
+      `INSERT INTO resources (id, type, title, url, is_priority)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, type, title, url, is_priority, created_at`,
+      [id, type, title, url, isPriority ? 1 : 0]
     );
     res.status(201).json({ resource: mapResourceRow(result.rows[0]) });
   } catch (e) {
     console.error('[admin resources create]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Failed to add resource' });
+  }
+});
+
+/** PATCH /api/bl-admin/resources/:id — toggle priority (videos only) */
+adminRoutes.patch('/resources/:id', async (req, res) => {
+  const id = (req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const isPriority = Boolean(req.body?.isPriority);
+  try {
+    const db = getDb();
+    if (!db) {
+      const row = (memoryStore.resources || []).find((r) => r.id === id);
+      if (!row) return res.status(404).json({ error: 'Not found' });
+      if (row.type !== 'video') {
+        return res.status(400).json({ error: 'Only videos can be marked as priority' });
+      }
+      if (isPriority) {
+        memoryStore.resources = memoryStore.resources.map((r) =>
+          r.type === 'video' ? { ...r, is_priority: r.id === id ? 1 : 0 } : r
+        );
+      } else {
+        memoryStore.resources = memoryStore.resources.map((r) =>
+          r.id === id ? { ...r, is_priority: 0 } : r
+        );
+      }
+      const updated = memoryStore.resources.find((r) => r.id === id);
+      return res.json({ resource: mapResourceRow(updated) });
+    }
+    const existing = await db.query('SELECT id, type FROM resources WHERE id = $1', [id]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Not found' });
+    if (existing.rows[0].type !== 'video') {
+      return res.status(400).json({ error: 'Only videos can be marked as priority' });
+    }
+    if (isPriority) {
+      await db.query('UPDATE resources SET is_priority = 0 WHERE type = $1', ['video']);
+    }
+    const result = await db.query(
+      `UPDATE resources SET is_priority = $1 WHERE id = $2
+       RETURNING id, type, title, url, is_priority, created_at`,
+      [isPriority ? 1 : 0, id]
+    );
+    res.json({ resource: mapResourceRow(result.rows[0]) });
+  } catch (e) {
+    console.error('[admin resources patch]', e?.message || e);
+    res.status(500).json({ error: e?.message || 'Failed to update resource' });
   }
 });
 

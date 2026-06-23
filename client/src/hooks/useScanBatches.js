@@ -6,6 +6,7 @@ import {
   saveScanBatchState,
   clearScanBatchState,
 } from '../utils/scanBatchStorage.js';
+import { setScanBadgePending } from '../utils/scanBadge.js';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'processing']);
 
@@ -135,6 +136,12 @@ export function useScanBatches(authFetch, userId) {
             if (updated.scanMissing) {
               removeBatch(batch.id);
               return;
+            }
+            const wasActive = ACTIVE_STATUSES.has(batch.status);
+            const nowComplete = updated.status === 'completed';
+            if (wasActive && nowComplete && typeof window !== 'undefined') {
+              const onScanner = window.location.pathname.startsWith('/app/scanner');
+              if (!onScanner) setScanBadgePending();
             }
             updateBatch(batch.id, {
               status: updated.status,

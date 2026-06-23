@@ -41,8 +41,8 @@ const STATS = [
 const STEPS = [
   {
     step: 'Step 1',
-    title: 'Find your leads',
-    desc: 'Discover and collect potential customers by generating and scanning store links in seconds. Easily uncover businesses and opportunities that match your target audience without manual searching.',
+    title: 'Filter ecommerce stores',
+    desc: 'Search qualified ecommerce stores by country, platform, and niche — or paste store URLs to scan. Find Shopify and DTC brands that match your audience without manual research.',
     image: '/landing/hw1.png',
   },
   {
@@ -330,7 +330,7 @@ function LandingCtaSection() {
           Ready to find your next lead?
         </h2>
         <p className="mt-4 font-rubik text-base sm:text-lg text-blaster-muted">
-          Start with a $1 three-day trial — full scanner & campaigns, 20 store filters included.
+          Start with a $1 seven-day trial — full platform access with unlimited store searches.
         </p>
         <PrimaryPillButton as={Link} to="/signup" className="mt-8">
           Get started
@@ -360,7 +360,7 @@ function StepCard({ step, title, desc, image, index }) {
         )}
       </div>
       <div className="flex-1 p-6 md:py-8 md:pr-8 flex flex-col justify-center">
-        <p className="font-poppins font-semibold text-xl text-brand-gradient">{step}</p>
+        <p className="font-poppins font-semibold text-xl text-[#434346]">{step}</p>
         <h3 className="mt-2 font-rubik text-2xl md:text-[32px] text-[#030303] leading-tight">{title}</h3>
         <p className="mt-3 font-poppins font-light text-base text-[#030303] leading-relaxed max-w-md">{desc}</p>
       </div>
@@ -399,7 +399,7 @@ export function LandingPage() {
 
   const handleHeroSubmit = (e) => {
     e.preventDefault();
-    storeSelectedPlan('trial_3day');
+    storeSelectedPlan('trial_7day');
     navigate('/signup?from=pricing');
   };
 
@@ -453,7 +453,7 @@ export function LandingPage() {
           </h1>
 
           <p className="mt-8 font-rubik text-lg sm:text-xl text-blaster-ink max-w-2xl mx-auto leading-relaxed tracking-wide">
-            Find leads, extract emails, and send tailored messges in minutes, all from one simple dashboard.
+            Find ecommerce stores, extract emails, and send tailored messages in minutes, all from one simple dashboard.
           </p>
 
           <form onSubmit={handleHeroSubmit} className="mt-10 aos-fade-up flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-0 max-w-xl mx-auto">
@@ -539,8 +539,8 @@ export function LandingPage() {
           </div>
 
           <div className="mt-14 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <PrimaryPillButton as={Link} to="/pricing">
-              Start Blasting
+            <PrimaryPillButton as={Link} to="/signup">
+              Create account
             </PrimaryPillButton>
             <Link
               to="/signup"

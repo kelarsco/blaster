@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { API } from '../api.js';
 import { useAuth } from './AuthContext.jsx';
 import { UpgradeActionModal, TrialUpgradeModal, isFreeUserAllowedRoute } from '../components/access/PlanAccessUI.jsx';
+import { TRIAL_PLAN_ID } from '../data/plans.js';
 import '../styles/plan-access.css';
 
 const PlanAccessContext = createContext(null);
@@ -14,7 +15,7 @@ const DEFAULT_UPGRADE = {
   title: 'Upgrade required',
   message: 'Upgrade your plan to unlock this feature.',
   tierName: 'Growth',
-  tierPrice: '$75/month',
+  tierPrice: '$49/month',
 };
 
 export function PlanAccessProvider({ children }) {
@@ -80,7 +81,7 @@ export function PlanAccessProvider({ children }) {
       const res = await authFetch(`${API}/billing/initialize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: 'trial_3day' }),
+        body: JSON.stringify({ planId: TRIAL_PLAN_ID }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.authorizationUrl) {
@@ -130,7 +131,7 @@ export function PlanAccessProvider({ children }) {
   }, []);
 
   const openUpgradeModal = useCallback((opts = {}) => {
-    const tier = status?.upgradeTierInfo?.[2] || { name: 'Growth', price: '$75/month' };
+    const tier = status?.upgradeTierInfo?.[2] || { name: 'Growth', price: '$49/month' };
     setUpgradeModal({
       open: true,
       title: opts.title || 'Upgrade required',
@@ -156,10 +157,10 @@ export function PlanAccessProvider({ children }) {
     if (data.status) setStatus(data.status);
     if (!res.ok) {
       if (data.error === 'filter_limit') {
-        const limit = data.status?.filterLimit ?? 500;
-        showToast(`You've reached your ${limit}-filter limit for this period.`);
+        const limit = data.status?.filterLimit ?? 1000;
+        showToast(`You've reached your ${limit.toLocaleString()} store-search limit for this period.`);
       } else if (data.error === 'payg_cap') {
-        showToast('You\'ve reached your pay-as-you-go limit. Upgrade to Pro for unlimited filters.');
+        showToast('You\'ve reached your pay-as-you-go limit. Upgrade to Pro for unlimited store searches.');
       }
       return { ok: false, data };
     }

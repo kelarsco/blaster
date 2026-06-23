@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2 } from 'react-feather';
+import { Trash2, Star } from 'react-feather';
 import { useAdmin } from '../../context/AdminContext';
 import { ResourceTypeToggle } from '../../components/resources/ResourceTypeToggle.jsx';
 import { getYoutubeVideoId } from '../../utils/youtube.js';
@@ -25,6 +25,7 @@ export function AdminResourcesPage() {
   const [addType, setAddType] = useState('video');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
+  const [isPriority, setIsPriority] = useState(false);
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,12 +75,18 @@ export function AdminResourcesPage() {
     try {
       const res = await adminFetch('/resources', {
         method: 'POST',
-        body: JSON.stringify({ type: addType, title: trimmedTitle, url: trimmedUrl }),
+        body: JSON.stringify({
+          type: addType,
+          title: trimmedTitle,
+          url: trimmedUrl,
+          isPriority: addType === 'video' ? isPriority : false,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to add resource');
       setTitle('');
       setUrl('');
+      setIsPriority(false);
       setMessage('Resource added.');
       setListTab(addType);
       loadAll();
@@ -87,6 +94,22 @@ export function AdminResourcesPage() {
       setError(err.message || 'Failed to add resource');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePriority = async (resource) => {
+    if (resource.type !== 'video') return;
+    setError('');
+    try {
+      const res = await adminFetch(`/resources/${resource.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isPriority: !resource.isPriority }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to update');
+      loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to update priority');
     }
   };
 
@@ -127,7 +150,13 @@ export function AdminResourcesPage() {
         <form onSubmit={addResource} className="space-y-4">
           <div>
             <span className="text-xs font-medium text-blaster-muted block mb-2">Type</span>
-            <ResourceTypeToggle value={addType} onChange={setAddType} />
+            <ResourceTypeToggle
+              value={addType}
+              onChange={(t) => {
+                setAddType(t);
+                if (t !== 'video') setIsPriority(false);
+              }}
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-blaster-muted block mb-1.5" htmlFor="resource-title">
@@ -155,6 +184,30 @@ export function AdminResourcesPage() {
               className="w-full px-3 py-2.5 rounded-xl border border-blaster-border text-sm text-blaster-fg bg-white focus:outline-none focus:ring-2 focus:ring-blaster-accent/30"
             />
           </div>
+          {addType === 'video' ? (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsPriority((v) => !v)}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                  isPriority
+                    ? 'border-amber-400 bg-amber-50 text-amber-700'
+                    : 'border-blaster-border text-blaster-muted hover:text-blaster-fg hover:bg-blaster-bg-app'
+                }`}
+                aria-pressed={isPriority}
+              >
+                <Star
+                  className="w-4 h-4"
+                  strokeWidth={1.75}
+                  fill={isPriority ? 'currentColor' : 'none'}
+                />
+                Priority announcement
+              </button>
+              <p className="text-xs text-blaster-muted">
+                Shows a highlighted popup on user dashboards.
+              </p>
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
           <button
@@ -181,10 +234,37 @@ export function AdminResourcesPage() {
             {filtered.map((r) => (
               <li key={r.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-blaster-fg truncate">{r.title}</p>
+                  <p className="text-sm font-medium text-blaster-fg truncate">
+                    {r.title}
+                    {r.isPriority ? (
+                      <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
+                        <Star className="w-3 h-3" fill="currentColor" strokeWidth={0} />
+                        Priority
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="text-xs text-blaster-muted truncate mt-0.5">{r.url}</p>
                   <p className="text-xs text-blaster-muted mt-1">{formatAddedAt(r.createdAt)}</p>
                 </div>
+                {r.type === 'video' ? (
+                  <button
+                    type="button"
+                    onClick={() => togglePriority(r)}
+                    className={`p-2 rounded-lg shrink-0 transition-colors ${
+                      r.isPriority
+                        ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                        : 'text-blaster-muted hover:text-amber-600 hover:bg-amber-50'
+                    }`}
+                    aria-label={r.isPriority ? 'Remove priority' : 'Mark as priority'}
+                    title={r.isPriority ? 'Remove priority' : 'Mark as priority announcement'}
+                  >
+                    <Star
+                      className="w-4 h-4"
+                      strokeWidth={1.75}
+                      fill={r.isPriority ? 'currentColor' : 'none'}
+                    />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => deleteResource(r.id)}

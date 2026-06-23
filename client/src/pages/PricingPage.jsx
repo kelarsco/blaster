@@ -47,14 +47,16 @@ function PlanCard({ plan, isAnnually, onChoose, featured }) {
 
   return (
     <div
-      className={`bg-blaster-bg-card rounded-2xl border flex flex-col h-full ${
+      className={`bg-blaster-bg-card rounded-2xl border flex flex-col h-full relative overflow-hidden ${
         featured
           ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-lg'
-          : 'border-blaster-border shadow-md'
-      } overflow-hidden`}
+          : isTrial
+            ? 'border-black/20 ring-2 ring-black/5 shadow-md'
+            : 'border-blaster-border shadow-md'
+      }`}
     >
       {plan.tag && (
-        <div className="bg-emerald-600 px-4 py-1.5 text-center">
+        <div className={`px-4 py-1.5 text-center ${isTrial ? 'bg-black' : 'bg-emerald-600'}`}>
           <span className="text-xs font-semibold text-white">{plan.tag}</span>
         </div>
       )}
@@ -85,38 +87,12 @@ function PlanCard({ plan, isAnnually, onChoose, featured }) {
           type="button"
           onClick={() => onChoose(plan)}
           className={`w-full mt-6 py-3 rounded-xl text-sm font-semibold transition ${
-            featured
-              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-              : 'bg-black text-white hover:opacity-90'
+            isTrial || !featured
+              ? 'bg-black text-white hover:opacity-90'
+              : 'bg-emerald-600 text-white hover:bg-emerald-700'
           }`}
         >
-          {isTrial ? 'Start 3-day trial' : `Start ${plan.name}`}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TrialBar({ onChoose }) {
-  return (
-    <div className="mt-6 rounded-2xl border border-blaster-border bg-white shadow-md p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h3 className="font-bold text-lg text-blaster-fg">{TRIAL_PLAN.name}</h3>
-        <p className="text-sm text-blaster-muted mt-1">
-          Scan stores, run campaigns, and try {TRIAL_PLAN.features.filters} store filters — ${TRIAL_PLAN.price} for 3 days.
-        </p>
-      </div>
-      <div className="flex items-center gap-4 shrink-0">
-        <div className="text-right">
-          <span className="text-2xl font-bold text-blaster-fg">${formatPriceNum(TRIAL_PLAN.price)}</span>
-          <span className="text-sm text-blaster-muted block">/ 3 days</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => onChoose(TRIAL_PLAN)}
-          className="px-6 py-3 rounded-xl border-2 border-black text-sm font-semibold hover:bg-black hover:text-white transition whitespace-nowrap"
-        >
-          Start for $1
+          {isTrial ? 'Start for $1' : `Start ${plan.name}`}
         </button>
       </div>
     </div>
@@ -153,7 +129,7 @@ export function PricingPage() {
             Choose a plan that fits your outreach scale
           </h1>
           <p className="mt-3 text-blaster-muted max-w-2xl mx-auto">
-            Start with a $1 three-day trial, then upgrade when you need more store filters and scale.
+            Start with a $1 seven-day trial for full access, then pick a plan based on how many store searches you need each month.
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-3">
@@ -180,7 +156,8 @@ export function PricingPage() {
           </div>
         </div>
 
-        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+          <PlanCard plan={TRIAL_PLAN} isAnnually={false} onChoose={handleChoosePlan} featured={false} />
           {PLANS.map((plan) => (
             <PlanCard
               key={plan.id}
@@ -191,8 +168,6 @@ export function PricingPage() {
             />
           ))}
         </div>
-
-        <TrialBar onChoose={handleChoosePlan} />
 
         <p className="mt-6 text-center text-sm text-blaster-muted">
           Already have an account?{' '}
