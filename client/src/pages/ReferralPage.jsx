@@ -18,7 +18,7 @@ import { formatUTCDateOnly } from '../utils/dateUtils';
 import { buildReferralSignupUrl, sanitizeReferralUrl } from '../utils/referralUrl.js';
 import { ReferralPageSkeleton } from '../components/referral/ReferralPageSkeleton.jsx';
 import { BrandGradientIcon, BrandIconBox, CrownIcon } from '../components/BrandGradientIcon.jsx';
-import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
+import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 import '../styles/referral-page.css';
 
 const REFERRAL_MESSAGE =
@@ -31,11 +31,7 @@ const BRAND_ICON_BOX_PROGRESS =
   'bg-gradient-to-br from-blaster-accent/20 to-blaster-orange/25 border border-blaster-accent/30';
 
 function formatLoadError(err) {
-  const msg = String(err?.message || err || '');
-  if (err?.name === 'TypeError' || /failed to fetch|network|load failed/i.test(msg)) {
-    return 'API server is not reachable. Run cd server && npm run dev (or npm run dev from the project root).';
-  }
-  return msg || 'Failed to load referral program.';
+  return toFriendlyErrorMessage(err, FRIENDLY_ERRORS.referral);
 }
 
 function StatCell({ Icon, value, label }) {

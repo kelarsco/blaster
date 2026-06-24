@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput } from '../layout/AuthLayout';
 import { SlideInNotice } from '../components/SlideInNotice.jsx';
 import { usePageSeo } from '../utils/seo.js';
+import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 
 export function LoginPage() {
   usePageSeo('login');
@@ -38,21 +39,19 @@ export function LoginPage() {
       return;
     }
     if (msg && (err === 'wrong_method' || err === 'NO_DB' || err === 'NO_EMAIL' || err === 'google_failed')) {
-      setError(decodeURIComponent(msg));
+      setError(toFriendlyErrorMessage(decodeURIComponent(msg), FRIENDLY_ERRORS.google));
       return;
     }
     if (err === 'google_failed') {
-      setError('Google sign-in failed. Please try again.');
+      setError(FRIENDLY_ERRORS.google);
       return;
     }
     if (err === '1') {
-      setError(
-        'Google sign-in failed. On Railway, set GOOGLE_CALLBACK_URL to https://blaster-production.up.railway.app/api/auth/google/callback and add the same URI in Google Cloud Console. Redeploy after updating env vars.'
-      );
+      setError(FRIENDLY_ERRORS.google);
       return;
     }
     if (err === 'google_not_configured') {
-      setError('Google sign-in is not available. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and SESSION_SECRET on Railway.');
+      setError(FRIENDLY_ERRORS.google);
     }
   }, [searchParams]);
 
@@ -64,7 +63,7 @@ export function LoginPage() {
       await signIn(email.trim().toLowerCase(), password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError(toFriendlyErrorMessage(err, FRIENDLY_ERRORS.signIn));
     } finally {
       setSubmitting(false);
     }

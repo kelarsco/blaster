@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API } from '../api.js';
+import { FRIENDLY_ERRORS, friendlyHttpError, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 
 function normalizeStoreUrl(input) {
   const raw = (input || '').trim().replace(/^[\s"'`<>()\[\]]+|[\s"'`<>()\[\]]+$/g, '');
@@ -117,7 +118,7 @@ export function UrlInput({
         const responseText = await res.text();
         data = JSON.parse(responseText);
       } catch {
-        data = { error: 'Invalid backend response' };
+        data = { error: null };
       }
       
       if (!res.ok) {
@@ -134,10 +135,7 @@ export function UrlInput({
         if (res.status === 400) {
           throw new Error(data.error || 'Invalid URLs provided. Please check your input and try again.');
         }
-        if (res.status === 503 || res.status === 502) {
-          throw new Error('Cannot reach the API server. Run npm run dev from the project root.');
-        }
-        throw new Error(data.error || `Failed to start scan (${res.status})`);
+        throw new Error(friendlyHttpError(res.status, data.error, FRIENDLY_ERRORS.scan));
       }
 
       if (data.scanId) {
@@ -146,12 +144,7 @@ export function UrlInput({
 
     } catch (error) {
       console.error('Scan start error:', error);
-      const msg = error?.message || '';
-      if (/failed to fetch|network|load failed/i.test(msg)) {
-        setError('Cannot reach the API server. Run npm run dev from the project root (or cd server && npm run dev in a separate terminal).');
-      } else {
-        setError(msg || 'Failed to start scan');
-      }
+      setError(toFriendlyErrorMessage(error, FRIENDLY_ERRORS.scan));
       setIsScanning(false);
     }
   };

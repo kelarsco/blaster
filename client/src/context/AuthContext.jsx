@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { API, hasConfiguredBackend } from '../api.js';
+import { FRIENDLY_ERRORS, friendlyHttpError, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 const AuthContext = createContext(null);
 
 export function useAuth() {
@@ -111,7 +112,7 @@ export function AuthProvider({ children }) {
   /** Google OAuth — full-page redirect (Vite /api proxy in dev, or VITE_API_URL in production). */
   const loginWithGoogle = useCallback(() => {
     if (!hasConfiguredBackend) {
-      alert('Google OAuth is not configured yet. Set VITE_API_URL to your backend URL.');
+      alert(FRIENDLY_ERRORS.google);
       return;
     }
     let ref = '';
@@ -136,7 +137,7 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     if (!hasConfiguredBackend) {
-      throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
+      throw new Error(FRIENDLY_ERRORS.signIn);
     }
 
     const res = await fetch(`${API}/auth/login`, {
@@ -150,11 +151,11 @@ export function AuthProvider({ children }) {
     try {
       data = await res.json();
     } catch (_) {
-      throw new Error('Backend returned invalid response. Please check if the backend is running properly.');
+      throw new Error(FRIENDLY_ERRORS.signIn);
     }
 
     if (!res.ok) {
-      throw new Error(data.error || `Login failed (${res.status})`);
+      throw new Error(friendlyHttpError(res.status, data.error, FRIENDLY_ERRORS.signIn));
     }
 
     if (data.accessToken) {
@@ -167,7 +168,7 @@ export function AuthProvider({ children }) {
 
   const signUp = async (email, password, name, referralCode) => {
     if (!hasConfiguredBackend) {
-      throw new Error('Backend not configured. Please deploy your Railway backend and set VITE_API_URL in your environment.');
+      throw new Error(FRIENDLY_ERRORS.signUp);
     }
 
     let ref = referralCode;
@@ -188,11 +189,11 @@ export function AuthProvider({ children }) {
     try {
       data = await res.json();
     } catch (_) {
-      throw new Error('Backend returned invalid response. Please check if the backend is running properly.');
+      throw new Error(FRIENDLY_ERRORS.signUp);
     }
 
     if (!res.ok) {
-      throw new Error(data.error || `Registration failed (${res.status})`);
+      throw new Error(friendlyHttpError(res.status, data.error, FRIENDLY_ERRORS.signUp));
     }
 
     return data;

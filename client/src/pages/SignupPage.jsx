@@ -5,6 +5,7 @@ import { getStoredPlanId } from '../data/plans';
 import { API } from '../api.js';
 import { AuthLayout, AuthBrandHeader, AuthFooterLink, authInputClass, authPrimaryButtonClass, authSecondaryButtonClass, PasswordInput, PasswordInputFollow } from '../layout/AuthLayout';
 import { usePageSeo } from '../utils/seo.js';
+import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 
 function getPostSignupPath(search) {
   const fromPricing = search && search.includes('from=pricing');
@@ -97,7 +98,7 @@ export function SignupPage() {
       });
     } catch (err) {
       console.error('Signup error:', err);
-      setError(err.message || 'Signup failed');
+      setError(toFriendlyErrorMessage(err, FRIENDLY_ERRORS.signUp));
     } finally {
       setSubmitting(false);
     }

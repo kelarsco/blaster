@@ -12,6 +12,7 @@ import {
   loadManualCampaignDeck,
   saveManualCampaignDeck,
 } from '../utils/manualCampaignDeck.js';
+import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 
 const SEND_LOG_MAX_WAIT_MS = 2000;
 
@@ -20,7 +21,7 @@ async function readJsonResponse(res) {
   try {
     return text ? JSON.parse(text) : {};
   } catch {
-    throw new Error('Server returned an invalid response. Restart the API server and try again.');
+    throw new Error(FRIENDLY_ERRORS.send);
   }
 }
 
@@ -126,7 +127,7 @@ export function ManualSendPage() {
 
       syncFromDeck(data.deck, data.totalSent ?? 0, data.totalQueued ?? data.deck.length);
     } catch (e) {
-      setError(e.message);
+      setError(toFriendlyErrorMessage(e, FRIENDLY_ERRORS.send));
     } finally {
       setInitialLoading(false);
     }
@@ -217,7 +218,7 @@ export function ManualSendPage() {
           setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
         })
         .catch((e) => {
-          setError(e.message);
+          setError(toFriendlyErrorMessage(e, FRIENDLY_ERRORS.send));
           loadCampaign();
         });
     }
@@ -240,11 +241,11 @@ export function ManualSendPage() {
       const data = await readJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to skip');
       if (!data.skipped) {
-        throw new Error('Skip is not available yet — restart or redeploy the API server.');
+        throw new Error(FRIENDLY_ERRORS.unavailable);
       }
       setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
     } catch (e) {
-      setError(e.message);
+      setError(toFriendlyErrorMessage(e, FRIENDLY_ERRORS.send));
     }
   };
 

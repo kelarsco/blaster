@@ -1,21 +1,20 @@
 /**
- * Scan processor: crawl each store, extract email + social/phone contacts, write results.
+ * Scan processor: batch crawl stores and extract emails via regex.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { extractContactsFromPages, storeHasExtractedData } from './contactExtractor.js';
-import { probeShopifyEmails } from './shopifyEmailProbe.js';
 import { normalizeExtractOptions } from './scanExtractOptions.js';
 import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
-  Number(process.env.SCAN_CONCURRENCY) || 2,
+  Number(process.env.SCAN_CONCURRENCY) || 4,
   10
 );
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 800;
-const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 500;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 60000;
+const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 250;
+const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 0;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 25000;
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
@@ -122,8 +121,10 @@ async function processScanWork(payload) {
     maxConcurrentCrawlers,
     maxUrlsPerScan,
     extractOptions: rawExtractOptions,
+    emailFilters: rawEmailFilters,
   } = payload;
   const extractOptions = normalizeExtractOptions(rawExtractOptions);
+  const emailFilters = rawEmailFilters && typeof rawEmailFilters === 'object' ? rawEmailFilters : {};
 
   const db = getDb();
   let urls = parseUrls(rawInput || '');
@@ -178,28 +179,17 @@ async function processScanWork(payload) {
     });
     const workPromise = (async () => {
       try {
-        const crawl = await crawlStore(storeUrl);
-        const shopify = await probeShopifyEmails(storeUrl);
-
-        const pageByUrl = new Map();
-        for (const p of [...crawl.pages, ...shopify.pages]) {
-          if (p?.url && p?.html) pageByUrl.set(p.url, p);
-        }
-        const mergedPages = [...pageByUrl.values()];
-
-        const privacyPageFound =
-          crawl.privacyPageFound ||
-          mergedPages.some((p) => /privacy|policies\/contact-information|pages\/privacy|pages\/contact/i.test(p.url));
+        const { pages, privacyPageFound } = await crawlStore(storeUrl);
 
         const results = extractOptions.email
-          ? extractEmailsFromPages(storeUrl, mergedPages, {
+          ? extractEmailsFromPages(storeUrl, pages, {
               onePerStore: true,
               privacyPageFound,
-              shopifyHints: shopify.hints,
+              emailFilters,
             })
           : [];
 
-        const contacts = extractContactsFromPages(storeUrl, mergedPages, extractOptions);
+        const contacts = extractContactsFromPages(storeUrl, pages, extractOptions);
 
         const noEmailReason = privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
         return { storeUrl, results, contacts, noEmailReason };
@@ -240,7 +230,9 @@ async function processScanWork(payload) {
     }
     const settled = await Promise.allSettled(
       batch.map((storeUrl, batchIdx) =>
-        sleep(batchIdx * STORE_STAGGER_MS).then(() => processOneWithTimeout(storeUrl))
+        STORE_STAGGER_MS > 0
+          ? sleep(batchIdx * STORE_STAGGER_MS).then(() => processOneWithTimeout(storeUrl))
+          : processOneWithTimeout(storeUrl)
       )
     );
     const outcomes = settled.map((s, idx) => {

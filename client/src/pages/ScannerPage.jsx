@@ -7,7 +7,7 @@ import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
 import { DEFAULT_SCAN_EXTRACT_OPTIONS } from '../utils/scanExtractOptions.js';
 import { createEmailList } from '../utils/createEmailList.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
-import { parseScanResultsPayload } from '../utils/scanStatus.js';
+import { FRIENDLY_ERRORS, friendlyHttpError, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 import { ScannerLanding } from '../components/scanner/ScannerLanding.jsx';
 import { ScannerWorkspace } from '../components/scanner/ScannerWorkspace.jsx';
 import { ScanBatchFeed } from '../components/scanner/ScanBatchFeed.jsx';
@@ -80,7 +80,7 @@ export default function ScannerPage() {
           setError(data.error || 'Upgrade required to scan more stores.');
           return;
         }
-        throw new Error(data.error || `Failed to start scan (${res.status})`);
+        throw new Error(friendlyHttpError(res.status, data.error, FRIENDLY_ERRORS.scan));
       }
 
       if (data.scanId) {
@@ -95,7 +95,7 @@ export default function ScannerPage() {
         setCsvName('');
       }
     } catch (err) {
-      setError(err?.message || 'Failed to start scan');
+      setError(toFriendlyErrorMessage(err, FRIENDLY_ERRORS.scan));
     } finally {
       setIsStarting(false);
     }
