@@ -83,13 +83,13 @@ export function getEmailProvider(email, storeOriginHost = '') {
   return 'other';
 }
 
-function isRealEmailDomain(domain, storeHost) {
+function isAcceptableDomain(domain) {
   const d = (domain || '').toLowerCase().trim();
-  if (!d || FAKE_DOMAINS.has(d)) return false;
-  if (REAL_MAIL_DOMAINS.has(d)) return true;
-  if (storeHost && (d === storeHost || d.endsWith(`.${storeHost}`))) return true;
-  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(d)) return true;
-  return false;
+  if (!d || !d.includes('.')) return false;
+  if (FAKE_DOMAINS.has(d)) return false;
+  const tld = d.split('.').pop();
+  if (!tld || tld.length < 2 || !/^[a-z]{2,63}$/i.test(tld)) return false;
+  return /^[a-z0-9][a-z0-9.-]*\.[a-z0-9.-]+$/i.test(d);
 }
 
 function normalizeMatch(raw) {
@@ -106,8 +106,12 @@ function normalizeMatch(raw) {
 }
 
 function passesFilters(email, emailFilters = {}) {
+  const hasTypeFilter =
+    (emailFilters.types && Array.isArray(emailFilters.types) && emailFilters.types.length > 0) ||
+    emailFilters.type;
+  if (!hasTypeFilter && emailFilters.allowNoreply !== false) return true;
   const type = getEmailType(email);
-  if (type === 'noreply' && emailFilters.allowNoreply !== true) return false;
+  if (type === 'noreply' && emailFilters.allowNoreply === false) return false;
   if (emailFilters.types && Array.isArray(emailFilters.types) && emailFilters.types.length) {
     return emailFilters.types.includes(type);
   }
@@ -115,7 +119,7 @@ function passesFilters(email, emailFilters = {}) {
   return true;
 }
 
-function extractFromHtml(html, storeHost) {
+function extractFromHtml(html) {
   if (!html || typeof html !== 'string') return [];
   const text = decodeBasicEntities(html);
   const matches = text.match(EMAIL_REGEX) || [];
@@ -125,40 +129,32 @@ function extractFromHtml(html, storeHost) {
     const email = normalizeMatch(m);
     if (!email || seen.has(email)) continue;
     const domain = email.slice(email.indexOf('@') + 1);
-    if (!isRealEmailDomain(domain, storeHost)) continue;
+    if (!isAcceptableDomain(domain)) continue;
     seen.add(email);
     out.push(email);
   }
   return out;
 }
 
-function scoreEmail(email, sourcePage, storeHost) {
+function scoreEmail(email, sourcePage) {
   let score = 0;
-  const type = getEmailType(email);
-  const domain = email.slice(email.indexOf('@') + 1);
   const page = (sourcePage || '').toLowerCase();
-
-  if (type === 'contact') score += 60;
-  else if (type === 'other') score += 30;
-  else score -= 100;
 
   if (/policies\/privacy-policy|privacy-policy/.test(page)) score += 80;
   else if (/pages\/contact|\/contact/.test(page)) score += 50;
   else if (page.endsWith('/') || page.match(/\/$/)) score += 20;
 
-  if (domain === storeHost || domain.endsWith(`.${storeHost}`)) score += 40;
-  if (REAL_MAIL_DOMAINS.has(domain)) score += 15;
   if (/^privacy@/.test(email) && /privacy/.test(page)) score += 70;
 
   return score;
 }
 
 /**
- * Extract the best contact email(s) from crawled pages.
+ * Extract all valid emails from crawled pages (Gmail, store domain, third-party — no type bias).
  */
 export function extractEmailsFromPages(storeUrl, pages, options = {}) {
-  const onePerStore = options.onePerStore !== false;
-  const maxEmails = Math.max(1, Number(options.maxEmails) || 8);
+  const onePerStore = options.onePerStore === true;
+  const maxEmails = Math.max(1, Number(options.maxEmails) || 50);
   const privacyPageFound = options.privacyPageFound === true;
   const emailFilters = options.emailFilters || options.email_filters || {};
 
@@ -166,13 +162,13 @@ export function extractEmailsFromPages(storeUrl, pages, options = {}) {
   const candidates = [];
 
   for (const { url, html } of pages || []) {
-    for (const email of extractFromHtml(html, storeHost)) {
+    for (const email of extractFromHtml(html)) {
       if (!passesFilters(email, emailFilters)) continue;
       candidates.push({
         email,
         sourcePage: url,
         storeUrl,
-        score: scoreEmail(email, url, storeHost),
+        score: scoreEmail(email, url),
       });
     }
   }

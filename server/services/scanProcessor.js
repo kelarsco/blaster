@@ -183,7 +183,7 @@ async function processScanWork(payload) {
 
         const results = extractOptions.email
           ? extractEmailsFromPages(storeUrl, pages, {
-              onePerStore: true,
+              onePerStore: false,
               privacyPageFound,
               emailFilters,
             })
