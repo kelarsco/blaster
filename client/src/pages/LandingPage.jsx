@@ -509,12 +509,14 @@ export function LandingPage() {
             <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl text-black leading-snug max-w-xl mx-auto lg:mx-0">
               Built for solopreneurs and fast growing ecommerce teams
             </h2>
-            <div className="mt-10 flex flex-col w-full max-w-sm mx-auto lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap justify-center lg:justify-start gap-0 lg:gap-8 xl:gap-12 border border-blaster-border/50 rounded-2xl overflow-hidden lg:border-0 lg:rounded-none">
+            <div className="mt-10 flex flex-col w-full max-w-sm mx-auto md:mx-0 md:max-w-none md:flex-row md:items-baseline md:justify-start gap-0 md:gap-10 lg:gap-12 border border-blaster-border/50 rounded-2xl overflow-hidden md:border-0 md:rounded-none md:overflow-visible">
               {STATS.map((s, i) => (
                 <div
                   key={s.label}
-                  className={`text-center w-full py-5 px-4 lg:min-w-[120px] lg:py-0 lg:px-0 ${
-                    i < STATS.length - 1 ? 'border-b border-blaster-border/50 lg:border-b-0' : ''
+                  className={`text-center w-full md:w-auto md:shrink-0 py-5 px-4 md:py-0 md:px-0 md:min-w-[120px] ${
+                    i < STATS.length - 1
+                      ? 'border-b border-blaster-border/50 md:border-b-0 md:border-r md:pr-10 lg:pr-12'
+                      : ''
                   }`}
                 >
                   <p className="font-sans text-2xl tracking-tight">
