@@ -4,8 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check } from 'react-feather';
-import { Logo } from '../components/Logo.jsx';
 import { MarketingHeader } from '../layout/MarketingHeader.jsx';
+import { MarketingFooter } from '../layout/MarketingFooter.jsx';
 import LineWaves from '../components/LineWaves.jsx';
 import {
   PLANS,
@@ -21,6 +21,7 @@ const LANDING_PRICING_PLANS = PLANS.filter((p) => p.id === 'essentials' || p.id 
 /** Static assets from Figma — served from /public/landing/ */
 const LANDING_ICONS = {
   heroEmail: '/landing/hero-email.png',
+  heroDashboard: '/landing/heroimg.png',
   spark: '/landing/spark.png',
   integrations: [
     '/landing/integration-1.png',
@@ -408,7 +409,7 @@ export function LandingPage() {
       <MarketingHeader />
 
       {/* Hero */}
-      <section className="relative min-h-[100vh] flex flex-col justify-center px-4 sm:px-8 py-10 md:py-16 overflow-hidden bg-blaster-bg">
+      <section className="relative px-4 sm:px-8 pt-10 sm:pt-14 md:pt-16 pb-14 sm:pb-20 md:pb-24 overflow-hidden bg-blaster-bg">
         <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none" aria-hidden>
           <LineWaves
             speed={0.3}
@@ -426,55 +427,78 @@ export function LandingPage() {
             mouseInfluence={2}
           />
         </div>
-        <div className="relative z-10 max-w-4xl mx-auto text-center w-full -translate-y-10">
-          <div className="inline-flex items-center gap-2 bg-black text-white rounded-full px-5 py-2 text-base font-rubik">
-            <img src={LANDING_ICONS.spark} alt="" className="w-5 h-5 object-contain shrink-0" width={20} height={20} />
-            Outreach made fast
+        <div className="relative z-10 max-w-6xl mx-auto w-full">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-black text-white rounded-full px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-base font-rubik">
+              <img src={LANDING_ICONS.spark} alt="" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" width={20} height={20} />
+              Outreach made fast
+            </div>
+
+            <h1 className="mt-5 sm:mt-6 font-bold font-sans text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] leading-[1.05] tracking-tight text-black [text-shadow:1px_1px_0px_white]">
+              Send Personalized{' '}
+              <span className="whitespace-nowrap">
+                Mess
+                <span className="hero-email-letter relative inline-block align-baseline pt-0 pb-0">
+                  a
+                  <img
+                    src={LANDING_ICONS.heroEmail}
+                    alt=""
+                    className={`hero-email-icon absolute left-1/2 object-contain -translate-x-1/2 -translate-y-1/2 ${heroIconVisible ? 'hero-email-icon--visible' : ''}`}
+                    width={244}
+                    height={71}
+                    decoding="async"
+                  />
+                </span>
+                ges
+              </span>{' '}
+              That Actually Convert
+            </h1>
+
+            <p className="mt-6 sm:mt-8 font-rubik text-lg sm:text-xl text-blaster-ink max-w-2xl mx-auto leading-relaxed tracking-wide">
+              Find ecommerce stores, extract emails, and send tailored messages in minutes, all from one simple dashboard.
+            </p>
+
+            <form onSubmit={handleHeroSubmit} className="mt-8 sm:mt-10 aos-fade-up flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-0 max-w-xl mx-auto">
+              <label className="sr-only" htmlFor="hero-email">
+                Email
+              </label>
+              <input
+                id="hero-email"
+                type="email"
+                value={heroEmail}
+                onChange={(e) => setHeroEmail(e.target.value)}
+                placeholder="Put Your Email Here"
+                className="w-full sm:flex-1 h-14 sm:h-[55px] px-6 bg-white border border-black rounded-full sm:rounded-l-full sm:rounded-r-none text-base text-black/70 placeholder:text-black/50 font-rubik tracking-wider focus:outline-none focus:ring-2 focus:ring-blaster-accent/40"
+              />
+              <button
+                type="submit"
+                className="mt-3 sm:mt-0 shrink-0 h-[60px] px-8 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-rubik font-medium text-lg sm:text-xl tracking-wide shadow-blaster-cta hover:opacity-90 transition sm:-ml-4"
+              >
+                Try for $1
+              </button>
+            </form>
           </div>
 
-          <h1 className="mt-6 font-bold font-sans text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-[5.5rem] leading-[1.05] tracking-tight text-black [text-shadow:1px_1px_0px_white]">
-            Send Personalized{' '}
-            <span className="whitespace-nowrap">
-              Mess
-              <span className="hero-email-letter relative inline-block align-baseline pt-0 pb-0">
-                a
+          <div className="mt-12 sm:mt-14 md:mt-16 lg:mt-[4.5rem] max-w-5xl mx-auto aos-fade-up" data-aos-delay="120">
+            <div className="relative">
+              <div
+                className="absolute -inset-3 sm:-inset-5 rounded-[28px] sm:rounded-[32px] bg-gradient-to-br from-[#6366f2]/20 via-[#faf8f5]/0 to-[#fcb04c]/20 blur-2xl opacity-90 pointer-events-none"
+                aria-hidden
+              />
+              <div className="relative rounded-2xl sm:rounded-[1.75rem] overflow-hidden border border-black/[0.07] bg-white shadow-[0_28px_90px_-20px_rgba(0,0,0,0.22)] ring-1 ring-black/[0.04]">
                 <img
-                  src={LANDING_ICONS.heroEmail}
-                  alt=""
-                  className={`hero-email-icon absolute left-1/2 object-contain -translate-x-1/2 -translate-y-1/2 ${heroIconVisible ? 'hero-email-icon--visible' : ''}`}
-                  width={244}
-                  height={71}
+                  src={LANDING_ICONS.heroDashboard}
+                  alt="Wiblaster dashboard — scan stores, extract emails, and run outreach campaigns"
+                  className="w-full h-auto block"
+                  width={1200}
+                  height={720}
+                  loading="eager"
+                  fetchPriority="high"
                   decoding="async"
                 />
-              </span>
-              ges
-            </span>{' '}
-            That Actually Convert
-          </h1>
-
-          <p className="mt-8 font-rubik text-lg sm:text-xl text-blaster-ink max-w-2xl mx-auto leading-relaxed tracking-wide">
-            Find ecommerce stores, extract emails, and send tailored messages in minutes, all from one simple dashboard.
-          </p>
-
-          <form onSubmit={handleHeroSubmit} className="mt-10 aos-fade-up flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-0 max-w-xl mx-auto">
-            <label className="sr-only" htmlFor="hero-email">
-              Email
-            </label>
-            <input
-              id="hero-email"
-              type="email"
-              value={heroEmail}
-              onChange={(e) => setHeroEmail(e.target.value)}
-              placeholder="Put Your Email Here"
-              className="w-full sm:flex-1 h-14 sm:h-[55px] px-6 bg-white border border-black rounded-full sm:rounded-l-full sm:rounded-r-none text-base text-black/70 placeholder:text-black/50 font-rubik tracking-wider focus:outline-none focus:ring-2 focus:ring-blaster-accent/40"
-            />
-            <button
-              type="submit"
-              className="mt-3 sm:mt-0 shrink-0 h-[60px] px-8 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-rubik font-medium text-lg sm:text-xl tracking-wide shadow-blaster-cta hover:opacity-90 transition sm:-ml-4"
-            >
-              Try for $1
-            </button>
-          </form>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -485,9 +509,14 @@ export function LandingPage() {
             <h2 className="font-poppins text-2xl sm:text-3xl md:text-4xl text-black leading-snug max-w-xl mx-auto lg:mx-0">
               Built for solopreneurs and fast growing ecommerce teams
             </h2>
-            <div className="mt-10 flex flex-wrap justify-center lg:justify-start gap-8 sm:gap-12">
-              {STATS.map((s) => (
-                <div key={s.label} className="text-center min-w-[120px]">
+            <div className="mt-10 flex flex-col w-full max-w-sm mx-auto lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap justify-center lg:justify-start gap-0 lg:gap-8 xl:gap-12 border border-blaster-border/50 rounded-2xl overflow-hidden lg:border-0 lg:rounded-none">
+              {STATS.map((s, i) => (
+                <div
+                  key={s.label}
+                  className={`text-center w-full py-5 px-4 lg:min-w-[120px] lg:py-0 lg:px-0 ${
+                    i < STATS.length - 1 ? 'border-b border-blaster-border/50 lg:border-b-0' : ''
+                  }`}
+                >
                   <p className="font-sans text-2xl tracking-tight">
                     <span>{s.value}</span>
                     <span className={s.accent ? 'text-blaster-purple' : 'text-black'}>{s.suffix}</span>
@@ -499,13 +528,13 @@ export function LandingPage() {
           </div>
           <div className="text-center lg:text-right w-full lg:w-auto lg:ml-auto">
             <p className="font-rubik font-light text-base text-blaster-ink mb-8">Works with tools you already use</p>
-            <div className="flex flex-wrap justify-center lg:justify-end gap-4 sm:gap-6">
-              {LANDING_ICONS.integrations.map((src, i) => (
+            <div className="grid grid-cols-3 gap-x-4 gap-y-6 justify-items-center max-w-[280px] mx-auto lg:max-w-none lg:flex lg:flex-wrap lg:justify-end lg:gap-6">
+              {LANDING_ICONS.integrations.map((src) => (
                 <img
                   key={src}
                   src={src}
                   alt=""
-                  className="w-12 h-12 sm:w-[50px] sm:h-[50px] object-contain"
+                  className="w-12 h-12 sm:w-[50px] sm:h-[50px] object-contain lg:w-[50px] lg:h-[50px]"
                   loading="lazy"
                   width={50}
                   height={50}
@@ -538,16 +567,10 @@ export function LandingPage() {
             ))}
           </div>
 
-          <div className="mt-14 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="mt-14 flex justify-center">
             <PrimaryPillButton as={Link} to="/signup">
-              Create account
+              Start now
             </PrimaryPillButton>
-            <Link
-              to="/signup"
-              className="font-poppins text-base text-black underline underline-offset-4 hover:opacity-70"
-            >
-              Create free account →
-            </Link>
           </div>
         </div>
       </section>
@@ -558,29 +581,7 @@ export function LandingPage() {
 
       <LandingCtaSection />
 
-      {/* Footer */}
-      <footer className="py-10 px-4 sm:px-8 border-t border-blaster-border bg-white">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-blaster-muted">
-          <Link to="/" className="shrink-0">
-            <Logo className="!w-[100px]" />
-          </Link>
-          <div className="flex flex-wrap justify-center gap-6">
-            <Link to="/pricing" className="hover:text-black transition">
-              Pricing
-            </Link>
-            <Link to="/login" className="hover:text-black transition">
-              Login
-            </Link>
-            <Link to="/privacy" className="hover:text-black transition">
-              Privacy
-            </Link>
-            <Link to="/terms" className="hover:text-black transition">
-              Terms
-            </Link>
-          </div>
-          <p className="text-center sm:text-right">© {new Date().getFullYear()} wiblaster</p>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

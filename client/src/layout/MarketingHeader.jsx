@@ -11,7 +11,7 @@ export const MARKETING_NAV_LINKS = [
 ];
 
 function PrimaryPillButton({ children, className = '', as: Tag = 'button', ...props }) {
-  const classes = `inline-flex items-center justify-center h-9 px-4 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-poppins font-medium text-sm tracking-wide shadow-blaster-cta transition hover:opacity-90 ${className}`;
+  const classes = `inline-flex items-center justify-center h-11 min-h-[44px] px-6 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-rubik font-medium text-sm tracking-wide shadow-blaster-cta transition hover:opacity-90 whitespace-nowrap ${className}`;
   return (
     <Tag className={classes} {...props}>
       {children}
@@ -51,7 +51,7 @@ export function MarketingHeader() {
   return (
     <>
       <header className="sticky top-0 z-40 bg-blaster-bg/95 backdrop-blur-sm border-b border-transparent">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-[63px] py-2 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-[63px] py-3 flex items-center justify-between gap-6">
           <Link to="/" className="shrink-0">
             <Logo />
           </Link>
@@ -70,13 +70,13 @@ export function MarketingHeader() {
             )}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-3 shrink-0">
+          <div className="hidden lg:flex items-center gap-4 shrink-0 ml-6">
             <PrimaryPillButton as={Link} to="/signup">
               Create account
             </PrimaryPillButton>
             <Link
               to="/login"
-              className="inline-flex items-center justify-center h-9 px-4 rounded-full font-medium text-sm tracking-wide hover:bg-black/5 transition"
+              className="inline-flex items-center justify-center h-11 min-h-[44px] px-5 rounded-full font-rubik font-medium text-sm tracking-wide text-black hover:bg-black/5 transition whitespace-nowrap"
             >
               Login
             </Link>
@@ -133,7 +133,7 @@ export function MarketingHeader() {
                 <Link
                   to="/login"
                   onClick={closeSidebar}
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-full font-medium text-sm tracking-wide hover:bg-black/5 transition w-full"
+                  className="inline-flex items-center justify-center h-11 min-h-[44px] px-6 rounded-full font-rubik font-medium text-sm tracking-wide hover:bg-black/5 transition w-full"
                 >
                   Login
                 </Link>
