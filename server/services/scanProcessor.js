@@ -9,11 +9,11 @@ import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
-  Number(process.env.SCAN_CONCURRENCY) || 6,
-  20
+  Number(process.env.SCAN_CONCURRENCY) || 4,
+  12
 );
 const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 0;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 15000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 25000;
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
@@ -204,8 +204,30 @@ async function processScanWork(payload) {
     return;
   }
 
-  const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
+  const memoryResults = memoryStore.results.get(scanId) || [];
   memoryStore.results.set(scanId, memoryResults);
+
+  let progressChain = Promise.resolve();
+
+  async function recordStoreProgress(hasData) {
+    progressChain = progressChain
+      .then(async () => {
+        processed += 1;
+        if (hasData) foundCount += 1;
+        upsertMemoryScan(scanId, { processed, found_count: foundCount });
+        if (db) {
+          await runDbQueryWithRetry(
+            db,
+            `UPDATE scans SET processed = processed + 1, found_count = found_count + $1, updated_at = NOW() WHERE id = $2`,
+            [hasData ? 1 : 0, scanId]
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('[scanProcessor] progress update error:', err?.message || err);
+      });
+    await progressChain;
+  }
 
   upsertMemoryScan(scanId, { status: 'running', total_urls: totalUrlCount, processed, found_count: foundCount });
   if (db) {
@@ -221,15 +243,20 @@ async function processScanWork(payload) {
   }
 
   function processOneWithTimeout(storeUrl) {
-    const timeoutPromise = new Promise((resolve) => {
-      const t = setTimeout(() => {
-        resolve({ storeUrl, results: [], timedOut: true });
-      }, PER_STORE_TIMEOUT_MS);
-      t.unref?.();
-    });
+    const ac = new AbortController();
+    let timer;
+
     const workPromise = (async () => {
       try {
-        const { pages, privacyPageFound } = await crawlStore(storeUrl);
+        const { pages, privacyPageFound } = await crawlStore(storeUrl, { signal: ac.signal });
+        if (ac.signal.aborted) {
+          return {
+            storeUrl,
+            results: [],
+            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
+            noEmailReason: 'Request timed out',
+          };
+        }
 
         const results = extractOptions.email
           ? extractEmailsFromPages(storeUrl, pages, {
@@ -253,16 +280,28 @@ async function processScanWork(payload) {
         };
       }
     })();
-    return Promise.race([workPromise, timeoutPromise]).then((r) =>
-      r.timedOut
-        ? {
-            storeUrl: r.storeUrl,
+
+    const timeoutPromise = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        ac.abort();
+        resolve({ timedOut: true });
+      }, PER_STORE_TIMEOUT_MS);
+      timer.unref?.();
+    });
+
+    return Promise.race([workPromise, timeoutPromise])
+      .then((outcome) => {
+        if (outcome?.timedOut) {
+          return {
+            storeUrl,
             results: [],
-            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl: r.storeUrl },
+            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
             noEmailReason: 'Request timed out',
-          }
-        : r
-    );
+          };
+        }
+        return outcome;
+      })
+      .finally(() => clearTimeout(timer));
   }
 
   const concurrency =
@@ -290,40 +329,33 @@ async function processScanWork(payload) {
 
     const { results, contacts, noEmailReason } = outcome;
     const dbRows = buildStoreRows(storeUrl, results, contacts, noEmailReason);
+    const hasData = storeHasExtractedData(results, contacts, extractOptions);
 
+    let rowPersisted = false;
     try {
-      const hasData = storeHasExtractedData(results, contacts, extractOptions);
-      if (hasData) foundCount += 1;
-
       if (db) {
         try {
           await insertScanResultsBatch(db, scanId, dbRows);
+          rowPersisted = true;
         } catch (dbInsertErr) {
           console.warn('[scanProcessor] store insert failed, buffering rows:', dbInsertErr?.message || dbInsertErr);
           memoryResults.push(...dbRows);
           memoryStore.results.set(scanId, memoryResults);
+          rowPersisted = true;
         }
       } else {
         memoryResults.push(...dbRows);
         memoryStore.results.set(scanId, memoryResults);
+        rowPersisted = true;
       }
     } catch (dbErr) {
       console.error('[scanProcessor] result assembly error:', storeUrl, dbErr?.message || dbErr);
     }
 
-    processed += 1;
-
-    try {
-      upsertMemoryScan(scanId, { processed, found_count: foundCount });
-      if (db) {
-        await runDbQueryWithRetry(
-          db,
-          `UPDATE scans SET processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
-          [processed, foundCount, scanId]
-        );
-      }
-    } catch (dbErr) {
-      console.error('[scanProcessor] progress update error:', dbErr?.message || dbErr);
+    if (rowPersisted) {
+      await recordStoreProgress(hasData);
+    } else {
+      console.error('[scanProcessor] store result not persisted, will retry on resume:', storeUrl);
     }
 
     if (process.env.SCAN_DEBUG === '1') {
@@ -333,13 +365,23 @@ async function processScanWork(payload) {
     }
   });
 
-  upsertMemoryScan(scanId, { status: 'completed', processed, found_count: foundCount });
+  await progressChain;
+
+  const expectedFinal = (payload.initialProcessed ?? 0) + urls.length;
+  const finalStatus = processed >= expectedFinal ? 'completed' : 'running';
+  if (finalStatus !== 'completed') {
+    console.warn(
+      `[scanProcessor] ${scanId} finished with ${processed}/${expectedFinal} stores persisted — leaving scan resumable`
+    );
+  }
+
+  upsertMemoryScan(scanId, { status: finalStatus, processed, found_count: foundCount });
   if (db) {
     try {
       await runDbQueryWithRetry(
         db,
-        `UPDATE scans SET status = 'completed', processed = $1, found_count = $2, updated_at = NOW() WHERE id = $3`,
-        [processed, foundCount, scanId]
+        `UPDATE scans SET status = $1, processed = $2, found_count = $3, updated_at = NOW() WHERE id = $4`,
+        [finalStatus, processed, foundCount, scanId]
       );
     } catch (e) {
       console.warn('[scanProcessor] final status update failed:', e?.message || e);
