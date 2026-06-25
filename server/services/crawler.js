@@ -6,15 +6,14 @@ import http from 'http';
 
 const REQUEST_TIMEOUT_MS = Number(process.env.CRAWL_REQUEST_TIMEOUT_MS) || 6000;
 const USER_AGENT = 'StoreReach/1.0 (Contact extraction)';
-const PARALLEL_PAGES = process.env.CRAWL_PARALLEL_PAGES !== '0';
-
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 
 const PATHS_TO_TRY = ['/policies/privacy-policy', '/', '/pages/contact'];
 
 const URL_TOKEN_REGEX =
   /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
+
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 64, maxFreeSockets: 16 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64, maxFreeSockets: 16 });
 
 export function fetchHtml(url, options = {}) {
   const timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
@@ -34,12 +33,12 @@ export function fetchHtml(url, options = {}) {
         port: parsed.port || (isHttps ? 443 : 80),
         path: (parsed.pathname || '/') + (parsed.search || ''),
         method: 'GET',
+        agent: isHttps ? httpsAgent : httpAgent,
         headers: {
           'User-Agent': USER_AGENT,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           Connection: 'keep-alive',
         },
-        agent: isHttps ? httpsAgent : httpAgent,
         rejectUnauthorized: false,
       };
       req = lib.get(reqOptions, (res) => {
@@ -103,34 +102,8 @@ async function fetchPage(url) {
   return null;
 }
 
-async function fetchPagesSequential(origin) {
-  const pages = [];
-  let privacyPageFound = false;
-  for (const path of PATHS_TO_TRY) {
-    const page = await fetchPage(pageUrl(origin, path));
-    if (!page) continue;
-    pages.push(page);
-    if (path === '/policies/privacy-policy') privacyPageFound = true;
-  }
-  return { pages, privacyPageFound };
-}
-
-async function fetchPagesParallel(origin) {
-  const results = await Promise.all(
-    PATHS_TO_TRY.map(async (path) => ({ path, page: await fetchPage(pageUrl(origin, path)) }))
-  );
-  const pages = [];
-  let privacyPageFound = false;
-  for (const { path, page } of results) {
-    if (!page) continue;
-    pages.push(page);
-    if (path === '/policies/privacy-policy') privacyPageFound = true;
-  }
-  return { pages, privacyPageFound };
-}
-
 /**
- * Fetch PATHS_TO_TRY for a store. Returns successful pages only.
+ * Fetch PATHS_TO_TRY for a store in parallel. Returns successful pages only.
  */
 export async function crawlStore(storeUrl) {
   const origin = normalizeStoreUrl(storeUrl);
@@ -138,9 +111,20 @@ export async function crawlStore(storeUrl) {
     return { pages: [], privacyPageFound: false };
   }
 
-  const { pages, privacyPageFound } = PARALLEL_PAGES
-    ? await fetchPagesParallel(origin)
-    : await fetchPagesSequential(origin);
+  const fetched = await Promise.all(
+    PATHS_TO_TRY.map(async (path) => {
+      const page = await fetchPage(pageUrl(origin, path));
+      return page ? { path, page } : null;
+    })
+  );
+
+  const pages = [];
+  let privacyPageFound = false;
+  for (const entry of fetched) {
+    if (!entry) continue;
+    pages.push(entry.page);
+    if (entry.path === '/policies/privacy-policy') privacyPageFound = true;
+  }
 
   if (process.env.SCAN_DEBUG === '1') {
     console.log(`[crawler] ${origin} — fetched ${pages.length} page(s)`);

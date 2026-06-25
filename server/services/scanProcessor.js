@@ -1,5 +1,5 @@
 /**
- * Scan processor: worker-pool crawl + per-store email extraction and progress.
+ * Scan processor: worker-pool crawl + per-store progress updates.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
@@ -133,23 +133,26 @@ function buildStoreRows(storeUrl, results, contacts, noEmailReason) {
   ];
 }
 
-async function runWorkerPool(urls, concurrency, workerFn) {
+/**
+ * Keep N stores in flight; start the next URL as soon as one finishes.
+ */
+async function runStoreWorkerPool(urls, concurrency, workerFn) {
   let nextIndex = 0;
+  const workerCount = Math.min(concurrency, urls.length);
 
   async function worker(workerId) {
     if (STORE_STAGGER_MS > 0 && workerId > 0) {
       await sleep(workerId * STORE_STAGGER_MS);
     }
     while (true) {
-      const idx = nextIndex;
+      const index = nextIndex;
+      if (index >= urls.length) break;
       nextIndex += 1;
-      if (idx >= urls.length) break;
-      await workerFn(urls[idx], idx);
+      await workerFn(urls[index], index);
     }
   }
 
-  const workerCount = Math.min(concurrency, urls.length);
-  await Promise.all(Array.from({ length: workerCount }, (_, i) => worker(i)));
+  await Promise.all(Array.from({ length: workerCount }, (_, workerId) => worker(workerId)));
 }
 
 export async function processScan(payload) {
@@ -201,7 +204,7 @@ async function processScanWork(payload) {
     return;
   }
 
-  const memoryResults = db ? [] : memoryStore.results.get(scanId) || [];
+  const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
   memoryStore.results.set(scanId, memoryResults);
 
   upsertMemoryScan(scanId, { status: 'running', total_urls: totalUrlCount, processed, found_count: foundCount });
@@ -268,10 +271,10 @@ async function processScanWork(payload) {
       : DEFAULT_CONCURRENCY;
 
   if (process.env.SCAN_DEBUG === '1') {
-    console.log(`[scanProcessor] ${scanId} starting pool (${urls.length} stores, concurrency ${concurrency})`);
+    console.log(`[scanProcessor] ${scanId} starting worker pool (${urls.length} stores, concurrency ${concurrency})`);
   }
 
-  await runWorkerPool(urls, concurrency, async (storeUrl) => {
+  await runStoreWorkerPool(urls, concurrency, async (storeUrl, index) => {
     let outcome;
     try {
       outcome = await processOneWithTimeout(storeUrl);
@@ -285,12 +288,12 @@ async function processScanWork(payload) {
       };
     }
 
+    const { results, contacts, noEmailReason } = outcome;
+    const dbRows = buildStoreRows(storeUrl, results, contacts, noEmailReason);
+
     try {
-      const { results, contacts, noEmailReason } = outcome;
       const hasData = storeHasExtractedData(results, contacts, extractOptions);
       if (hasData) foundCount += 1;
-
-      const dbRows = buildStoreRows(storeUrl, results, contacts, noEmailReason);
 
       if (db) {
         try {
@@ -310,10 +313,6 @@ async function processScanWork(payload) {
 
     processed += 1;
 
-    if (process.env.SCAN_DEBUG === '1' && (processed <= 3 || processed % 25 === 0 || processed === urls.length)) {
-      console.log(`[scanProcessor] ${scanId} progress ${processed}/${urls.length} (found ${foundCount})`);
-    }
-
     try {
       upsertMemoryScan(scanId, { processed, found_count: foundCount });
       if (db) {
@@ -325,6 +324,12 @@ async function processScanWork(payload) {
       }
     } catch (dbErr) {
       console.error('[scanProcessor] progress update error:', dbErr?.message || dbErr);
+    }
+
+    if (process.env.SCAN_DEBUG === '1') {
+      console.log(
+        `[scanProcessor] ${scanId} store ${index + 1}/${urls.length} done — ${results.length} email(s), processed=${processed}`
+      );
     }
   });
 
