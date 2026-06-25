@@ -42,6 +42,29 @@ const FAKE_DOMAINS = new Set([
 const NOREPLY_PREFIXES = ['example@', 'test@', 'you@', 'email@', 'user@', 'noreply@', 'no-reply@'];
 const CONTACT_PREFIXES = ['support@', 'info@', 'contact@', 'hello@', 'sales@', 'help@'];
 
+/** Words glued to the local part when labels sit flush against the address (common on FR pages). */
+const LOCAL_PART_LABEL_PREFIXES = [
+  'adresseelectronique',
+  'adressee',
+  'direccion',
+  'dirección',
+  'courrier',
+  'courriel',
+  'adresse',
+  'address',
+  'correo',
+  'contact',
+  'email',
+  'e-mail',
+  'mail',
+  'adres',
+].sort((a, b) => b.length - a.length);
+
+const GLUED_LABEL_BEFORE_EMAIL_RE = new RegExp(
+  `(?:${LOCAL_PART_LABEL_PREFIXES.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?=[a-z0-9][a-z0-9._%+-]*@)`,
+  'gi'
+);
+
 function decodeBasicEntities(str) {
   if (!str || typeof str !== 'string') return '';
   return str
@@ -83,6 +106,40 @@ export function getEmailProvider(email, storeOriginHost = '') {
   return 'other';
 }
 
+function isValidLocalPart(local) {
+  return local && local.length >= 1 && local.length <= 64 && /^[a-z0-9._%+-]+$/.test(local);
+}
+
+/** Strip label words accidentally concatenated onto the local part (e.g. adresse + accompagnement). */
+export function stripGluedLabelsFromLocal(local) {
+  if (!local || typeof local !== 'string') return local;
+  let current = local.toLowerCase();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of LOCAL_PART_LABEL_PREFIXES) {
+      if (current.startsWith(prefix) && current.length > prefix.length + 1) {
+        const rest = current.slice(prefix.length);
+        if (/^[a-z0-9]/.test(rest) && isValidLocalPart(rest)) {
+          current = rest;
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+  return current;
+}
+
+function preprocessHtmlForEmails(text) {
+  let out = text;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(GLUED_LABEL_BEFORE_EMAIL_RE, '');
+  } while (out !== prev);
+  return out;
+}
 function isAcceptableDomain(domain) {
   const d = (domain || '').toLowerCase().trim();
   if (!d || !d.includes('.')) return false;
@@ -99,9 +156,10 @@ function normalizeMatch(raw) {
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(s)) return null;
   const at = s.indexOf('@');
   if (at <= 0 || at >= s.length - 1) return null;
-  const local = s.slice(0, at);
+  let local = s.slice(0, at);
   const domain = s.slice(at + 1);
-  if (!/^[a-z0-9._%+-]+$/.test(local)) return null;
+  local = stripGluedLabelsFromLocal(local);
+  if (!isValidLocalPart(local)) return null;
   return `${local}@${domain}`;
 }
 
@@ -121,7 +179,7 @@ function passesFilters(email, emailFilters = {}) {
 
 function extractFromHtml(html) {
   if (!html || typeof html !== 'string') return [];
-  const text = decodeBasicEntities(html);
+  const text = preprocessHtmlForEmails(decodeBasicEntities(html));
   const matches = text.match(EMAIL_REGEX) || [];
   const seen = new Set();
   const out = [];
