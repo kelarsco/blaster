@@ -1,5 +1,5 @@
 /**
- * Scan processor: batch crawl stores and extract emails via regex.
+ * Scan processor: worker-pool crawl + per-store email extraction and progress.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
@@ -9,12 +9,11 @@ import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
-  Number(process.env.SCAN_CONCURRENCY) || 4,
-  10
+  Number(process.env.SCAN_CONCURRENCY) || 6,
+  20
 );
-const DELAY_BETWEEN_STORES_MS = Number(process.env.SCAN_BATCH_DELAY_MS) || 250;
 const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 0;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 25000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 15000;
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 
@@ -105,6 +104,54 @@ async function insertScanResultsBatch(db, scanId, rows) {
   );
 }
 
+function buildStoreRows(storeUrl, results, contacts, noEmailReason) {
+  const contactFields = {
+    phone: contacts?.phone || null,
+    whatsapp: contacts?.whatsapp || null,
+    instagram: contacts?.instagram || null,
+    tiktok: contacts?.tiktok || null,
+  };
+
+  if (results.length > 0) {
+    return results.map((r) => ({
+      store_url: r.storeUrl,
+      email: r.email,
+      source_page: r.sourcePage || '',
+      has_email: 1,
+      ...contactFields,
+    }));
+  }
+
+  return [
+    {
+      store_url: storeUrl,
+      email: null,
+      source_page: noEmailReason || 'No Email Found',
+      has_email: 0,
+      ...contactFields,
+    },
+  ];
+}
+
+async function runWorkerPool(urls, concurrency, workerFn) {
+  let nextIndex = 0;
+
+  async function worker(workerId) {
+    if (STORE_STAGGER_MS > 0 && workerId > 0) {
+      await sleep(workerId * STORE_STAGGER_MS);
+    }
+    while (true) {
+      const idx = nextIndex;
+      nextIndex += 1;
+      if (idx >= urls.length) break;
+      await workerFn(urls[idx], idx);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, urls.length);
+  await Promise.all(Array.from({ length: workerCount }, (_, i) => worker(i)));
+}
+
 export async function processScan(payload) {
   registerUserWorkload('scan');
   try {
@@ -154,7 +201,7 @@ async function processScanWork(payload) {
     return;
   }
 
-  const memoryResults = db ? [] : (memoryStore.results.get(scanId) || []);
+  const memoryResults = db ? [] : memoryStore.results.get(scanId) || [];
   memoryStore.results.set(scanId, memoryResults);
 
   upsertMemoryScan(scanId, { status: 'running', total_urls: totalUrlCount, processed, found_count: foundCount });
@@ -220,83 +267,51 @@ async function processScanWork(payload) {
       ? maxConcurrentCrawlers
       : DEFAULT_CONCURRENCY;
 
-  for (let i = 0; i < urls.length; i += concurrency) {
-    if (i > 0) await sleep(DELAY_BETWEEN_STORES_MS);
-    const batch = urls.slice(i, i + concurrency);
-    if (process.env.SCAN_DEBUG === '1') {
-      console.log(
-        `[scanProcessor] ${scanId} batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(urls.length / concurrency)} (${batch.length} stores)`
-      );
-    }
-    const settled = await Promise.allSettled(
-      batch.map((storeUrl, batchIdx) =>
-        STORE_STAGGER_MS > 0
-          ? sleep(batchIdx * STORE_STAGGER_MS).then(() => processOneWithTimeout(storeUrl))
-          : processOneWithTimeout(storeUrl)
-      )
-    );
-    const outcomes = settled.map((s, idx) => {
-      if (s.status === 'fulfilled') return s.value;
-      console.error('[scanProcessor] store failed:', batch[idx], s.reason?.message || s.reason);
-      return {
-        storeUrl: batch[idx],
+  if (process.env.SCAN_DEBUG === '1') {
+    console.log(`[scanProcessor] ${scanId} starting pool (${urls.length} stores, concurrency ${concurrency})`);
+  }
+
+  await runWorkerPool(urls, concurrency, async (storeUrl) => {
+    let outcome;
+    try {
+      outcome = await processOneWithTimeout(storeUrl);
+    } catch (err) {
+      console.error('[scanProcessor] store failed:', storeUrl, err?.message || err);
+      outcome = {
+        storeUrl,
         results: [],
-        contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl: batch[idx] },
+        contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
+        noEmailReason: 'No Email Found',
       };
-    });
-
-    const dbRows = [];
-
-    for (const { storeUrl, results, contacts, noEmailReason } of outcomes) {
-      try {
-        const hasData = storeHasExtractedData(results, contacts, extractOptions);
-        if (hasData) foundCount += 1;
-
-        const contactFields = {
-          phone: contacts?.phone || null,
-          whatsapp: contacts?.whatsapp || null,
-          instagram: contacts?.instagram || null,
-          tiktok: contacts?.tiktok || null,
-        };
-
-        if (results.length > 0) {
-          for (const r of results) {
-            const row = {
-              store_url: r.storeUrl,
-              email: r.email,
-              source_page: r.sourcePage || '',
-              has_email: 1,
-              ...contactFields,
-            };
-            if (db) dbRows.push(row);
-            else memoryResults.push(row);
-          }
-        } else {
-          const noEmailRow = {
-            store_url: storeUrl,
-            email: null,
-            source_page: noEmailReason || 'No Email Found',
-            has_email: 0,
-            ...contactFields,
-          };
-          if (db) dbRows.push(noEmailRow);
-          else memoryResults.push(noEmailRow);
-        }
-        if (!db) memoryStore.results.set(scanId, memoryResults);
-      } catch (dbErr) {
-        console.error('[scanProcessor] result assembly error:', storeUrl, dbErr?.message || dbErr);
-      }
-      processed++;
     }
 
-    if (db && dbRows.length) {
-      try {
-        await insertScanResultsBatch(db, scanId, dbRows);
-      } catch (dbInsertErr) {
-        console.warn('[scanProcessor] batch insert failed, buffering rows:', dbInsertErr?.message || dbInsertErr);
+    try {
+      const { results, contacts, noEmailReason } = outcome;
+      const hasData = storeHasExtractedData(results, contacts, extractOptions);
+      if (hasData) foundCount += 1;
+
+      const dbRows = buildStoreRows(storeUrl, results, contacts, noEmailReason);
+
+      if (db) {
+        try {
+          await insertScanResultsBatch(db, scanId, dbRows);
+        } catch (dbInsertErr) {
+          console.warn('[scanProcessor] store insert failed, buffering rows:', dbInsertErr?.message || dbInsertErr);
+          memoryResults.push(...dbRows);
+          memoryStore.results.set(scanId, memoryResults);
+        }
+      } else {
         memoryResults.push(...dbRows);
         memoryStore.results.set(scanId, memoryResults);
       }
+    } catch (dbErr) {
+      console.error('[scanProcessor] result assembly error:', storeUrl, dbErr?.message || dbErr);
+    }
+
+    processed += 1;
+
+    if (process.env.SCAN_DEBUG === '1' && (processed <= 3 || processed % 25 === 0 || processed === urls.length)) {
+      console.log(`[scanProcessor] ${scanId} progress ${processed}/${urls.length} (found ${foundCount})`);
     }
 
     try {
@@ -311,7 +326,7 @@ async function processScanWork(payload) {
     } catch (dbErr) {
       console.error('[scanProcessor] progress update error:', dbErr?.message || dbErr);
     }
-  }
+  });
 
   upsertMemoryScan(scanId, { status: 'completed', processed, found_count: foundCount });
   if (db) {

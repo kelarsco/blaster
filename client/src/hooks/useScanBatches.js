@@ -29,7 +29,8 @@ async function refreshBatchFromApi(authFetch, batch) {
     foundCount: mapped.foundCount,
   };
 
-  if (isDone) {
+  const isActive = ACTIVE_STATUSES.has(mapped.status);
+  if (isDone || (isActive && mapped.processed > 0)) {
     try {
       const resultsRes = await authFetch(`${API}/scan/results/${batch.scanId}`);
       if (resultsRes.ok) {
