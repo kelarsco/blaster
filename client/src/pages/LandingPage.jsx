@@ -460,21 +460,21 @@ export function LandingPage() {
 
             <form onSubmit={handleHeroSubmit} className="mt-8 sm:mt-10 aos-fade-up flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-0 max-w-xl mx-auto">
               <label className="sr-only" htmlFor="hero-email">
-                Email
+                Enter your email
               </label>
               <input
                 id="hero-email"
                 type="email"
                 value={heroEmail}
                 onChange={(e) => setHeroEmail(e.target.value)}
-                placeholder="Put Your Email Here"
+                placeholder="Enter your email"
                 className="w-full sm:flex-1 h-14 sm:h-[55px] px-6 bg-white border border-black rounded-full sm:rounded-l-full sm:rounded-r-none text-base text-black/70 placeholder:text-black/50 font-rubik tracking-wider focus:outline-none focus:ring-2 focus:ring-blaster-accent/40"
               />
               <button
                 type="submit"
                 className="mt-3 sm:mt-0 shrink-0 h-[60px] px-8 rounded-full bg-black border border-blaster-orange text-[#faf8f5] font-rubik font-medium text-lg sm:text-xl tracking-wide shadow-blaster-cta hover:opacity-90 transition sm:-ml-4"
               >
-                Try for $1
+                View dashboard
               </button>
             </form>
           </div>
