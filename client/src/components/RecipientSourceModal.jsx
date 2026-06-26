@@ -1,30 +1,10 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Upload, Search } from 'react-feather';
 import { useNavigate } from 'react-router-dom';
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { parseRecipientCsv } from '../utils/parseRecipientCsv.js';
 
 const TILE_BASE =
   'group relative flex flex-col items-center justify-center aspect-square w-[148px] sm:w-[156px] rounded-2xl border bg-white shadow-sm hover:shadow-md hover:border-blaster-accent/35 hover:-translate-y-0.5 transition-all duration-300 p-4';
-
-function parseCsv(text) {
-  const rows = [];
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) return [];
-  const header = lines[0].split(',').map((c) => c.trim().toLowerCase().replace(/\s+/g, '_'));
-  const emailIdx = header.findIndex((h) => h === 'email' || h === 'e-mail');
-  const urlIdx = header.findIndex((h) => h === 'store_url' || h === 'storeurl' || h === 'url');
-  const useFirstAsEmail = emailIdx === -1;
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(',').map((c) => c.trim().replace(/^["']|["']$/g, ''));
-    const email = useFirstAsEmail ? (cells[0] || '').trim() : (cells[emailIdx] || '').trim();
-    const storeUrl = urlIdx >= 0 && cells[urlIdx] ? cells[urlIdx].trim() : '';
-    if (email && EMAIL_REGEX.test(email)) {
-      rows.push({ email, storeUrl: storeUrl || email });
-    }
-  }
-  return rows;
-}
 
 function SavedListTile({ list, onClick }) {
   const count = list.recipients?.length ?? 0;
@@ -102,9 +82,11 @@ export function RecipientSourceModal({
       reader.onload = () => {
         try {
           const text = reader.result || '';
-          const rows = parseCsv(text);
+          const rows = parseRecipientCsv(text);
           if (rows.length === 0) {
-            setCsvError('No valid email addresses found. Use an "email" column or put emails in the first column.');
+            setCsvError(
+              'No valid email addresses found. Use columns for store URL and email (link first, email second), or an "email" column header.'
+            );
             return;
           }
           onCsvReady?.(rows);
