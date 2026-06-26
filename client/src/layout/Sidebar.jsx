@@ -148,6 +148,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
 
   const trialEndsAt = planStatus?.trialEndsAt;
   const trialActive = planStatus?.trialActive;
+  const signupTrialActive = planStatus?.signupTrialActive;
 
   useEffect(() => {
     if (!trialEndsAt || !trialActive) {
@@ -212,9 +213,12 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
   const showRenewalCountdown = hasPaidPlan && daysUntilRenewal !== null && daysUntilRenewal <= RENEWAL_WARNING_DAYS && daysUntilRenewal >= 0;
   const renewalDueDate = periodEnd ? formatUTCDateOnly(periodEnd) : null;
 
-  const freePlanTitle = trialActive ? 'Free trial' : 'Free';
-  const showTrialCountdown = trialActive && trialEndsAt && trialRemainingMs > 0;
+  const freePlanTitle = trialActive && !signupTrialActive ? 'Free trial' : 'Free';
+  const showTrialCountdown = trialActive && !signupTrialActive && trialEndsAt && trialRemainingMs > 0;
   const freePlanSubtitle = (() => {
+    if (signupTrialActive) {
+      return '';
+    }
     if (planStatus?.trialExpired) {
       return 'Trial ended · upgrade to continue';
     }
@@ -374,9 +378,10 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
                 size="sidebar"
                 className="mb-2 block"
               />
-            ) : (
+            ) : freePlanSubtitle ? (
               <p className="text-xs text-blaster-muted mb-2">{freePlanSubtitle}</p>
-            )}
+            ) : null}
+            {!signupTrialActive ? (
             <NavLink
               to="/app/account/pricing"
               onClick={onMobileClose}
@@ -384,6 +389,7 @@ export function Sidebar({ loading, mobileOpen = false, onMobileClose }) {
             >
               Upgrade
             </NavLink>
+            ) : null}
           </div>
         )}
       </div>

@@ -145,12 +145,9 @@ export function StoresPage() {
   }, [appliedFilters, currentPage, itemsPerPage, fetchStoresPage, user?.id]);
 
   useEffect(() => {
-    if (planLoading || trialExpired) {
-      if (trialExpired) setLoading(false);
-      return;
-    }
+    if (planLoading) return;
     loadStores();
-  }, [loadStores, planLoading, trialExpired]);
+  }, [loadStores, planLoading]);
 
   useEffect(() => {
     if (!loading) return undefined;
@@ -205,7 +202,10 @@ export function StoresPage() {
   };
 
   const handleClearFilters = () => {
-    if (filtersBlocked) return;
+    if (filtersBlocked) {
+      promptFilterUpgrade();
+      return;
+    }
     const cleared = emptyFilters();
     setFilters(cleared);
     setAppliedFilters(cleared);
@@ -290,7 +290,7 @@ export function StoresPage() {
         onExportCsv={handleExportClick}
         copying={copying}
         exporting={exporting}
-        canExport={totalCount > 0 && !exportCopyBlocked}
+        canExport={totalCount > 0}
         hasStores={totalCount > 0}
       />
 
@@ -313,7 +313,12 @@ export function StoresPage() {
         <>
           <div className={viewMode === 'grid' ? 'stores-grid' : 'stores-list'}>
             {stores.map((store) => (
-              <StoreCard key={store.id} store={store} viewMode={viewMode} />
+              <StoreCard
+                key={store.id}
+                store={store}
+                viewMode={viewMode}
+                onCopyBlocked={exportCopyBlocked ? promptFilterUpgrade : undefined}
+              />
             ))}
           </div>
           <StoresPagination

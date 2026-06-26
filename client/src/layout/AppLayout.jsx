@@ -109,7 +109,7 @@ export function AppLayout() {
     };
   }, []);
 
-  const showTrialBanner = status?.trialActive && !status?.trialExpired;
+  const showTrialBanner = status?.trialActive && !status?.trialExpired && !status?.signupTrialActive;
   const trialBannerDocked = showTrialBanner && !trialBannerHidden;
 
   return (

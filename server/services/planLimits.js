@@ -1,10 +1,11 @@
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
+import { getSignupTrialState } from './signupTrial.js';
 
 /** Default sender limit when user has no subscription. */
 const DEFAULT_SENDER_LIMIT = 999999;
 const DEFAULT_DOMAIN_LIMIT = 5;
-/** No automatic signup trial — access requires trial_7day or paid plan. */
+/** No automatic signup trial — access requires trial_7day, paid plan, or signup welcome period. */
 const FREE_TRIAL_EMAILS_LIMIT = 0;
 const FREE_TRIAL_SCANS_LIMIT = 0;
 
@@ -104,10 +105,20 @@ export async function getPlanLimitsForUser(userId) {
   defaults.sendersUsed = 0;
 
   if (!row) {
+    const signupTrial = await getSignupTrialState(db, userId);
     defaults.isTrial = false;
     defaults.trialEndsAt = null;
-    defaults.emailsLimit = 0;
-    defaults.scansLimit = 0;
+    if (signupTrial.active) {
+      defaults.planId = 'signup_trial';
+      defaults.emailsLimit = UNLIMITED_NUM;
+      defaults.scansLimit = UNLIMITED_NUM;
+      defaults.campaignsLimit = UNLIMITED_NUM;
+      defaults.signupTrialActive = true;
+      defaults.signupTrialEndsAt = signupTrial.endsAt;
+    } else {
+      defaults.emailsLimit = 0;
+      defaults.scansLimit = 0;
+    }
   } else if (planId === 'trial_7day' || planId === 'trial_3day') {
     const trial = await getFreeTrialState(db, userId);
     defaults.isTrial = trial.active;
@@ -149,7 +160,7 @@ export async function getPlanLimitsForUser(userId) {
   defaults.extraCreditPaidCents = paidCents;
   defaults.extraCreditNextThreshold = extraNextThreshold;
   defaults.extraCreditBlocked = extraOwed >= extraNextThreshold;
-  defaults.isFreePlan = !row;
+  defaults.isFreePlan = !row && !defaults.signupTrialActive;
 
   return defaults;
 }

@@ -159,7 +159,7 @@ export function BillingOverviewPage() {
             {planStatus?.tierName && !showInitialLoading && (
               <p className="text-sm text-blaster-muted mb-3">
                 Access tier: <span className="text-blaster-fg font-medium">{planStatus.tierName}</span>
-                {planStatus.trialActive && planStatus.trialHoursRemaining > 0 && (
+                {planStatus.trialActive && !planStatus.signupTrialActive && planStatus.trialHoursRemaining > 0 && (
                   <span>
                     {' '}
                     · Trial ends in {Math.floor(planStatus.trialHoursRemaining)}h

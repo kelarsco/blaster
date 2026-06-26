@@ -4,6 +4,7 @@
  */
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
+import { getSignupTrialState, SIGNUP_TRIAL_HOURS } from './signupTrial.js';
 
 export const TRIAL_PLAN_ID = 'trial_7day';
 export const LEGACY_TRIAL_PLAN_IDS = ['trial_3day', 'trial_weekly'];
@@ -14,6 +15,7 @@ export const TIER_GROWTH = 2;
 export const TIER_PRO = 3;
 
 export const TRIAL_DAYS = 7;
+export const SIGNUP_TRIAL_HOURS_DEFAULT = SIGNUP_TRIAL_HOURS;
 export const BASIC_FILTER_LIMIT = 1000;
 export const GROWTH_FILTER_LIMIT = 3000;
 export const UNLIMITED_FILTER_LIMIT = 999999;
@@ -184,9 +186,20 @@ export async function getPlanStatusForUser(userId) {
 
   const sub = await getActiveSubscription(db, userId);
   const planId = sub?.plan_id || null;
-  const tier = planId ? planIdToTier(planId) : null;
-  const hasAccess = tier != null;
+  let tier = planId ? planIdToTier(planId) : null;
+  let hasAccess = tier != null;
+
+  const signupTrial = !sub ? await getSignupTrialState(db, userId) : { active: false, endsAt: null, hoursRemaining: 0 };
+  if (!hasAccess && signupTrial.active) {
+    hasAccess = true;
+    tier = TIER_TRIAL;
+  }
+
   const trialExpired = !hasAccess;
+  const isPaidTrial =
+    Boolean(sub) &&
+    tier === TIER_TRIAL &&
+    (planId === TRIAL_PLAN_ID || LEGACY_TRIAL_PLAN_IDS.includes(planId));
   const access = buildAccessFlags(tier, hasAccess);
 
   const period = sub
@@ -226,22 +239,29 @@ export async function getPlanStatusForUser(userId) {
   );
   const scansUsed = parseInt(scansRes.rows?.[0]?.total ?? '0', 10);
 
-  const trialEndsAt = tier === TIER_TRIAL && sub?.current_period_end
+  const trialEndsAt = isPaidTrial && sub?.current_period_end
     ? new Date(sub.current_period_end).toISOString()
     : null;
   const msRemaining = trialEndsAt ? new Date(trialEndsAt).getTime() - Date.now() : 0;
   const trialHoursRemaining = trialEndsAt ? Math.max(0, msRemaining / (60 * 60 * 1000)) : 0;
 
+  const signupTrialEndsAt = signupTrial.active && signupTrial.endsAt
+    ? signupTrial.endsAt.toISOString()
+    : null;
+
   return {
     tier,
     tierName: tier != null ? (TIER_NAMES[tier] || 'Plan') : 'No active plan',
-    planId,
-    planName: sub?.plan_name || 'No active plan',
+    planId: planId || (signupTrial.active ? 'signup_trial' : null),
+    planName: sub?.plan_name || (signupTrial.active ? 'Welcome access' : 'No active plan'),
     planAmountCents: sub?.amount || 0,
-    trialActive: tier === TIER_TRIAL,
+    trialActive: isPaidTrial,
+    signupTrialActive: signupTrial.active,
+    signupTrialEndsAt,
+    signupTrialHoursRemaining: signupTrial.hoursRemaining,
     trialExpired,
     trialEndsAt,
-    trialHoursRemaining: tier === TIER_TRIAL ? trialHoursRemaining : 0,
+    trialHoursRemaining: isPaidTrial ? trialHoursRemaining : 0,
     periodStart: period.start.toISOString(),
     periodEnd: period.end.toISOString(),
     access: { ...access, filtersBlocked, exportCopyBlocked },

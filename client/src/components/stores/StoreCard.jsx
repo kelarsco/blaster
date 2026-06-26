@@ -8,7 +8,7 @@ function copyToClipboard(text) {
   navigator.clipboard.writeText(text).catch(() => {});
 }
 
-export function StoreCard({ store, viewMode }) {
+export function StoreCard({ store, viewMode, onCopyBlocked }) {
   const displayName = storeDisplayName(store.storeUrl);
   const countryCode = store.countryCode && store.countryCode !== 'XX' ? store.countryCode : '—';
   const currency = store.currency || 'USD';
@@ -17,6 +17,14 @@ export function StoreCard({ store, viewMode }) {
 
   const visitStore = () => {
     if (store.storeUrl) window.open(store.storeUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopy = () => {
+    if (onCopyBlocked) {
+      onCopyBlocked();
+      return;
+    }
+    copyToClipboard(store.storeUrl);
   };
 
   if (viewMode === 'list') {
@@ -60,7 +68,7 @@ export function StoreCard({ store, viewMode }) {
           </a>
         </div>
         <div className="flex gap-1 shrink-0">
-          <button type="button" className="stores-icon-btn" onClick={() => copyToClipboard(store.storeUrl)} aria-label="Copy">
+          <button type="button" className="stores-icon-btn" onClick={handleCopy} aria-label="Copy">
             <Copy className="w-3.5 h-3.5" strokeWidth={2} />
           </button>
           <button type="button" className="stores-icon-btn" onClick={visitStore} aria-label="Open">
