@@ -1,7 +1,7 @@
 /**
  * Caps total in-flight store HTTP requests so worker pools cannot exhaust sockets.
  */
-const MAX_IN_FLIGHT = Math.max(Number(process.env.CRAWL_MAX_IN_FLIGHT) || 10, 1);
+const MAX_IN_FLIGHT = Math.max(Number(process.env.CRAWL_MAX_IN_FLIGHT) || 3, 1);
 
 let inFlight = 0;
 const waitQueue = [];

@@ -159,7 +159,7 @@ export function useScanBatches(authFetch, userId) {
     poll();
     const interval = setInterval(() => {
       if (!cancelled) poll();
-    }, 3000);
+    }, 1500);
 
     return () => {
       cancelled = true;

@@ -1,5 +1,5 @@
 /**
- * Scan processor: worker-pool crawl + per-store progress updates.
+ * Scan processor: one store at a time by default, with retry on failed crawls.
  */
 import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
@@ -9,13 +9,25 @@ import { getDb, memoryStore } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
-  Number(process.env.SCAN_CONCURRENCY) || 4,
-  12
+  Number(process.env.SCAN_CONCURRENCY) || 1,
+  3
 );
+const STORE_GAP_MS = Math.max(Number(process.env.SCAN_STORE_GAP_MS) || 400, 0);
 const STORE_STAGGER_MS = Number(process.env.SCAN_STORE_STAGGER_MS) || 0;
-const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 25000;
+const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 30000;
+const STORE_RETRY_ATTEMPTS = Math.max(Number(process.env.SCAN_STORE_RETRY_ATTEMPTS) || 2, 1);
+const RETRY_GAP_MS = Math.max(Number(process.env.SCAN_RETRY_GAP_MS) || 1500, 0);
+const ABORT_SETTLE_MS = Math.max(Number(process.env.SCAN_ABORT_SETTLE_MS) || 1500, 0);
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
+
+const EMPTY_CONTACTS = (storeUrl) => ({
+  phone: null,
+  whatsapp: null,
+  instagram: null,
+  tiktok: null,
+  storeUrl,
+});
 
 function parseUrls(text) {
   const raw = (text || '').replace(/,/g, '\n').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -133,9 +145,6 @@ function buildStoreRows(storeUrl, results, contacts, noEmailReason) {
   ];
 }
 
-/**
- * Keep N stores in flight; start the next URL as soon as one finishes.
- */
 async function runStoreWorkerPool(urls, concurrency, workerFn) {
   let nextIndex = 0;
   const workerCount = Math.min(concurrency, urls.length);
@@ -149,6 +158,9 @@ async function runStoreWorkerPool(urls, concurrency, workerFn) {
       if (index >= urls.length) break;
       nextIndex += 1;
       await workerFn(urls[index], index);
+      if (STORE_GAP_MS > 0 && nextIndex < urls.length) {
+        await sleep(STORE_GAP_MS);
+      }
     }
   }
 
@@ -242,91 +254,131 @@ async function processScanWork(payload) {
     }
   }
 
-  function processOneWithTimeout(storeUrl) {
+  async function crawlAndExtract(storeUrl, signal) {
+    const { pages, privacyPageFound } = await crawlStore(storeUrl, { signal });
+    if (signal.aborted) {
+      return {
+        storeUrl,
+        results: [],
+        contacts: EMPTY_CONTACTS(storeUrl),
+        noEmailReason: 'Request timed out',
+        pagesFetched: pages.length,
+      };
+    }
+
+    const results = extractOptions.email
+      ? extractEmailsFromPages(storeUrl, pages, {
+          onePerStore: false,
+          privacyPageFound,
+          emailFilters,
+        })
+      : [];
+
+    const contacts = extractContactsFromPages(storeUrl, pages, extractOptions);
+    const noEmailReason = privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
+
+    return { storeUrl, results, contacts, noEmailReason, pagesFetched: pages.length };
+  }
+
+  async function processOneAttempt(storeUrl, timeoutMs) {
     const ac = new AbortController();
     let timer;
+    let outcome = null;
+    let timedOut = false;
 
-    const workPromise = (async () => {
-      try {
-        const { pages, privacyPageFound } = await crawlStore(storeUrl, { signal: ac.signal });
-        if (ac.signal.aborted) {
-          return {
-            storeUrl,
-            results: [],
-            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
-            noEmailReason: 'Request timed out',
-          };
-        }
-
-        const results = extractOptions.email
-          ? extractEmailsFromPages(storeUrl, pages, {
-              onePerStore: false,
-              privacyPageFound,
-              emailFilters,
-            })
-          : [];
-
-        const contacts = extractContactsFromPages(storeUrl, pages, extractOptions);
-
-        const noEmailReason = privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
-        return { storeUrl, results, contacts, noEmailReason };
-      } catch (err) {
+    const workPromise = crawlAndExtract(storeUrl, ac.signal)
+      .then((result) => {
+        outcome = result;
+        return result;
+      })
+      .catch((err) => {
         console.error('[scanProcessor] store error:', storeUrl, err?.message || err);
-        return {
+        outcome = {
           storeUrl,
           results: [],
-          contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
+          contacts: EMPTY_CONTACTS(storeUrl),
           noEmailReason: 'No Email Found',
+          pagesFetched: 0,
         };
-      }
-    })();
-
-    const timeoutPromise = new Promise((resolve) => {
-      timer = setTimeout(() => {
-        ac.abort();
-        resolve({ timedOut: true });
-      }, PER_STORE_TIMEOUT_MS);
-      timer.unref?.();
-    });
-
-    return Promise.race([workPromise, timeoutPromise])
-      .then((outcome) => {
-        if (outcome?.timedOut) {
-          return {
-            storeUrl,
-            results: [],
-            contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
-            noEmailReason: 'Request timed out',
-          };
-        }
         return outcome;
-      })
-      .finally(() => clearTimeout(timer));
+      });
+
+    await new Promise((resolve) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        ac.abort();
+        resolve();
+      }, timeoutMs);
+      timer.unref?.();
+      workPromise.finally(resolve);
+    });
+    clearTimeout(timer);
+
+    if (timedOut && !outcome) {
+      await Promise.race([workPromise.catch(() => {}), sleep(ABORT_SETTLE_MS)]);
+      return {
+        storeUrl,
+        results: [],
+        contacts: EMPTY_CONTACTS(storeUrl),
+        noEmailReason: 'Request timed out',
+        pagesFetched: 0,
+      };
+    }
+
+    if (timedOut && outcome) {
+      return outcome;
+    }
+
+    return (
+      outcome ?? {
+        storeUrl,
+        results: [],
+        contacts: EMPTY_CONTACTS(storeUrl),
+        noEmailReason: 'No Email Found',
+        pagesFetched: 0,
+      }
+    );
+  }
+
+  function shouldRetryStore(outcome) {
+    if (outcome.results.length > 0) return false;
+    if (outcome.noEmailReason === 'Request timed out') return true;
+    if ((outcome.pagesFetched ?? 0) === 0 && outcome.noEmailReason !== 'No Email Found') return true;
+    return false;
+  }
+
+  async function processStore(storeUrl) {
+    let lastOutcome = null;
+    for (let attempt = 1; attempt <= STORE_RETRY_ATTEMPTS; attempt += 1) {
+      const timeoutMs =
+        attempt === 1 ? PER_STORE_TIMEOUT_MS : Math.round(PER_STORE_TIMEOUT_MS * 1.25);
+      lastOutcome = await processOneAttempt(storeUrl, timeoutMs);
+
+      if (!shouldRetryStore(lastOutcome) || attempt === STORE_RETRY_ATTEMPTS) {
+        return lastOutcome;
+      }
+
+      if (process.env.SCAN_DEBUG === '1') {
+        console.log(`[scanProcessor] retry ${storeUrl} (${attempt + 1}/${STORE_RETRY_ATTEMPTS})`);
+      }
+      if (RETRY_GAP_MS > 0) await sleep(RETRY_GAP_MS);
+    }
+    return lastOutcome;
   }
 
   const concurrency =
-    typeof maxConcurrentCrawlers === 'number' && maxConcurrentCrawlers >= 1 && maxConcurrentCrawlers <= 20
+    typeof maxConcurrentCrawlers === 'number' && maxConcurrentCrawlers >= 1 && maxConcurrentCrawlers <= 3
       ? maxConcurrentCrawlers
       : DEFAULT_CONCURRENCY;
 
   if (process.env.SCAN_DEBUG === '1') {
-    console.log(`[scanProcessor] ${scanId} starting worker pool (${urls.length} stores, concurrency ${concurrency})`);
+    console.log(
+      `[scanProcessor] ${scanId} starting (${urls.length} stores, concurrency ${concurrency}, gap ${STORE_GAP_MS}ms)`
+    );
   }
 
   await runStoreWorkerPool(urls, concurrency, async (storeUrl, index) => {
-    let outcome;
-    try {
-      outcome = await processOneWithTimeout(storeUrl);
-    } catch (err) {
-      console.error('[scanProcessor] store failed:', storeUrl, err?.message || err);
-      outcome = {
-        storeUrl,
-        results: [],
-        contacts: { phone: null, whatsapp: null, instagram: null, tiktok: null, storeUrl },
-        noEmailReason: 'No Email Found',
-      };
-    }
-
+    const outcome = await processStore(storeUrl);
     const { results, contacts, noEmailReason } = outcome;
     const dbRows = buildStoreRows(storeUrl, results, contacts, noEmailReason);
     const hasData = storeHasExtractedData(results, contacts, extractOptions);
@@ -360,7 +412,7 @@ async function processScanWork(payload) {
 
     if (process.env.SCAN_DEBUG === '1') {
       console.log(
-        `[scanProcessor] ${scanId} store ${index + 1}/${urls.length} done — ${results.length} email(s), processed=${processed}`
+        `[scanProcessor] ${scanId} store ${index + 1}/${urls.length} — ${results.length} email(s), pages=${outcome.pagesFetched ?? 0}, reason=${noEmailReason}`
       );
     }
   });

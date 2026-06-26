@@ -26,8 +26,8 @@ export async function resumePendingScansOnStartup() {
   }
 
   const startupConcurrency = Math.min(
-    Math.max(Number(process.env.SCAN_STARTUP_CONCURRENCY) || 2, 1),
-    8
+    Math.max(Number(process.env.SCAN_STARTUP_CONCURRENCY) || 1, 1),
+    3
   );
   const staggerMs = Math.max(Number(process.env.SCAN_RESUME_STAGGER_MS) || 750, 0);
 

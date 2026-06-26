@@ -16,8 +16,8 @@ const PARALLEL_PAGES =
 const URL_TOKEN_REGEX =
   /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;
 
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 32, maxFreeSockets: 8 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 32, maxFreeSockets: 8 });
+const httpAgent = new http.Agent({ keepAlive: false, maxSockets: 4 });
+const httpsAgent = new https.Agent({ keepAlive: false, maxSockets: 4 });
 
 const EMPTY_RESPONSE = { ok: false, statusCode: 0, html: null };
 
@@ -69,7 +69,7 @@ export function fetchHtml(url, options = {}) {
             headers: {
               'User-Agent': USER_AGENT,
               Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              Connection: 'keep-alive',
+              Connection: 'close',
             },
             rejectUnauthorized: false,
           };
