@@ -38,6 +38,14 @@ export function LoginPage() {
       setError('');
       return;
     }
+    if (err === 'session_ended') {
+      setError(
+        msg
+          ? decodeURIComponent(msg)
+          : 'Your session ended. Each account can stay signed in on 2 devices at most — sign in again to continue.'
+      );
+      return;
+    }
     if (msg && (err === 'wrong_method' || err === 'NO_DB' || err === 'NO_EMAIL' || err === 'google_failed')) {
       setError(toFriendlyErrorMessage(decodeURIComponent(msg), FRIENDLY_ERRORS.google));
       return;

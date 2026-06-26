@@ -38,6 +38,9 @@ export function AuthProvider({ children }) {
       if (res.status === 403 && data.code === 'SUSPENDED') {
         return { ok: false, suspended: true, data };
       }
+      if (res.status === 401 && data.code === 'SESSION_ENDED') {
+        return { ok: false, sessionEnded: true, data };
+      }
       if (!res.ok || !data.accessToken) return { ok: false };
       return { ok: true, accessToken: data.accessToken, user: data.user };
     } catch (_) {
@@ -54,6 +57,12 @@ export function AuthProvider({ children }) {
 
         const refreshResult = await doRefresh();
         if (refreshResult?.suspended) {
+          persistAccessToken(null);
+          setAccessTokenState(null);
+          setUser(null);
+          return;
+        }
+        if (refreshResult?.sessionEnded) {
           persistAccessToken(null);
           setAccessTokenState(null);
           setUser(null);
@@ -91,6 +100,16 @@ export function AuthProvider({ children }) {
         persistAccessToken(null);
         const msg = encodeURIComponent(refreshResult.data?.error || 'Account suspended.');
         window.location.href = `/login?error=suspended&message=${msg}`;
+        return res;
+      }
+      if (refreshResult?.sessionEnded) {
+        setUser(null);
+        setAccessTokenState(null);
+        persistAccessToken(null);
+        const msg = encodeURIComponent(
+          refreshResult.data?.error || 'Your session ended because this account is active on another device.'
+        );
+        window.location.href = `/login?error=session_ended&message=${msg}`;
         return res;
       }
       if (refreshResult?.ok && refreshResult.accessToken) {

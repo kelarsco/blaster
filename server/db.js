@@ -704,8 +704,23 @@ async function runSchema(p, { skipBase = false } = {}) {
     await migratePricingPlans2026(p);
     await migrateNavNotifications(p);
     await migrateAdminCampaigns(p);
+    await migrateRefreshTokenSessions(p);
   } finally {
     client.release();
+  }
+}
+
+async function migrateRefreshTokenSessions(pool) {
+  try {
+    await pool.query(`
+      ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS device_ip TEXT;
+      ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_agent TEXT;
+      ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW();
+      CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_active ON refresh_tokens(user_id, created_at)
+        WHERE revoked_at IS NULL;
+    `);
+  } catch (e) {
+    console.warn('[migrateRefreshTokenSessions]', e?.message || e);
   }
 }
 

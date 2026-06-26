@@ -24,7 +24,9 @@ import {
   clearRefreshTokenCookie,
   getRefreshCookieName,
   getAccessTTLSeconds,
+  touchRefreshSession,
 } from '../services/tokenAuth.js';
+import { getSessionMeta } from '../services/sessionMeta.js';
 import {
   resolveFrontendUrl,
   resolvePostAuthRedirectBase,
@@ -118,9 +120,10 @@ if (hasGoogleConfig) {
 export const authRoutes = Router();
 
 /** Issue access + refresh tokens and send JSON (for login, verify-email, reset-password). */
-async function issueTokensAndRespond(res, user) {
-  const accessToken = createAccessToken(user);
-  const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
+async function issueTokensAndRespond(res, user, req) {
+  const sessionMeta = getSessionMeta(req);
+  const { token: refreshToken, expiresAt, id: sessionId } = await createRefreshToken(user.id, sessionMeta);
+  const accessToken = createAccessToken(user, sessionId);
   setRefreshTokenCookie(res, refreshToken, expiresAt);
   res.json({
     user: { id: user.id, email: user.email, name: user.name, picture: user.picture || null },
@@ -289,7 +292,7 @@ authRoutes.post('/verify-email', authRateLimit, async (req, res) => {
       [row.id]
     );
     const user = { id: row.id, email: row.email, name: row.name || row.email.split('@')[0] || 'User', picture: null };
-    await issueTokensAndRespond(res, user);
+    await issueTokensAndRespond(res, user, req);
   } catch (e) {
     console.error('[auth verify-email]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Verification failed' });
@@ -330,7 +333,7 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
       if (pr.rows?.[0]?.picture_url) picture = pr.rows[0].picture_url;
     } catch (_) { /* ignore */ }
     const user = { id: row.id, email: row.email, name: row.name || row.email.split('@')[0] || 'User', picture };
-    await issueTokensAndRespond(res, user);
+    await issueTokensAndRespond(res, user, req);
   } catch (e) {
     console.error('[auth login]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Login failed' });
@@ -416,7 +419,7 @@ authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
     await revokeRefreshTokensForUser(row.user_id);
 
     const user = { id: row.user_id, email: row.email, name: row.name || row.email.split('@')[0] || 'User', picture: null };
-    await issueTokensAndRespond(res, user);
+    await issueTokensAndRespond(res, user, req);
   } catch (e) {
     console.error('[auth reset-password]', e?.message || e);
     res.status(500).json({ error: e?.message || 'Reset failed' });
@@ -496,7 +499,13 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
     const token = req.cookies?.[getRefreshCookieName()];
     if (!token) return res.status(200).json({});
     const found = await findRefreshTokenByToken(token);
-    if (!found) return res.status(200).json({});
+    if (!found) {
+      clearRefreshTokenCookie(res);
+      return res.status(401).json({
+        code: 'SESSION_ENDED',
+        error: 'Your session ended. This account is limited to 2 active devices — sign in again.',
+      });
+    }
     const db = getDb();
     if (!db) return res.status(200).json({});
     const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at, suspended_at FROM users WHERE id = $1', [found.user_id]);
@@ -508,7 +517,8 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
       return res.status(403).json({ error: 'This account has been suspended. Contact support to reactivate.', code: 'SUSPENDED' });
     }
     const user = { id: row.id, email: row.email, name: row.name || row.email?.split('@')[0] || 'User', picture: row.picture_url || null, auth_provider: row.auth_provider || 'credentials' };
-    const accessToken = createAccessToken(user);
+    await touchRefreshSession(found.id);
+    const accessToken = createAccessToken(user, found.id);
     res.json({ user: { id: user.id, email: user.email, name: user.name, picture: user.picture, auth_provider: user.auth_provider }, accessToken, expiresIn: getAccessTTLSeconds() });
   } catch (e) {
     console.error('[auth refresh]', e?.message || e);
@@ -583,8 +593,8 @@ authRoutes.get('/google/callback', (req, res, next) => {
           }
         }
       }
-      const userForToken = { id: user.id, email: user.email, name: user.name, picture: user.picture || null };
-      const { token: refreshToken, expiresAt } = await createRefreshToken(user.id);
+      const sessionMeta = getSessionMeta(req);
+      const { token: refreshToken, expiresAt } = await createRefreshToken(user.id, sessionMeta);
       setRefreshTokenCookie(res, refreshToken, expiresAt);
       const base = resolvePostAuthRedirectBase(req);
       res.redirect(302, `${base}/auth/callback`);
