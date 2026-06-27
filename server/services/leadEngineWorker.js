@@ -5,13 +5,13 @@ import {
 } from './leadStoreRepository.js';
 import { runLeadStorePipeline } from './leadStorePipeline.js';
 import { isLeadEngineEnabled } from './leadEngineGate.js';
-import { isUserWorkloadActive } from './resourceCoordinator.js';
+import { shouldBackgroundYield } from './resourceCoordinator.js';
 
 let processing = false;
 let scheduled = false;
 
 async function processOne() {
-  if (isUserWorkloadActive()) {
+  if (shouldBackgroundYield()) {
     setTimeout(processOne, 3000);
     return;
   }

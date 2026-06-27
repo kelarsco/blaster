@@ -5,7 +5,7 @@ import { crawlStore, normalizeStoreUrl } from './crawler.js';
 import { extractEmailsFromPages } from './emailExtractor.js';
 import { extractContactsFromPages, storeHasExtractedData } from './contactExtractor.js';
 import { normalizeExtractOptions } from './scanExtractOptions.js';
-import { getDb, memoryStore } from '../db.js';
+import { getDb, memoryStore, isPoolUnderPressure } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
@@ -20,6 +20,7 @@ const RETRY_GAP_MS = Math.max(Number(process.env.SCAN_RETRY_GAP_MS) || 1500, 0);
 const ABORT_SETTLE_MS = Math.max(Number(process.env.SCAN_ABORT_SETTLE_MS) || 1500, 0);
 const MAX_URLS_PER_SCAN = 500;
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
+const POOL_YIELD_MS = Math.max(Number(process.env.SCAN_POOL_YIELD_MS) || 2000, 0);
 
 const EMPTY_CONTACTS = (storeUrl) => ({
   phone: null,
@@ -160,6 +161,9 @@ async function runStoreWorkerPool(urls, concurrency, workerFn) {
       await workerFn(urls[index], index);
       if (STORE_GAP_MS > 0 && nextIndex < urls.length) {
         await sleep(STORE_GAP_MS);
+      }
+      if (isPoolUnderPressure() && POOL_YIELD_MS > 0 && nextIndex < urls.length) {
+        await sleep(POOL_YIELD_MS);
       }
     }
   }

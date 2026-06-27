@@ -1,6 +1,8 @@
 import { fetchHtml, normalizeStoreUrl } from './crawler.js';
 import { classifyStoreTags } from './storeTagClassifier.js';
 import { detectStoreCountry } from './storeCountryDetector.js';
+import { yieldToUserWorkload } from './resourceCoordinator.js';
+import { withCrawlSlot } from './crawlLimiter.js';
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -14,29 +16,35 @@ const UA_HEADERS = {
 const ACTIVE_SCORE_THRESHOLD = 21;
 
 async function fetchJson(url, timeout = 15000) {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const res = await fetch(url, { headers: UA_HEADERS, signal: controller.signal, redirect: 'follow' });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  await yieldToUserWorkload();
+  return withCrawlSlot(async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      const res = await fetch(url, { headers: UA_HEADERS, signal: controller.signal, redirect: 'follow' });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 async function fetchPageText(url, timeout = 15000) {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const res = await fetch(url, { headers: UA_HEADERS, signal: controller.signal, redirect: 'follow' });
-    clearTimeout(timer);
-    const html = await res.text();
-    return { ok: res.ok, statusCode: res.status, html };
-  } catch {
-    return { ok: false, statusCode: 0, html: '' };
-  }
+  await yieldToUserWorkload();
+  return withCrawlSlot(async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      const res = await fetch(url, { headers: UA_HEADERS, signal: controller.signal, redirect: 'follow' });
+      clearTimeout(timer);
+      const html = await res.text();
+      return { ok: res.ok, statusCode: res.status, html };
+    } catch {
+      return { ok: false, statusCode: 0, html: '' };
+    }
+  });
 }
 
 function originsToTry(origin) {

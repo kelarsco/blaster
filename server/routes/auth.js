@@ -8,7 +8,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import { getDb, getDbUnavailableMessage } from '../db.js';
+import { getAuthDb, getDbUnavailableMessage } from '../db.js';
 import { sendVerificationCode, isVerificationEmailConfigured, getVerificationFromEmail, mapVerificationEmailError } from '../services/verificationEmail.js';
 import { sendDeactivationConfirmation } from '../services/transactionalEmail.js';
 import { sendPasswordResetEmail, isPasswordResetEmailConfigured } from '../services/passwordResetEmail.js';
@@ -70,7 +70,7 @@ if (hasGoogleConfig) {
         callbackURL,
       },
       async (_accessToken, _refreshToken, profile, done) => {
-        const db = getDb();
+        const db = getAuthDb();
         const email = (profile.emails?.[0]?.value || '').trim().toLowerCase() || null;
         const name = profile.displayName || profile.emails?.[0]?.value || 'User';
         const picture = (profile.photos?.[0]?.value || '').trim() || null;
@@ -136,9 +136,9 @@ authRoutes.get('/me', async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Not signed in' });
   let picture = req.user.picture || null;
   let auth_provider = req.user.auth_provider || 'credentials';
-  if (req.user.id && getDb()) {
+  if (req.user.id && getAuthDb()) {
     try {
-      const r = await getDb().query('SELECT picture_url, auth_provider FROM users WHERE id = $1', [req.user.id]);
+      const r = await getAuthDb().query('SELECT picture_url, auth_provider FROM users WHERE id = $1', [req.user.id]);
       const row = r?.rows?.[0];
       if (row) {
         if (row.picture_url) picture = row.picture_url;
@@ -167,7 +167,7 @@ authRoutes.get('/code-config', (_req, res) => {
 /** Sign up with email + password. Creates unverified user and sends OTP. No duplicate signups. */
 authRoutes.post('/register', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) {
       return res.status(503).json({
         error: getDbUnavailableMessage(),
@@ -234,7 +234,7 @@ authRoutes.post('/register', authRateLimit, async (req, res) => {
 /** Resend verification code (e.g. after signup, before verify). */
 authRoutes.post('/resend-verification', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable.' });
     if (!isVerificationEmailConfigured()) return res.status(503).json({ error: 'Email is not configured.' });
     const { email } = req.body || {};
@@ -267,7 +267,7 @@ authRoutes.post('/resend-verification', authRateLimit, async (req, res) => {
 /** Verify email OTP after signup. Activates account and logs user in. One-time use (code cleared). */
 authRoutes.post('/verify-email', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable.' });
     const { email, code } = req.body || {};
     const emailNorm = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -302,7 +302,7 @@ authRoutes.post('/verify-email', authRateLimit, async (req, res) => {
 /** Login with email + password. Only for credentials users; must be verified. */
 authRoutes.post('/login', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: getDbUnavailableMessage() });
     const { email, password } = req.body || {};
     const emailNorm = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -329,7 +329,7 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
 
     let picture = null;
     try {
-      const pr = await getDb().query('SELECT picture_url FROM users WHERE id = $1', [row.id]);
+      const pr = await getAuthDb().query('SELECT picture_url FROM users WHERE id = $1', [row.id]);
       if (pr.rows?.[0]?.picture_url) picture = pr.rows[0].picture_url;
     } catch (_) { /* ignore */ }
     const user = { id: row.id, email: row.email, name: row.name || row.email.split('@')[0] || 'User', picture };
@@ -343,7 +343,7 @@ authRoutes.post('/login', authRateLimit, async (req, res) => {
 /** Forgot password: send reset link (credentials users only). */
 authRoutes.post('/forgot-password', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable.' });
     if (!isPasswordResetEmailConfigured()) {
       return res.status(503).json({ error: 'Password reset is not configured. Contact support.' });
@@ -386,7 +386,7 @@ authRoutes.post('/forgot-password', authRateLimit, async (req, res) => {
 /** Reset password with token from email. */
 authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable.' });
     const { token, password } = req.body || {};
     const tokenStr = typeof token === 'string' ? token.trim() : '';
@@ -429,7 +429,7 @@ authRoutes.post('/reset-password', authRateLimit, async (req, res) => {
 /** Change password (credentials users only). Requires current password. */
 authRoutes.post('/change-password', authRateLimit, requireAuth, async (req, res) => {
   try {
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable.' });
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Not signed in' });
@@ -474,7 +474,7 @@ authRoutes.post('/deactivate', authRateLimit, requireAuth, async (req, res) => {
     if (phrase !== DEACTIVATE_PHRASE) {
       return res.status(400).json({ error: 'Confirmation phrase does not match. Type exactly: ' + DEACTIVATE_PHRASE });
     }
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(503).json({ error: 'Service unavailable' });
     const userId = req.user.id;
     const userRow = await db.query('SELECT email, name FROM users WHERE id = $1', [userId]);
@@ -506,7 +506,7 @@ authRoutes.post('/refresh', authRateLimit, async (req, res) => {
         error: 'Your session ended. This account is limited to 2 active devices — sign in again.',
       });
     }
-    const db = getDb();
+    const db = getAuthDb();
     if (!db) return res.status(200).json({});
     const r = await db.query('SELECT id, email, name, picture_url, auth_provider, deactivated_at, suspended_at FROM users WHERE id = $1', [found.user_id]);
     const row = r?.rows?.[0];
@@ -582,7 +582,7 @@ authRoutes.get('/google/callback', (req, res, next) => {
           await attachReferralOnSignup(user.id, user.email, refCode);
           clearReferralRefCookie(res);
         } else {
-          const db = getDb();
+          const db = getAuthDb();
           if (db) {
             const existingRef = await db.query('SELECT id FROM user_referrals WHERE referred_user_id = $1', [user.id]);
             const userRef = await db.query('SELECT referred_by_user_id FROM users WHERE id = $1', [user.id]);

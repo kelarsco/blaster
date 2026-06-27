@@ -23,30 +23,40 @@ export function AuthProvider({ children }) {
     } catch (_) {}
   }, []);
 
-  /** Refresh access token using refresh token from cookies. */
+  /** Refresh access token using refresh token from cookies. Retries once on slow networks. */
   const doRefresh = useCallback(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const attemptRefresh = async () => {
+      const controller = new AbortController();
+      const timeoutMs = 15000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${API}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403 && data.code === 'SUSPENDED') {
+          return { ok: false, suspended: true, data };
+        }
+        if (res.status === 401 && data.code === 'SESSION_ENDED') {
+          return { ok: false, sessionEnded: true, data };
+        }
+        if (!res.ok || !data.accessToken) return { ok: false };
+        return { ok: true, accessToken: data.accessToken, user: data.user };
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
     try {
-      const res = await fetch(`${API}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 403 && data.code === 'SUSPENDED') {
-        return { ok: false, suspended: true, data };
-      }
-      if (res.status === 401 && data.code === 'SESSION_ENDED') {
-        return { ok: false, sessionEnded: true, data };
-      }
-      if (!res.ok || !data.accessToken) return { ok: false };
-      return { ok: true, accessToken: data.accessToken, user: data.user };
+      const first = await attemptRefresh();
+      if (first.ok || first.suspended || first.sessionEnded) return first;
+      await new Promise((r) => setTimeout(r, 800));
+      return await attemptRefresh();
     } catch (_) {
       return { ok: false };
-    } finally {
-      clearTimeout(timeout);
     }
   }, []);
 

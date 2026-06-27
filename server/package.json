@@ -6,6 +6,9 @@
     "build": "node -e \"process.exit(0)\"",
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "start:api": "node index.js",
+    "start:scan": "node scan-worker.js",
+    "start:lead": "node lead-worker.js",
     "seed:admin": "node seed-admin.js",
     "clear-db": "node scripts/clear-db-except-presets.js"
   },

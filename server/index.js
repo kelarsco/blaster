@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 
+process.env.PROCESS_ROLE = 'api';
+
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason?.message || reason);
 });
@@ -12,8 +14,9 @@ import session from 'express-session';
 import passport from 'passport';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { initDb, getDb, isDbQuotaError, getDbUnavailableMessage } from './db.js';
+import { initDb, getDb, getAuthDb, isDbQuotaError, getDbUnavailableMessage } from './db.js';
 import { scheduleBackgroundStartup } from './services/backgroundStartup.js';
+import { getProcessRole, runsHttpServer } from './config/processRole.js';
 import { scanRoutes } from './routes/scan.js';
 import { exportRoutes } from './routes/export.js';
 import { automationRoutes } from './routes/automation.js';
@@ -107,14 +110,23 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
+  const role = getProcessRole();
+  console.log(`[startup] PROCESS_ROLE=${role}`);
+
+  if (!runsHttpServer()) {
+    console.error(`index.js is the API entrypoint. Use scan-worker.js or lead-worker.js for role=${role}.`);
+    process.exit(1);
+  }
+
   await initDb();
   const pool = getDb();
+  const authPool = getAuthDb();
   let sessionStore = undefined;
-  if (pool) {
+  if (authPool) {
     try {
       const PgSession = require('connect-pg-simple')(session);
-      sessionStore = new PgSession({ pool, tableName: 'session' });
-      console.log('Session store: PostgreSQL (sessions persist across restarts).');
+      sessionStore = new PgSession({ pool: authPool, tableName: 'session' });
+      console.log('Session store: PostgreSQL (auth pool, sessions persist across restarts).');
     } catch (e) {
       console.warn('[session] connect-pg-simple not available, using in-memory:', e?.message || e);
     }
@@ -142,10 +154,31 @@ async function start() {
   );
   app.use(passport.initialize());
   app.use(passport.session());
-  app.use((req, res, next) => resolveAuth(req, res, next).catch(next));
+
+  const AUTH_PATHS_SKIP_JWT = new Set([
+    '/login',
+    '/refresh',
+    '/register',
+    '/verify-email',
+    '/resend-code',
+    '/forgot-password',
+    '/reset-password',
+    '/google',
+    '/google/callback',
+    '/code-config',
+    '/google/setup',
+  ]);
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/auth')) {
+      const sub = req.path.slice('/api/auth'.length) || '/';
+      if (AUTH_PATHS_SKIP_JWT.has(sub)) return next();
+    }
+    resolveAuth(req, res, next).catch(next);
+  });
 
   app.get('/api/health', async (req, res) => {
-    const body = { ok: true, server: 'up' };
+    const body = { ok: true, server: 'up', role: getProcessRole() };
     const db = getDb();
     if (!db) {
       body.db = 'unavailable';

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { memoryStore } from '../db.js';
+import { usesDistributedQueue } from '../config/processRole.js';
 
 const inMemoryJobs = new Map();
 
@@ -10,20 +11,42 @@ function markScanFailed(scanId) {
 
 export async function addScanJob(data) {
   const id = data.scanId || uuidv4();
+
+  if (usesDistributedQueue()) {
+    const { enqueueWorkerJob } = await import('./workerJobs.js');
+    await enqueueWorkerJob('scan', data, { jobId: id });
+    return id;
+  }
+
+  scheduleLocalScan(id, data);
+  return id;
+}
+
+function scheduleLocalScan(id, data) {
   inMemoryJobs.set(id, { type: 'scan', data, status: 'waiting' });
   setImmediate(() => {
     runInMemoryScan(id).catch((err) => {
       console.error('[queue] scan job error:', id, err?.message || err);
     });
   });
-  return id;
 }
 
 export async function addSendJob(data) {
   const id = uuidv4();
+
+  if (usesDistributedQueue()) {
+    const { enqueueWorkerJob } = await import('./workerJobs.js');
+    await enqueueWorkerJob('send', data, { jobId: id });
+    return id;
+  }
+
+  scheduleLocalSend(id, data);
+  return id;
+}
+
+function scheduleLocalSend(id, data) {
   inMemoryJobs.set(id, { type: 'send', data, status: 'waiting' });
   setImmediate(() => runInMemorySend(id));
-  return id;
 }
 
 async function runInMemoryScan(scanId) {

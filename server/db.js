@@ -5,7 +5,47 @@ import pg from 'pg';
 
 const { Pool } = pg;
 let pool = null;
+let authPool = null;
 let dbUnavailableReason = null;
+
+function createPool(connectionString, max) {
+  const p = new Pool({
+    connectionString,
+    ssl: connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
+    max,
+    idleTimeoutMillis: 60000,
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 30000,
+    keepAlive: true,
+  });
+  p.on('error', (err) => {
+    console.error('[pg pool]', err.message);
+  });
+  return p;
+}
+
+export function getDb() {
+  return pool;
+}
+
+/** Reserved pool for login, refresh tokens, and session checks — not shared with scans. */
+export function getAuthDb() {
+  return authPool || pool;
+}
+
+export function getPoolPressure() {
+  return {
+    authWaiting: authPool?.waitingCount ?? 0,
+    workWaiting: pool?.waitingCount ?? 0,
+    authTotal: authPool?.totalCount ?? 0,
+    workTotal: pool?.totalCount ?? 0,
+  };
+}
+
+export function isPoolUnderPressure() {
+  const p = getPoolPressure();
+  const workThreshold = Math.max(Number(process.env.DB_WORK_WAIT_PRESSURE) || 1, 0);
+  return p.authWaiting > 0 || p.workWaiting > workThreshold;
+}
 
 /** In-memory store when DATABASE_URL is not set (scan-only, no persistence). */
 export const memoryStore = {
@@ -26,13 +66,9 @@ export const memoryStore = {
   },
 };
 
-export function getDb() {
-  return pool;
-}
-
 /** User-facing message when auth/signup needs DB but pool is null. */
 export function getDbUnavailableMessage() {
-  if (pool) return null;
+  if (pool || authPool) return null;
   if (dbUnavailableReason && isDbQuotaError({ message: dbUnavailableReason })) {
     return 'Sign-in is unavailable because your Neon database quota is exceeded. Upgrade your Neon plan or wait for the quota to reset, then restart the server.';
   }
@@ -79,30 +115,23 @@ export async function initDb() {
     url = url.replace('sslmode=require', 'sslmode=verify-full');
   }
 
-  pool = new Pool({
-    connectionString: url,
-    ssl: url.includes('sslmode=') ? { rejectUnauthorized: false } : undefined,
-    max: Number(process.env.DB_POOL_MAX) || 8,
-    idleTimeoutMillis: 60000,
-    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 30000,
-    keepAlive: true,
-  });
-
-  pool.on('error', (err) => {
-    console.error('[pg pool]', err.message);
-  });
+  pool = createPool(url, Number(process.env.DB_POOL_MAX) || 6);
+  authPool = createPool(url, Number(process.env.DB_AUTH_POOL_MAX) || 2);
 
   let lastErr;
   const maxAttempts = Number(process.env.DB_INIT_ATTEMPTS) || 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await warmupPool(pool);
+      await warmupPool(authPool);
       const skipBase = shouldSkipBaseSchema() && (await isSchemaReady(pool));
       if (skipBase) {
         console.log('[db] Tables exist — skipping base DDL (running migrations only).');
       }
       await runSchema(pool, { skipBase });
-      console.log('Neon DB connected and schema ready.');
+      console.log(
+        `Neon DB connected (work pool max ${pool.options.max}, auth pool max ${authPool.options.max}).`
+      );
       return pool;
     } catch (err) {
       lastErr = err;
@@ -118,6 +147,7 @@ export async function initDb() {
   if (process.env.DB_INIT_EXIT === '1') process.exit(1);
   dbUnavailableReason = lastErr?.message || 'connection failed';
   pool = null;
+  authPool = null;
   return null;
 }
 
@@ -703,6 +733,7 @@ async function runSchema(p, { skipBase = false } = {}) {
     await migrateLeadScrapeSettings(p);
     await migratePricingPlans2026(p);
     await migrateNavNotifications(p);
+    await migrateWorkerJobs(p);
     await migrateAdminCampaigns(p);
     await migrateRefreshTokenSessions(p);
   } finally {
@@ -1003,6 +1034,31 @@ async function migrateNavNotifications(pool) {
     `);
   } catch (e) {
     console.warn('[migrateNavNotifications]', e?.message || e);
+  }
+}
+
+async function migrateWorkerJobs(pool) {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS worker_jobs (
+        id TEXT PRIMARY KEY,
+        job_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        claimed_by TEXT,
+        claimed_at TIMESTAMPTZ,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        last_error TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_worker_jobs_pending
+        ON worker_jobs (job_type, created_at)
+        WHERE status = 'pending';
+    `);
+  } catch (e) {
+    console.warn('[migrateWorkerJobs]', e?.message || e);
   }
 }
 

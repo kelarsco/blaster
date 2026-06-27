@@ -4,7 +4,12 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { getDb } from '../db.js';
+import { getAuthDb } from '../db.js';
+import {
+  getCachedSessionActive,
+  setCachedSessionActive,
+  invalidateSessionCache,
+} from './authSessionCache.js';
 import { shouldUseSecureCookies, getCookieSameSite, getCookieDomain } from './cookiePolicy.js';
 
 function resolveAccessSecret() {
@@ -20,6 +25,8 @@ const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC) || 15 * 60;
 const REFRESH_TTL_DAYS = Number(process.env.JWT_REFRESH_TTL_DAYS) || 7;
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || 'wiblaster_rt';
 const MAX_ACTIVE_DEVICES = Math.max(Number(process.env.MAX_ACTIVE_DEVICES) || 2, 1);
+const REFRESH_TOUCH_MIN_MS = Math.max(Number(process.env.AUTH_REFRESH_TOUCH_MIN_MS) || 5 * 60_000, 30_000);
+const lastSessionTouch = new Map();
 
 function hashRefreshToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -37,7 +44,7 @@ export function createAccessToken(user, sessionId = null) {
 }
 
 async function enforceActiveDeviceLimit(userId) {
-  const db = getDb();
+  const db = getAuthDb();
   if (!db) return;
 
   const r = await db.query(
@@ -51,9 +58,6 @@ async function enforceActiveDeviceLimit(userId) {
     const oldest = rows.shift();
     if (!oldest?.id) break;
     await revokeRefreshTokenById(oldest.id);
-    if (process.env.AUTH_DEBUG === '1') {
-      console.log(`[auth] revoked oldest session ${oldest.id} for user ${userId} (max ${MAX_ACTIVE_DEVICES} devices)`);
-    }
   }
 }
 
@@ -65,15 +69,19 @@ export async function createRefreshToken(userId, meta = {}) {
   const deviceIp = meta.ip || null;
   const userAgent = meta.userAgent || null;
 
-  const db = getDb();
+  const db = getAuthDb();
   if (!db) throw new Error('DB not available');
 
   if (deviceIp) {
-    await db.query(
+    const revoked = await db.query(
       `UPDATE refresh_tokens SET revoked_at = NOW()
-       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW() AND device_ip = $2`,
+       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW() AND device_ip = $2
+       RETURNING id`,
       [userId, deviceIp]
     );
+    for (const row of revoked.rows || []) {
+      invalidateSessionCache(row.id);
+    }
   }
 
   await db.query(
@@ -97,24 +105,34 @@ export function verifyAccessToken(token) {
 
 export async function isRefreshSessionActive(sessionId) {
   if (!sessionId) return true;
-  const db = getDb();
+  const cached = getCachedSessionActive(sessionId);
+  if (cached !== null) return cached;
+
+  const db = getAuthDb();
   if (!db) return true;
   const r = await db.query(
     `SELECT id FROM refresh_tokens WHERE id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
     [sessionId]
   );
-  return Boolean(r?.rows?.[0]);
+  const active = Boolean(r?.rows?.[0]);
+  setCachedSessionActive(sessionId, active);
+  return active;
 }
 
 export async function touchRefreshSession(sessionId) {
   if (!sessionId) return;
-  const db = getDb();
+  const now = Date.now();
+  const last = lastSessionTouch.get(sessionId) || 0;
+  if (now - last < REFRESH_TOUCH_MIN_MS) return;
+  lastSessionTouch.set(sessionId, now);
+
+  const db = getAuthDb();
   if (!db) return;
   await db.query(`UPDATE refresh_tokens SET last_seen_at = NOW() WHERE id = $1 AND revoked_at IS NULL`, [sessionId]);
 }
 
 export async function findRefreshTokenByToken(plainToken) {
-  const db = getDb();
+  const db = getAuthDb();
   if (!db) return null;
   const tokenHash = hashRefreshToken(plainToken);
   const r = await db.query(
@@ -126,15 +144,24 @@ export async function findRefreshTokenByToken(plainToken) {
 }
 
 export async function revokeRefreshTokenById(tokenId) {
-  const db = getDb();
+  const db = getAuthDb();
   if (!db) return;
   await db.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`, [tokenId]);
+  invalidateSessionCache(tokenId);
+  lastSessionTouch.delete(tokenId);
 }
 
 export async function revokeRefreshTokensForUser(userId) {
-  const db = getDb();
+  const db = getAuthDb();
   if (!db) return;
-  await db.query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1`, [userId]);
+  const r = await db.query(
+    `UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
+    [userId]
+  );
+  for (const row of r.rows || []) {
+    invalidateSessionCache(row.id);
+    lastSessionTouch.delete(row.id);
+  }
 }
 
 export function setRefreshTokenCookie(res, token, expiresAt) {

@@ -3,10 +3,15 @@ import { resumePendingScansOnStartup } from './scanResume.js';
 import { resumeLeadEngineOnStartup } from './leadEngineWorker.js';
 import { resumeScrapeSchedulerOnStartup, recoverInterruptedScrapeJobs } from './scrapeScheduler.js';
 import { syncPaystackPlans } from './paystackSync.js';
+import {
+  getProcessRole,
+  runsScanWorker,
+  runsLeadWorker,
+  runsHttpServer,
+} from '../config/processRole.js';
 
 /**
- * Heavy startup work (scan resume, lead engine, scrape scheduler) runs after the HTTP
- * server is listening so login/auth are not blocked during deploys or restarts.
+ * Role-aware deferred startup — API machine stays lightweight.
  */
 export function scheduleBackgroundStartup() {
   const configured = Number(process.env.STARTUP_JOBS_DELAY_MS);
@@ -18,18 +23,36 @@ export function scheduleBackgroundStartup() {
     });
   }, delayMs);
 
-  if (delayMs > 0) {
-    console.log(`[startup] Background jobs deferred ${delayMs}ms (login/API available immediately)`);
-  }
+  const role = getProcessRole();
+  console.log(`[startup] PROCESS_ROLE=${role}, background jobs in ${delayMs}ms`);
 }
 
 async function runBackgroundStartup() {
-  console.log('[startup] Running deferred background jobs…');
-  await resumePendingCampaignsOnStartup();
-  await resumePendingScansOnStartup();
-  await resumeLeadEngineOnStartup();
-  await recoverInterruptedScrapeJobs();
-  await resumeScrapeSchedulerOnStartup();
-  syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
+  const role = getProcessRole();
+  console.log(`[startup] Running background jobs for role=${role}…`);
+
+  if (role === 'api') {
+    syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
+    console.log('[startup] API-only startup complete');
+    return;
+  }
+
+  if (role === 'all' || runsScanWorker()) {
+    await resumePendingScansOnStartup();
+  }
+
+  if (role === 'all' || runsLeadWorker()) {
+    await resumePendingCampaignsOnStartup();
+    await resumeLeadEngineOnStartup();
+    await recoverInterruptedScrapeJobs();
+    await resumeScrapeSchedulerOnStartup();
+  }
+
+  if (runsHttpServer() && role === 'all') {
+    syncPaystackPlans().catch((e) => console.warn('[Paystack sync]', e?.message || e));
+  } else if (role === 'scan' || role === 'lead') {
+    syncPaystackPlans().catch(() => {});
+  }
+
   console.log('[startup] Background jobs complete');
 }
