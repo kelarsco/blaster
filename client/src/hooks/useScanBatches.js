@@ -9,13 +9,20 @@ import {
 import { setScanBadgePending } from '../utils/scanBadge.js';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'processing']);
+const STALE_SCAN_MS = 90_000;
 
 async function refreshBatchFromApi(authFetch, batch) {
   const statusRes = await authFetch(`${API}/scan/status/${batch.scanId}`);
   if (statusRes.status === 404) {
-    return { ...batch, status: 'failed', scanMissing: true };
+    return { ...batch, status: 'failed', scanMissing: true, pollError: null };
   }
-  if (!statusRes.ok) return batch;
+  if (!statusRes.ok) {
+    return {
+      ...batch,
+      pollError: 'Could not refresh scan status. Check that the API server is running.',
+      pollFailCount: (batch.pollFailCount || 0) + 1,
+    };
+  }
 
   const statusData = await statusRes.json();
   const mapped = mapScanStatus(statusData);
@@ -27,7 +34,22 @@ async function refreshBatchFromApi(authFetch, batch) {
     processed: mapped.processed,
     totalUrls: mapped.totalUrls,
     foundCount: mapped.foundCount,
+    pollError: null,
+    pollFailCount: 0,
+    lastPolledAt: Date.now(),
   };
+
+  const ageMs = Date.now() - (batch.startedAt || 0);
+  if (
+    ACTIVE_STATUSES.has(mapped.status) &&
+    (mapped.processed ?? 0) === 0 &&
+    ageMs > STALE_SCAN_MS
+  ) {
+    next.pollError =
+      mapped.status === 'pending'
+        ? 'Scan is still queued. If this persists, ensure the scan worker is running (production) or restart with npm run dev from the project root (local).'
+        : 'Scan started but no stores processed yet. The server may be overloaded or unreachable.';
+  }
 
   const shouldFetchResults = isDone || ACTIVE_STATUSES.has(mapped.status);
   if (shouldFetchResults) {
@@ -150,8 +172,16 @@ export function useScanBatches(authFetch, userId) {
               totalUrls: updated.totalUrls,
               foundCount: updated.foundCount,
               results: updated.results,
+              pollError: updated.pollError ?? null,
+              pollFailCount: updated.pollFailCount ?? 0,
+              lastPolledAt: updated.lastPolledAt,
             });
-          } catch (_) {}
+          } catch (err) {
+            updateBatch(batch.id, {
+              pollError: 'Cannot reach API server. Run npm run dev from the project root (or cd server && npm run dev).',
+              pollFailCount: (batch.pollFailCount || 0) + 1,
+            });
+          }
         })
       );
     };

@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
 
-process.env.PROCESS_ROLE = 'api';
+// Local dev: run scans in-process (all). Fly API machine: HTTP only (api).
+if (!process.env.PROCESS_ROLE) {
+  process.env.PROCESS_ROLE = process.env.FLY_APP_NAME ? 'api' : 'all';
+}
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason?.message || reason);

@@ -91,6 +91,9 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove, onFetchResults }) {
             <p className="text-xs text-blaster-muted mt-0.5">
               {summaryText}
             </p>
+            {batch.pollError && !isComplete && !isFailed ? (
+              <p className="text-xs text-amber-700 mt-1.5 leading-snug">{batch.pollError}</p>
+            ) : null}
           </div>
           <button
             type="button"
