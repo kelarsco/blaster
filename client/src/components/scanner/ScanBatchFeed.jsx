@@ -37,7 +37,7 @@ function ScanBatchCard({ batch, onStartCampaign, onRemove, onFetchResults }) {
     if ((!results || results.length === 0) && onFetchResults) {
       results = await onFetchResults(batch);
     }
-    const rowCount = exportScanResultsCsv(results || [], fields, batch.extractOptions);
+    const rowCount = exportScanResultsCsv(results || [], fields);
     if (!rowCount) {
       setExportError('No valid contact data to export for the selected fields.');
       return;

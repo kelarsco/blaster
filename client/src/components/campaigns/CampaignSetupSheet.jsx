@@ -8,7 +8,7 @@ import {
   exportScanResultsCsv,
   recipientsToScanResults,
   filterCampaignRecipients,
-  countCampaignEmailsByType,
+  countCampaignChannelsByType,
 } from '../../utils/scannerUrls.js';
 import { saveManualCampaignDeck } from '../../utils/manualCampaignDeck.js';
 import { ExportFieldsModal } from '../scanner/ExportFieldsModal.jsx';
@@ -34,33 +34,53 @@ const setupChipDefault =
 const setupChipSelected =
   'px-3 py-2 rounded-xl text-sm font-medium border border-blaster-accent/25 bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 text-[#1a1a21] shadow-sm transition';
 
-function MailTypeOption({ label, hint, count, selected, onToggle }) {
+function ChannelOption({ label, sublabel, count, selected, onToggle, compact = false }) {
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-pressed={selected}
-      className={`flex flex-1 min-w-[148px] items-center gap-3 rounded-xl border p-3 text-left transition ${
+      className={`inline-flex items-center gap-1.5 rounded-lg border text-left transition ${
+        compact ? 'px-2 py-1.5' : 'px-2.5 py-2'
+      } ${
         selected
           ? 'border-blaster-accent/35 bg-gradient-to-r from-blaster-accent/15 to-blaster-orange/25 shadow-sm ring-1 ring-blaster-accent/20'
           : 'border-blaster-border bg-white hover:border-blaster-accent/25'
       }`}
     >
       <span
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+        className={`flex shrink-0 items-center justify-center rounded border transition ${
+          compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
+        } ${
           selected
             ? 'border-transparent bg-gradient-to-br from-blaster-accent to-blaster-orange text-white'
             : 'border-blaster-border bg-white'
         }`}
       >
-        {selected ? <CheckIcon className="w-3 h-3" /> : null}
+        {selected ? <CheckIcon className={compact ? 'w-2 h-2' : 'w-2.5 h-2.5'} /> : null}
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-blaster-fg">{label}</span>
-        <span className="block text-[11px] text-blaster-muted">{hint}</span>
-        <span className="block text-[11px] font-medium text-blaster-fg/80 mt-0.5">{count} in list</span>
+        <span className={`block font-medium text-blaster-fg ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
+        {sublabel ? (
+          <span className={`block text-blaster-muted ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{sublabel}</span>
+        ) : null}
+        <span className={`block font-medium text-blaster-fg/80 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+          {compact ? count : `${count} in list`}
+        </span>
       </span>
     </button>
+  );
+}
+
+function MailTypeOption({ label, hint, count, selected, onToggle }) {
+  return (
+    <ChannelOption
+      label={label}
+      sublabel={hint}
+      count={count}
+      selected={selected}
+      onToggle={onToggle}
+    />
   );
 }
 
@@ -121,6 +141,9 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
   const [setupError, setSetupError] = useState('');
   const [includeProviderEmails, setIncludeProviderEmails] = useState(true);
   const [includeDomainEmails, setIncludeDomainEmails] = useState(true);
+  const [includeWhatsapp, setIncludeWhatsapp] = useState(false);
+  const [includeInstagram, setIncludeInstagram] = useState(false);
+  const [includeTiktok, setIncludeTiktok] = useState(false);
   const [setupLoading, setSetupLoading] = useState(true);
 
   useEffect(() => {
@@ -155,17 +178,26 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
   if (!list) return null;
 
   const allRecipients = list.recipients || [];
-  const emailTypeCounts = countCampaignEmailsByType(allRecipients);
+  const channelCounts = countCampaignChannelsByType(allRecipients);
   const filteredRecipients = filterCampaignRecipients(allRecipients, {
     includeProvider: includeProviderEmails,
     includeDomain: includeDomainEmails,
+    includeWhatsapp,
+    includeInstagram,
+    includeTiktok,
   });
+  const campaignRecipients = filteredRecipients.filter((r) => String(r.email || '').includes('@'));
   const hasExportable = allRecipients.length > 0;
   const hasFilteredRecipients = filteredRecipients.length > 0;
-  const canStart = hasFilteredRecipients && selectedPresetIds.size > 0;
+  const canStart = campaignRecipients.length > 0 && selectedPresetIds.size > 0;
   const hasActiveRun = activeRun && activeRun.status !== 'completed';
   const scanResults = recipientsToScanResults(list.recipients);
-  const extractOptions = { email: true, phone: false, whatsapp: false, instagram: false, tiktok: false };
+  const exportFieldDefaults = {
+    email: allRecipients.some((r) => r.email),
+    whatsapp: allRecipients.some((r) => r.whatsapp),
+    instagram: allRecipients.some((r) => r.instagram),
+    tiktok: allRecipients.some((r) => r.tiktok),
+  };
   const tableRecipients = hasActiveRun ? allRecipients : filteredRecipients;
 
   const togglePreset = (id) => {
@@ -189,6 +221,10 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
       if (prev && !includeProviderEmails) return prev;
       return !prev;
     });
+  };
+
+  const toggleChannel = (setter) => {
+    setter((prev) => !prev);
   };
 
   const handleStartOrResume = async () => {
@@ -221,7 +257,7 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
         body: JSON.stringify({
           emailListId: list.id,
           templateIds: [...selectedPresetIds],
-          recipients: filteredRecipients,
+          recipients: campaignRecipients,
         }),
       });
       const data = await res.json();
@@ -325,28 +361,54 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                       <p className="text-[11px] text-blaster-muted mt-1.5">Templates rotate randomly per send.</p>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select Mail</label>
+                      <label className="text-xs font-medium text-blaster-muted uppercase tracking-wide">Select contacts</label>
                       <p className="text-[11px] text-blaster-muted mt-1 mb-2">
-                        Choose which email types to include in this campaign run.
+                        Filter by email type or social channels. Campaign sends require an email address.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <MailTypeOption
                           label="Provider email"
                           hint="Gmail, Outlook, Yahoo, etc."
-                          count={emailTypeCounts.provider}
+                          count={channelCounts.provider}
                           selected={includeProviderEmails}
                           onToggle={toggleProviderEmails}
                         />
                         <MailTypeOption
                           label="Domain email"
-                          hint="Store / business domain addresses"
-                          count={emailTypeCounts.domain}
+                          hint="Store / business domain"
+                          count={channelCounts.domain}
                           selected={includeDomainEmails}
                           onToggle={toggleDomainEmails}
                         />
                       </div>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        <ChannelOption
+                          compact
+                          label="WhatsApp"
+                          count={channelCounts.whatsapp}
+                          selected={includeWhatsapp}
+                          onToggle={() => toggleChannel(setIncludeWhatsapp)}
+                        />
+                        <ChannelOption
+                          compact
+                          label="Instagram"
+                          count={channelCounts.instagram}
+                          selected={includeInstagram}
+                          onToggle={() => toggleChannel(setIncludeInstagram)}
+                        />
+                        <ChannelOption
+                          compact
+                          label="TikTok"
+                          count={channelCounts.tiktok}
+                          selected={includeTiktok}
+                          onToggle={() => toggleChannel(setIncludeTiktok)}
+                        />
+                      </div>
                       {!hasFilteredRecipients && (
-                        <p className="text-xs text-amber-700 mt-2">Select at least one mail type with contacts in this list.</p>
+                        <p className="text-xs text-amber-700 mt-2">Select at least one contact type with matches in this list.</p>
+                      )}
+                      {hasFilteredRecipients && !campaignRecipients.length && (
+                        <p className="text-xs text-amber-700 mt-2">No emails in the current selection — add email contacts to start a campaign.</p>
                       )}
                     </div>
                   </div>
@@ -400,9 +462,10 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
 
       {exportOpen ? (
         <ExportFieldsModal
+          extractOptions={exportFieldDefaults}
           onClose={() => setExportOpen(false)}
           onConfirm={(fields) => {
-            exportScanResultsCsv(scanResults, fields, extractOptions);
+            exportScanResultsCsv(scanResults, fields);
             setExportOpen(false);
           }}
         />

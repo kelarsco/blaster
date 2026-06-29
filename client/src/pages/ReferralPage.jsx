@@ -17,6 +17,7 @@ import { API } from '../api.js';
 import { formatUTCDateOnly } from '../utils/dateUtils';
 import { buildReferralSignupUrl, sanitizeReferralUrl } from '../utils/referralUrl.js';
 import { ReferralPageSkeleton } from '../components/referral/ReferralPageSkeleton.jsx';
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate.js';
 import { BrandGradientIcon, BrandIconBox, CrownIcon } from '../components/BrandGradientIcon.jsx';
 import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 import '../styles/referral-page.css';

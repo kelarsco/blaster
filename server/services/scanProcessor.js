@@ -18,7 +18,7 @@ const PER_STORE_TIMEOUT_MS = Number(process.env.SCAN_PER_STORE_TIMEOUT_MS) || 30
 const STORE_RETRY_ATTEMPTS = Math.max(Number(process.env.SCAN_STORE_RETRY_ATTEMPTS) || 2, 1);
 const RETRY_GAP_MS = Math.max(Number(process.env.SCAN_RETRY_GAP_MS) || 1500, 0);
 const ABORT_SETTLE_MS = Math.max(Number(process.env.SCAN_ABORT_SETTLE_MS) || 1500, 0);
-const MAX_URLS_PER_SCAN = 500;
+const MAX_URLS_PER_SCAN = Math.max(Number(process.env.MAX_URLS_PER_SCAN) || 1000, 1);
 const DB_WRITE_RETRIES = Number(process.env.DB_WRITE_RETRIES) || 3;
 const POOL_YIELD_MS = Math.max(Number(process.env.SCAN_POOL_YIELD_MS) || 2000, 0);
 
@@ -278,7 +278,14 @@ async function processScanWork(payload) {
         })
       : [];
 
-    const contacts = extractContactsFromPages(storeUrl, pages, extractOptions);
+    const needsContacts =
+      extractOptions.phone ||
+      extractOptions.whatsapp ||
+      extractOptions.instagram ||
+      extractOptions.tiktok;
+    const contacts = needsContacts
+      ? extractContactsFromPages(storeUrl, pages, extractOptions)
+      : EMPTY_CONTACTS(storeUrl);
     const noEmailReason = privacyPageFound ? 'No Email Found' : 'Privacy Page Not Found';
 
     return { storeUrl, results, contacts, noEmailReason, pagesFetched: pages.length };

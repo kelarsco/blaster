@@ -6,6 +6,7 @@ import { logActivity } from './activity.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { scanRateLimit } from '../middleware/apiRateLimit.js';
 import { getPlanLimitsForUser } from '../services/planLimits.js';
+import { MAX_URLS_PER_SCAN, scansRemainingFromLimits } from '../services/scanLimits.js';
 import { normalizeStoreUrl } from '../services/crawler.js';
 import { normalizeExtractOptions } from '../services/scanExtractOptions.js';
 
@@ -25,8 +26,28 @@ function parseUrls(text) {
       urls.push(normalized);
     }
   }
-  return urls.slice(0, 500);
+  return urls.slice(0, MAX_URLS_PER_SCAN);
 }
+
+scanRoutes.get('/limits', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not signed in' });
+    const limits = await getPlanLimitsForUser(userId);
+    const remaining = scansRemainingFromLimits(limits);
+    return res.json({
+      maxUrlsPerScan: MAX_URLS_PER_SCAN,
+      scansLimit: limits.scansLimit ?? 0,
+      scansUsed: limits.scansUsed ?? 0,
+      scansRemaining: remaining,
+      scansWindowHours: limits.scansWindowHours ?? null,
+      signupTrialActive: limits.signupTrialActive ?? false,
+    });
+  } catch (e) {
+    console.error('[scan limits]', e?.message || e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
 
 scanRoutes.get('/recent', requireAuth, async (req, res) => {
   try {
@@ -129,9 +150,6 @@ scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
     if (allUrls.length === 0) {
       return res.status(400).json({ error: 'No valid URLs provided' });
     }
-    if (allUrls.length > 500) {
-      return res.status(400).json({ error: 'Maximum 500 URLs per scan' });
-    }
     const excludeSet = new Set([...excludeStoreUrls].map((u) => (u || '').trim()).filter(Boolean));
     let previousRows = [];
     const db = getDb();
@@ -173,9 +191,12 @@ scanRoutes.post('/start', requireAuth, scanRateLimit, async (req, res) => {
           storesToScan = effectivePreviousCount + limitedUrls.length;
           limitReached = true;
         } else {
-          if (limits.isFreePlan) {
+          if (limits.isFreePlan || limits.signupTrialActive) {
+            const windowLabel = limits.scansWindowHours ? `${limits.scansWindowHours}-hour` : 'plan';
             return res.status(403).json({
-              error: "You've reached your free plan store scan limit. Upgrade to scan more stores.",
+              error: limits.signupTrialActive
+                ? `You've reached your ${limits.scansLimit} store scans for this ${windowLabel} period. Upgrade to scan more stores.`
+                : "You've reached your free plan store scan limit. Upgrade to scan more stores.",
               upgradeRequired: true,
               limitType: 'scans',
             });

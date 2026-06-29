@@ -5,6 +5,11 @@
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
 import { getSignupTrialState, SIGNUP_TRIAL_HOURS } from './signupTrial.js';
+import {
+  FREE_SIGNUP_SCANS_24H,
+  FREE_SIGNUP_SCANS_WINDOW_HOURS,
+  countScansInWindow,
+} from './scanLimits.js';
 
 export const TRIAL_PLAN_ID = 'trial_7day';
 export const LEGACY_TRIAL_PLAN_IDS = ['trial_3day', 'trial_weekly'];
@@ -233,11 +238,19 @@ export async function getPlanStatusForUser(userId) {
 
   const start = period.start.toISOString();
   const end = period.end.toISOString();
-  const scansRes = await db.query(
-    `SELECT COALESCE(SUM(total_urls), 0) AS total FROM scans WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`,
-    [userId, start, end]
-  );
-  const scansUsed = parseInt(scansRes.rows?.[0]?.total ?? '0', 10);
+  let scansUsed;
+  let scansLimit;
+  if (signupTrial.active && !sub) {
+    scansUsed = await countScansInWindow(db, userId, FREE_SIGNUP_SCANS_WINDOW_HOURS);
+    scansLimit = FREE_SIGNUP_SCANS_24H;
+  } else {
+    const scansRes = await db.query(
+      `SELECT COALESCE(SUM(total_urls), 0) AS total FROM scans WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`,
+      [userId, start, end]
+    );
+    scansUsed = parseInt(scansRes.rows?.[0]?.total ?? '0', 10);
+    scansLimit = hasAccess ? 999999 : 0;
+  }
 
   const trialEndsAt = isPaidTrial && sub?.current_period_end
     ? new Date(sub.current_period_end).toISOString()
@@ -283,7 +296,8 @@ export async function getPlanStatusForUser(userId) {
     campaignsActive: parseInt(campaignsCount.rows?.[0]?.c ?? '0', 10),
     campaignsActiveMax: access.campaignsActiveMax,
     scansUsed,
-    scansLimit: hasAccess ? 999999 : 0,
+    scansLimit,
+    scansWindowHours: signupTrial.active && !sub ? FREE_SIGNUP_SCANS_WINDOW_HOURS : null,
     upgradeTierInfo: UPGRADE_TIER_INFO,
   };
 }

@@ -1,10 +1,10 @@
-/** Default fields extracted on every store scan (EcomScout-style full contact pull). */
+/** Default: email only — socials are opt-in per scan. */
 export const DEFAULT_SCAN_EXTRACT_OPTIONS = {
   email: true,
-  phone: true,
-  whatsapp: true,
-  instagram: true,
-  tiktok: true,
+  phone: false,
+  whatsapp: false,
+  instagram: false,
+  tiktok: false,
 };
 
 export function normalizeExtractOptions(input) {

@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 const FIELD_OPTIONS = [
   { key: 'storeUrl', label: 'Store links', locked: true },
   { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' },
   { key: 'whatsapp', label: 'WhatsApp link' },
   { key: 'instagram', label: 'Instagram' },
   { key: 'tiktok', label: 'TikTok' },
@@ -13,7 +12,6 @@ export function ExportFieldsModal({ onClose, onConfirm, extractOptions, error })
   const [fields, setFields] = useState({
     storeUrl: true,
     email: extractOptions?.email !== false,
-    phone: !!extractOptions?.phone,
     whatsapp: !!extractOptions?.whatsapp,
     instagram: !!extractOptions?.instagram,
     tiktok: !!extractOptions?.tiktok,
@@ -24,7 +22,7 @@ export function ExportFieldsModal({ onClose, onConfirm, extractOptions, error })
     setFields((f) => ({ ...f, [key]: !f[key] }));
   };
 
-  const hasDataField = fields.email || fields.phone || fields.whatsapp || fields.instagram || fields.tiktok;
+  const hasDataField = fields.email || fields.whatsapp || fields.instagram || fields.tiktok;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">

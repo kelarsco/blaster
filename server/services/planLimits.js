@@ -1,6 +1,11 @@
 import { getDb } from '../db.js';
 import { getPeriodForUser } from './planLimitsPeriod.js';
 import { getSignupTrialState } from './signupTrial.js';
+import {
+  FREE_SIGNUP_SCANS_24H,
+  FREE_SIGNUP_SCANS_WINDOW_HOURS,
+  countScansInWindow,
+} from './scanLimits.js';
 
 /** Default sender limit when user has no subscription. */
 const DEFAULT_SENDER_LIMIT = 999999;
@@ -111,7 +116,8 @@ export async function getPlanLimitsForUser(userId) {
     if (signupTrial.active) {
       defaults.planId = 'signup_trial';
       defaults.emailsLimit = UNLIMITED_NUM;
-      defaults.scansLimit = UNLIMITED_NUM;
+      defaults.scansLimit = FREE_SIGNUP_SCANS_24H;
+      defaults.scansWindowHours = FREE_SIGNUP_SCANS_WINDOW_HOURS;
       defaults.campaignsLimit = UNLIMITED_NUM;
       defaults.signupTrialActive = true;
       defaults.signupTrialEndsAt = signupTrial.endsAt;
@@ -135,10 +141,12 @@ export async function getPlanLimitsForUser(userId) {
        WHERE cs.status = 'sent' AND cs.sent_at >= $2 AND cs.sent_at <= $3`,
       [userId, start, end]
     ),
-    db.query(
-      `SELECT COALESCE(SUM(total_urls), 0) AS total FROM scans WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`,
-      [userId, start, end]
-    ),
+    defaults.scansWindowHours
+      ? countScansInWindow(db, userId, defaults.scansWindowHours).then((total) => ({ rows: [{ total }] }))
+      : db.query(
+          `SELECT COALESCE(SUM(total_urls), 0) AS total FROM scans WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`,
+          [userId, start, end]
+        ),
     db.query(
       `SELECT COUNT(*) AS c FROM campaigns WHERE user_id = $1 AND status IN ('running', 'paused')`,
       [userId]

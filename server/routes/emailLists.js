@@ -13,12 +13,22 @@ function normalizeRecipients(recipients) {
   const seen = new Set();
   for (const row of recipients) {
     const email = String(row?.email || '').trim().toLowerCase();
-    if (!email || !email.includes('@')) continue;
-    if (seen.has(email)) continue;
-    seen.add(email);
+    const storeUrl = String(row?.storeUrl || row?.store_url || '').trim();
+    const whatsapp = row?.whatsapp ? String(row.whatsapp).trim() : null;
+    const instagram = row?.instagram ? String(row.instagram).trim() : null;
+    const tiktok = row?.tiktok ? String(row.tiktok).trim() : null;
+    const hasEmail = email && email.includes('@');
+    const hasSocial = whatsapp || instagram || tiktok;
+    if (!hasEmail && !hasSocial) continue;
+    const dedupeKey = hasEmail ? email : `${storeUrl}|${whatsapp || ''}|${instagram || ''}|${tiktok || ''}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     out.push({
-      email,
-      storeUrl: String(row?.storeUrl || row?.store_url || '').trim(),
+      email: hasEmail ? email : '',
+      storeUrl,
+      ...(whatsapp ? { whatsapp } : {}),
+      ...(instagram ? { instagram } : {}),
+      ...(tiktok ? { tiktok } : {}),
     });
   }
   return out;
@@ -69,7 +79,7 @@ emailListRoutes.post('/', requireAuth, async (req, res) => {
   const recipients = normalizeRecipients(req.body?.recipients);
   if (!userId) return res.status(401).json({ error: 'Not signed in' });
   if (!name) return res.status(400).json({ error: 'List name is required' });
-  if (recipients.length === 0) return res.status(400).json({ error: 'List must contain at least one email' });
+  if (recipients.length === 0) return res.status(400).json({ error: 'List must contain at least one contact' });
   const id = uuidv4();
   const createdAt = new Date().toISOString();
   const payload = { id, name, createdAt, recipients };

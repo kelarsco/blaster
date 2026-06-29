@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
-import { parseUrls, recipientsFromResults } from '../utils/scannerUrls.js';
+import { parseUrls, computeScanAllowance, MAX_URLS_PER_SCAN } from '../utils/scannerUrls.js';
 import { DEFAULT_SCAN_EXTRACT_OPTIONS } from '../utils/scanExtractOptions.js';
 import { createEmailList } from '../utils/createEmailList.js';
 import { useScanBatches } from '../hooks/useScanBatches.js';
@@ -25,6 +25,24 @@ export default function ScannerPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
   const [upgradeRequired, setUpgradeRequired] = useState(false);
+  const [scanLimits, setScanLimits] = useState(null);
+
+  const loadScanLimits = useCallback(async () => {
+    if (!authFetch || !user) {
+      setScanLimits(null);
+      return;
+    }
+    try {
+      const res = await authFetch(`${API}/scan/limits`);
+      if (res.ok) {
+        setScanLimits(await res.json());
+      }
+    } catch (_) {}
+  }, [authFetch, user]);
+
+  useEffect(() => {
+    loadScanLimits();
+  }, [loadScanLimits]);
 
   useEffect(() => {
     if (hydrated && batches.length > 0) {
@@ -58,17 +76,26 @@ export default function ScannerPage() {
     setIsStarting(true);
 
     try {
-      const maxUrlsPerScan = 500;
+      const allUrls = parseUrls(rawUrls);
+      if (!allUrls.length) throw new Error('Add at least one valid store URL.');
 
-      const urls = parseUrls(rawUrls);
-      if (!urls.length) throw new Error('Add at least one valid store URL.');
+      const maxPerScan = scanLimits?.maxUrlsPerScan ?? MAX_URLS_PER_SCAN;
+      const scansRemaining = scanLimits?.scansRemaining ?? MAX_URLS_PER_SCAN;
+      const allowedCount = computeScanAllowance(allUrls.length, { maxPerScan, scansRemaining });
+      if (allowedCount < 1) {
+        setUpgradeRequired(true);
+        setError("You've reached your store scan limit. Upgrade to scan more stores.");
+        return;
+      }
+
+      const urlsToScan = allUrls.slice(0, allowedCount);
 
       const res = await authFetch(`${API}/scan/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          rawUrls: urls.join('\n'),
-          maxUrlsPerScan,
+          rawUrls: urlsToScan.join('\n'),
+          maxUrlsPerScan: maxPerScan,
           extractOptions: { ...extractOptions },
         }),
       });
@@ -86,13 +113,14 @@ export default function ScannerPage() {
       if (data.scanId) {
         addBatch({
           scanId: data.scanId,
-          totalUrls: data.scannedUrls ?? urls.length,
+          totalUrls: data.scannedUrls ?? urlsToScan.length,
           extractOptions: { ...extractOptions },
           label: `Batch ${batchCounter}`,
         });
         setPhase('workspace');
         setRawUrls('');
         setCsvName('');
+        loadScanLimits();
       }
     } catch (err) {
       setError(toFriendlyErrorMessage(err, FRIENDLY_ERRORS.scan));
@@ -154,6 +182,7 @@ export default function ScannerPage() {
           error={error}
           upgradeRequired={upgradeRequired}
           csvName={csvName}
+          scanLimits={scanLimits}
         />
         <ScanBatchFeed
           batches={batches}

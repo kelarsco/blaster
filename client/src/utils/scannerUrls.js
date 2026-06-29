@@ -19,6 +19,8 @@ export function normalizeStoreUrl(input) {
   }
 }
 
+export const MAX_URLS_PER_SCAN = 1000;
+
 export function parseUrls(text) {
   const raw = (text || '')
     .replace(/,/g, '\n')
@@ -33,7 +35,14 @@ export function parseUrls(text) {
     seen.add(normalized);
     urls.push(normalized);
   }
-  return urls.slice(0, 500);
+  return urls;
+}
+
+/** How many URLs will actually be scanned given batch + quota caps. */
+export function computeScanAllowance(urlCount, { maxPerScan = MAX_URLS_PER_SCAN, scansRemaining = MAX_URLS_PER_SCAN } = {}) {
+  const batchCap = Math.max(0, maxPerScan);
+  const quotaCap = scansRemaining >= 999999 ? batchCap : Math.max(0, scansRemaining);
+  return Math.min(urlCount, batchCap, quotaCap);
 }
 
 export function domainFromUrl(url) {
@@ -76,13 +85,64 @@ export function classifyCampaignEmail(email, storeUrl = '') {
   return 'domain';
 }
 
-export function filterCampaignRecipients(recipients, { includeProvider = true, includeDomain = true } = {}) {
+export function filterCampaignRecipients(
+  recipients,
+  {
+    includeProvider = true,
+    includeDomain = true,
+    includeWhatsapp = false,
+    includeInstagram = false,
+    includeTiktok = false,
+  } = {}
+) {
   if (!Array.isArray(recipients)) return [];
+
+  const emailSelected = includeProvider || includeDomain;
+  const socialSelected = includeWhatsapp || includeInstagram || includeTiktok;
+  if (!emailSelected && !socialSelected) return [];
+
   return recipients.filter((r) => {
-    const type = classifyCampaignEmail(r.email, r.storeUrl || r.store_url);
-    if (type === 'provider') return includeProvider;
-    return includeDomain;
+    const email = String(r.email || '').trim();
+    const hasEmail = email.includes('@');
+    let emailMatch = false;
+    if (emailSelected && hasEmail) {
+      const type = classifyCampaignEmail(email, r.storeUrl || r.store_url);
+      emailMatch =
+        (type === 'provider' && includeProvider) || (type === 'domain' && includeDomain);
+    }
+    const socialMatch =
+      (includeWhatsapp && r.whatsapp) ||
+      (includeInstagram && r.instagram) ||
+      (includeTiktok && r.tiktok);
+
+    if (emailSelected && socialSelected) return emailMatch || socialMatch;
+    if (emailSelected) return emailMatch;
+    return socialMatch;
   });
+}
+
+export function countCampaignChannelsByType(recipients) {
+  const counts = {
+    provider: 0,
+    domain: 0,
+    whatsapp: 0,
+    instagram: 0,
+    tiktok: 0,
+  };
+  for (const r of recipients || []) {
+    const email = String(r.email || '').trim();
+    if (email.includes('@')) {
+      if (classifyCampaignEmail(email, r.storeUrl || r.store_url) === 'provider') {
+        counts.provider += 1;
+      } else {
+        counts.domain += 1;
+      }
+    }
+    if (r.whatsapp) counts.whatsapp += 1;
+    if (r.instagram) counts.instagram += 1;
+    if (r.tiktok) counts.tiktok += 1;
+  }
+  return counts;
 }
 
 export function countCampaignEmailsByType(recipients) {
@@ -97,12 +157,20 @@ export function countCampaignEmailsByType(recipients) {
 
 export function recipientsFromResults(results) {
   if (!Array.isArray(results)) return [];
-  return results.flatMap((store) =>
-    (store.emails || []).map((e) => ({
+  return results.flatMap((store) => {
+    const base = {
       storeUrl: store.storeUrl || store.store_url || '',
+      whatsapp: store.whatsapp || null,
+      instagram: store.instagram || null,
+      tiktok: store.tiktok || null,
+    };
+    const emails = store.emails || [];
+    if (!emails.length) return [];
+    return emails.map((e) => ({
+      ...base,
       email: e.email,
-    }))
-  );
+    }));
+  });
 }
 
 export function recipientsToScanResults(recipients) {
@@ -110,8 +178,20 @@ export function recipientsToScanResults(recipients) {
   const byStore = new Map();
   for (const r of recipients) {
     const storeUrl = r.storeUrl || r.store_url || '';
-    if (!byStore.has(storeUrl)) byStore.set(storeUrl, { storeUrl, emails: [] });
-    if (r.email) byStore.get(storeUrl).emails.push({ email: r.email });
+    if (!byStore.has(storeUrl)) {
+      byStore.set(storeUrl, {
+        storeUrl,
+        emails: [],
+        whatsapp: r.whatsapp || null,
+        instagram: r.instagram || null,
+        tiktok: r.tiktok || null,
+      });
+    }
+    const row = byStore.get(storeUrl);
+    if (r.whatsapp && !row.whatsapp) row.whatsapp = r.whatsapp;
+    if (r.instagram && !row.instagram) row.instagram = r.instagram;
+    if (r.tiktok && !row.tiktok) row.tiktok = r.tiktok;
+    if (r.email) row.emails.push({ email: r.email });
   }
   return [...byStore.values()];
 }
@@ -184,8 +264,9 @@ function buildExportRow(store, columns, email = '') {
   return row;
 }
 
-export function exportScanResultsCsv(results, fields, extractOptions) {
-  const withData = storesWithExtractedData(results, extractOptions);
+export function exportScanResultsCsv(results, fields) {
+  const sanitized = (results || []).map(sanitizeStoreRecord).filter(Boolean);
+  const withData = sanitized.filter((store) => rowHasSelectedData(store, fields));
   if (!withData.length) return 0;
   const columns = ['storeUrl'];
   if (fields.email) columns.push('email');
