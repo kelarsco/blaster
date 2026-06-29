@@ -34,7 +34,7 @@ const setupChipDefault =
 const setupChipSelected =
   'px-3 py-2 rounded-xl text-sm font-medium border border-blaster-accent/25 bg-gradient-to-r from-blaster-accent/20 to-blaster-orange/30 text-[#1a1a21] shadow-sm transition';
 
-function ChannelOption({ label, sublabel, count, selected, onToggle, compact = false }) {
+function ChannelOption({ label, count, selected, onToggle, compact = false }) {
   return (
     <button
       type="button"
@@ -61,9 +61,6 @@ function ChannelOption({ label, sublabel, count, selected, onToggle, compact = f
       </span>
       <span className="min-w-0">
         <span className={`block font-medium text-blaster-fg ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
-        {sublabel ? (
-          <span className={`block text-blaster-muted ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{sublabel}</span>
-        ) : null}
         <span className={`block font-medium text-blaster-fg/80 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
           {compact ? count : `${count} in list`}
         </span>
@@ -72,17 +69,6 @@ function ChannelOption({ label, sublabel, count, selected, onToggle, compact = f
   );
 }
 
-function MailTypeOption({ label, hint, count, selected, onToggle }) {
-  return (
-    <ChannelOption
-      label={label}
-      sublabel={hint}
-      count={count}
-      selected={selected}
-      onToggle={onToggle}
-    />
-  );
-}
 
 function ChipRowSkeleton({ count = 3 }) {
   const widths = ['w-24', 'w-28', 'w-20', 'w-32'];
@@ -97,9 +83,12 @@ function ChipRowSkeleton({ count = 3 }) {
 
 function MailTypeSkeleton() {
   return (
-    <div className="flex flex-wrap gap-2 mt-2" aria-hidden>
-      <div className="h-[72px] flex-1 min-w-[148px] rounded-xl bg-gray-100 animate-pulse" />
-      <div className="h-[72px] flex-1 min-w-[148px] rounded-xl bg-gray-100 animate-pulse" />
+    <div className="flex flex-wrap gap-1.5 mt-2" aria-hidden>
+      <div className="h-8 w-24 rounded-lg bg-gray-100 animate-pulse" />
+      <div className="h-8 w-24 rounded-lg bg-gray-100 animate-pulse" />
+      <div className="h-8 w-20 rounded-lg bg-gray-100 animate-pulse" />
+      <div className="h-8 w-20 rounded-lg bg-gray-100 animate-pulse" />
+      <div className="h-8 w-16 rounded-lg bg-gray-100 animate-pulse" />
     </div>
   );
 }
@@ -365,23 +354,21 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
                       <p className="text-[11px] text-blaster-muted mt-1 mb-2">
                         Filter by email type or social channels. Campaign sends require an email address.
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        <MailTypeOption
+                      <div className="flex flex-wrap gap-1.5">
+                        <ChannelOption
+                          compact
                           label="Provider email"
-                          hint="Gmail, Outlook, Yahoo, etc."
                           count={channelCounts.provider}
                           selected={includeProviderEmails}
                           onToggle={toggleProviderEmails}
                         />
-                        <MailTypeOption
+                        <ChannelOption
+                          compact
                           label="Domain email"
-                          hint="Store / business domain"
                           count={channelCounts.domain}
                           selected={includeDomainEmails}
                           onToggle={toggleDomainEmails}
                         />
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
                         <ChannelOption
                           compact
                           label="WhatsApp"
