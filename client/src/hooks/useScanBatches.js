@@ -9,7 +9,8 @@ import {
 import { setScanBadgePending } from '../utils/scanBadge.js';
 
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'processing']);
-const STALE_SCAN_MS = 90_000;
+const STALE_PENDING_MS = 45_000;
+const STALE_RUNNING_MS = 120_000;
 
 async function refreshBatchFromApi(authFetch, batch) {
   const statusRes = await authFetch(`${API}/scan/status/${batch.scanId}`);
@@ -40,15 +41,23 @@ async function refreshBatchFromApi(authFetch, batch) {
   };
 
   const ageMs = Date.now() - (batch.startedAt || 0);
-  if (
+  const processed = mapped.processed ?? 0;
+  if (ACTIVE_STATUSES.has(mapped.status) && processed === 0) {
+    if (mapped.status === 'pending' && ageMs > STALE_PENDING_MS) {
+      next.pollError =
+        'Scan is queued — waiting for a scan worker. On production, check fly logs --process scan.';
+    } else if (mapped.status === 'running' && ageMs > STALE_RUNNING_MS) {
+      next.pollError =
+        'Scan is taking longer than expected on the first store. It may still be working — try a smaller batch if this keeps happening.';
+    }
+  } else if (
     ACTIVE_STATUSES.has(mapped.status) &&
-    (mapped.processed ?? 0) === 0 &&
-    ageMs > STALE_SCAN_MS
+    processed > 0 &&
+    (batch.processed ?? 0) === processed &&
+    ageMs > STALE_RUNNING_MS
   ) {
     next.pollError =
-      mapped.status === 'pending'
-        ? 'Scan is still queued. If this persists, ensure the scan worker is running (production) or restart with npm run dev from the project root (local).'
-        : 'Scan started but no stores processed yet. The server may be overloaded or unreachable.';
+      'Scan progress paused — the worker may have restarted. Remaining stores should resume automatically.';
   }
 
   const shouldFetchResults = isDone || ACTIVE_STATUSES.has(mapped.status);

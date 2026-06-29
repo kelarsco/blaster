@@ -11,7 +11,11 @@ const USER_AGENT = 'StoreReach/1.0 (Contact extraction)';
 
 const PATHS_TO_TRY = ['/policies/privacy-policy', '/', '/pages/contact'];
 const PARALLEL_PAGES =
-  process.env.CRAWL_PARALLEL_PAGES === '1' || process.env.CRAWL_PARALLEL_PAGES === 'true';
+  process.env.CRAWL_PARALLEL_PAGES === '0' || process.env.CRAWL_PARALLEL_PAGES === 'false'
+    ? false
+    : process.env.CRAWL_PARALLEL_PAGES === '1' ||
+      process.env.CRAWL_PARALLEL_PAGES === 'true' ||
+      process.env.CRAWL_PARALLEL_PAGES == null;
 
 const URL_TOKEN_REGEX =
   /(https?:\/\/[^\s<>"'`]+|(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s<>"'`]*)?)/i;

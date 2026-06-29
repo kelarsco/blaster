@@ -14,10 +14,14 @@ primary_region = 'iad'
   FRONTEND_URL = 'https://wiblaster.com'
   # PROCESS_ROLE is set by each entrypoint (index.js=api, scan-worker.js=scan, lead-worker.js=lead)
   # Scan / lead tuning (also set on worker machines via secrets if needed)
-  SCAN_CONCURRENCY = '1'
-  CRAWL_MAX_IN_FLIGHT = '3'
+  CRAWL_MAX_IN_FLIGHT = '4'
   DB_POOL_MAX = '6'
   DB_AUTH_POOL_MAX = '2'
+  CRAWL_PARALLEL_PAGES = 'true'
+  WORKER_POLL_MS = '500'
+  SCAN_CONCURRENCY = '2'
+  SCAN_STORE_GAP_MS = '200'
+  SCAN_PER_STORE_TIMEOUT_MS = '22000'
 
 [processes]
   api = "node index.js"

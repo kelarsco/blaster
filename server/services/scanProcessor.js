@@ -7,6 +7,7 @@ import { extractContactsFromPages, storeHasExtractedData } from './contactExtrac
 import { normalizeExtractOptions } from './scanExtractOptions.js';
 import { getDb, memoryStore, isPoolUnderPressure } from '../db.js';
 import { registerUserWorkload, unregisterUserWorkload } from './resourceCoordinator.js';
+import { addScanJob } from './queue.js';
 
 const DEFAULT_CONCURRENCY = Math.min(
   Number(process.env.SCAN_CONCURRENCY) || 1,
@@ -174,7 +175,7 @@ async function runStoreWorkerPool(urls, concurrency, workerFn) {
 export async function processScan(payload) {
   registerUserWorkload('scan');
   try {
-    await processScanWork(payload);
+    return await processScanWork(payload);
   } finally {
     unregisterUserWorkload('scan');
   }
@@ -217,7 +218,7 @@ async function processScanWork(payload) {
         console.warn('[scanProcessor] finalize-empty update failed:', e?.message || e);
       }
     }
-    return;
+    return { complete: true, requeued: 0 };
   }
 
   const memoryResults = memoryStore.results.get(scanId) || [];
@@ -388,6 +389,8 @@ async function processScanWork(payload) {
     );
   }
 
+  const unpersistedStores = [];
+
   await runStoreWorkerPool(urls, concurrency, async (storeUrl, index) => {
     const outcome = await processStore(storeUrl);
     const { results, contacts, noEmailReason } = outcome;
@@ -418,7 +421,8 @@ async function processScanWork(payload) {
     if (rowPersisted) {
       await recordStoreProgress(hasData);
     } else {
-      console.error('[scanProcessor] store result not persisted, will retry on resume:', storeUrl);
+      unpersistedStores.push(storeUrl);
+      console.error('[scanProcessor] store result not persisted, will re-queue:', storeUrl);
     }
 
     if (process.env.SCAN_DEBUG === '1') {
@@ -431,10 +435,37 @@ async function processScanWork(payload) {
   await progressChain;
 
   const expectedFinal = (payload.initialProcessed ?? 0) + urls.length;
-  const finalStatus = processed >= expectedFinal ? 'completed' : 'running';
+  let requeued = 0;
+
+  if (unpersistedStores.length > 0) {
+    try {
+      await addScanJob({
+        scanId,
+        userId: payload.userId,
+        rawInput: unpersistedStores.join('\n'),
+        initialProcessed: processed,
+        initialFoundCount: foundCount,
+        totalUrlCount,
+        extractOptions: rawExtractOptions,
+        emailFilters: rawEmailFilters,
+        maxConcurrentCrawlers: maxConcurrentCrawlers,
+        maxUrlsPerScan: maxUrlsPerScan,
+        forceRefresh: true,
+        useCache: false,
+      });
+      requeued = unpersistedStores.length;
+      console.log(`[scanProcessor] ${scanId} re-queued ${requeued} store(s) after persist failure`);
+    } catch (requeueErr) {
+      console.error('[scanProcessor] re-queue failed:', scanId, requeueErr?.message || requeueErr);
+    }
+  }
+
+  const finalStatus =
+    processed >= expectedFinal && requeued === 0 ? 'completed' : 'running';
   if (finalStatus !== 'completed') {
     console.warn(
-      `[scanProcessor] ${scanId} finished with ${processed}/${expectedFinal} stores persisted — leaving scan resumable`
+      `[scanProcessor] ${scanId} at ${processed}/${expectedFinal} stores` +
+        (requeued ? ` (${requeued} re-queued)` : ' — leaving scan resumable')
     );
   }
 
@@ -450,4 +481,6 @@ async function processScanWork(payload) {
       console.warn('[scanProcessor] final status update failed:', e?.message || e);
     }
   }
+
+  return { complete: finalStatus === 'completed', requeued };
 }

@@ -10,16 +10,18 @@ function markScanFailed(scanId) {
 }
 
 export async function addScanJob(data) {
-  const id = data.scanId || uuidv4();
+  const scanId = data.scanId || uuidv4();
 
   if (usesDistributedQueue()) {
     const { enqueueWorkerJob } = await import('./workerJobs.js');
-    await enqueueWorkerJob('scan', data, { jobId: id });
-    return id;
+    // Each enqueue gets a fresh job row — re-using scanId as job id blocked resume/retry after complete.
+    const jobId = uuidv4();
+    await enqueueWorkerJob('scan', { ...data, scanId }, { jobId });
+    return scanId;
   }
 
-  scheduleLocalScan(id, data);
-  return id;
+  scheduleLocalScan(scanId, { ...data, scanId });
+  return scanId;
 }
 
 function scheduleLocalScan(id, data) {
