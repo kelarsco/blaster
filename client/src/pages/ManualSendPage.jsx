@@ -206,6 +206,9 @@ export function ManualSendPage() {
 
     if (preData) {
       setStats({ totalSent: preData.totalSent, totalQueued: preData.totalQueued });
+      if (preData.trackingToken) {
+        localStorage.setItem(`tracking_${runId}_${card.recipient.email}`, preData.trackingToken);
+      }
       if (preData.completed) {
         setCompleted(true);
         setCard(null);

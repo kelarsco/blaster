@@ -102,6 +102,7 @@ export function CampaignsPage() {
   const [savingList, setSavingList] = useState(false);
   const [listCreateError, setListCreateError] = useState('');
   const [emailLists, setEmailLists] = useState(cached?.emailLists ?? []);
+  const [isCustomRecipient, setIsCustomRecipient] = useState(false);
   const [viewingList, setViewingList] = useState(null);
   const [messagedEmails, setMessagedEmails] = useState(
     () => new Set(Array.isArray(cached?.messagedEmails) ? cached.messagedEmails : [])
@@ -288,6 +289,7 @@ export function CampaignsPage() {
   const handleCsvReady = (recipients) => {
     setRecipientSourceOpen(false);
     setPendingRecipients(recipients);
+    setIsCustomRecipient(recipients.length === 1 && !recipients[0].storeUrl);
     setListCreateError('');
     setNameModalOpen(true);
   };
@@ -303,9 +305,13 @@ export function CampaignsPage() {
     setSavingList(true);
     setListCreateError('');
     try {
-      const list = await createEmailList(authFetch, { name, recipients: pendingRecipients });
+      const listName = isCustomRecipient
+        ? `Custom: ${pendingRecipients[0].email}`
+        : name;
+      const list = await createEmailList(authFetch, { name: listName, recipients: pendingRecipients });
       setEmailLists((prev) => [list, ...prev.filter((item) => item.id !== list.id)]);
       setPendingRecipients(null);
+      setIsCustomRecipient(false);
       setNameModalOpen(false);
       setViewingList(list);
       revalidateCampaigns();
@@ -484,6 +490,7 @@ export function CampaignsPage() {
           isMessaged={isMessaged}
           authFetch={authFetch}
           onListUpdated={revalidateCampaigns}
+          isCustomRecipient={viewingList.name.startsWith('Custom: ')}
         />
       ) : null}
     </div>

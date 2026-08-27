@@ -3,6 +3,7 @@ import { getDb } from '../db.js';
 import { sendEmailViaProvider } from './domainEmailProviders.js';
 import { recordEmailSent } from './streakService.js';
 import { buildSenderRowFromDomain } from './campaignSenders.js';
+import { injectTrackingPixel, buildOpenTrackUrl } from '../utils/emailTracking.js';
 
 const transporterCache = new Map();
 const senderQueue = new Map();
@@ -217,6 +218,16 @@ export async function processSendEmail(payload) {
     .replace(/\{\{store_domain\}\}/g, storeDomain);
   const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
 
+  // Check if body is HTML and inject tracking pixel
+  const isHtml = /<[a-z][\s\S]*>/i.test(finalBody);
+  let finalHtmlBody = finalBody;
+  if (isHtml) {
+    // Generate tracking token for this send
+    const trackingToken = `${campaignId}_${email.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+    const trackUrl = buildOpenTrackUrl(trackingToken);
+    finalHtmlBody = injectTrackingPixel(finalBody, trackUrl);
+  }
+
   const maxPerMinute = Math.max(1, Math.min(60, Number(senderRow.max_per_minute) || 10));
 
   if ((senderRow.provider || '').toLowerCase() === 'domain') {
@@ -242,7 +253,8 @@ export async function processSendEmail(payload) {
         fromEmail: domainSender.from_email,
         toEmail: email,
         subject: finalSubject,
-        textBody: finalBody,
+        textBody: isHtml ? undefined : finalBody,
+        htmlBody: isHtml ? finalHtmlBody : undefined,
         replyTo: domainSender.from_email,
         metadata: { campaignId, senderId: senderRow.id },
       });
@@ -291,7 +303,8 @@ export async function processSendEmail(payload) {
       from: senderRow.email,
       to: email,
       subject: finalSubject,
-      text: finalBody,
+      text: isHtml ? undefined : finalBody,
+      html: isHtml ? finalHtmlBody : undefined,
     };
 
     const maxAttempts = 3;
@@ -395,12 +408,20 @@ export async function sendViaSenderRow(senderRow, { to, subject, text, html }) {
     ? { user: config.auth.user, pass: config.auth.pass }
     : undefined;
 
+  // Auto-inject tracking pixel for HTML emails
+  let finalHtml = html;
+  if (html) {
+    const trackingToken = `${senderRow.id}_${to.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+    const trackUrl = buildOpenTrackUrl(trackingToken);
+    finalHtml = injectTrackingPixel(html, trackUrl);
+  }
+
   const mailOptions = {
     from: senderRow.email,
     to,
     subject: subject || '',
     text: text || '',
-    ...(html ? { html } : {}),
+    ...(finalHtml ? { html: finalHtml } : {}),
   };
 
   if ((senderRow.provider || '').toLowerCase() === 'domain') {
@@ -423,6 +444,7 @@ export async function sendViaSenderRow(senderRow, { to, subject, text, html }) {
       toEmail: to,
       subject: mailOptions.subject,
       textBody: mailOptions.text,
+      htmlBody: finalHtml,
       replyTo: domainSender.from_email,
       metadata: { senderId: senderRow.id },
     });

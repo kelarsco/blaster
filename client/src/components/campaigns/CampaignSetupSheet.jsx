@@ -119,7 +119,7 @@ function SetupOptionsSkeleton() {
 /**
  * Unified campaign setup: templates, mail-type filter, contact table, start/resume.
  */
-export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onListUpdated }) {
+export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onListUpdated, isCustomRecipient }) {
   const navigate = useNavigate();
   const { requireActivePlan } = usePlanAccess();
   const [exportOpen, setExportOpen] = useState(false);
@@ -280,7 +280,14 @@ export function CampaignSetupSheet({ list, onClose, isMessaged, authFetch, onLis
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-blaster-border shrink-0">
               <div>
-                <h3 id="campaign-setup-title" className="text-base font-semibold text-blaster-fg">{list.name}</h3>
+                <h3 id="campaign-setup-title" className="text-base font-semibold text-blaster-fg">
+                  {list.name}
+                  {isCustomRecipient && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-blaster-orange/20 text-blaster-orange text-xs font-medium">
+                      Custom Recipient
+                    </span>
+                  )}
+                </h3>
                 <p className="text-xs text-blaster-muted mt-0.5">
                   {hasActiveRun
                     ? `${list.recipients?.length ?? 0} contacts`

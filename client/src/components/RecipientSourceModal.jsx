@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Upload, Search } from 'react-feather';
+import { Upload, Search, Mail } from 'react-feather';
 import { useNavigate } from 'react-router-dom';
 import { parseRecipientCsv } from '../utils/parseRecipientCsv.js';
 
@@ -64,6 +64,18 @@ function ScannerTile({ onClick }) {
   );
 }
 
+function CustomEmailTile({ onClick }) {
+  return (
+    <button type="button" onClick={onClick} className={`${TILE_BASE} border-blaster-border`}>
+      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blaster-accent/15 to-blaster-orange/25 border border-blaster-accent/20 group-hover:from-blaster-accent/25 group-hover:to-blaster-orange/35 transition">
+        <Mail className="w-6 h-6 text-blaster-accent" strokeWidth={1.75} />
+      </span>
+      <span className="text-sm font-semibold text-blaster-fg text-center mt-2">Custom Email</span>
+      <span className="text-[10px] text-blaster-muted mt-1">Single recipient</span>
+    </button>
+  );
+}
+
 export function RecipientSourceModal({
   onClose,
   onOpenList,
@@ -72,6 +84,9 @@ export function RecipientSourceModal({
 }) {
   const navigate = useNavigate();
   const [csvError, setCsvError] = useState('');
+  const [customEmailOpen, setCustomEmailOpen] = useState(false);
+  const [customEmail, setCustomEmail] = useState('');
+  const [customEmailError, setCustomEmailError] = useState('');
 
   const onFileChange = useCallback(
     (e) => {
@@ -100,47 +115,98 @@ export function RecipientSourceModal({
     [onCsvReady]
   );
 
+  const handleCustomEmailSubmit = () => {
+    const email = customEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCustomEmailError('Please enter a valid email address');
+      return;
+    }
+    setCustomEmailError('');
+    setCustomEmailOpen(false);
+    onCsvReady?.([{ email, storeUrl: '' }]);
+    setCustomEmail('');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-blaster-bg-card rounded-2xl border border-blaster-border shadow-lg w-full max-w-lg max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="card-header-mobile flex items-center justify-between shrink-0">
-          <h2 className="card-title-mobile">New campaign</h2>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-border/50">
-            ×
-          </button>
-        </div>
-        <div className="p-6 overflow-y-auto flex-1 space-y-4">
-          <p className="text-sm text-blaster-muted">
-            Open a saved list, upload a CSV, or scan stores — all use the same campaign setup.
-          </p>
-
-          <div className="flex flex-wrap gap-4">
-            <ScannerTile
-              onClick={() => {
-                onClose();
-                navigate('/app/scanner');
-              }}
-            />
-            <CsvUploadTile onFileChange={onFileChange} />
-            {emailLists.map((list) => (
-              <SavedListTile
-                key={list.id}
-                list={list}
-                onClick={() => onOpenList?.(list)}
-              />
-            ))}
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div
+          className="bg-blaster-bg-card rounded-2xl border border-blaster-border shadow-lg w-full max-w-lg max-h-[90vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="card-header-mobile flex items-center justify-between shrink-0">
+            <h2 className="card-title-mobile">New campaign</h2>
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-blaster-border/50">
+              ×
+            </button>
           </div>
+          <div className="p-6 overflow-y-auto flex-1 space-y-4">
+            <p className="text-sm text-blaster-muted">
+              Open a saved list, upload a CSV, or scan stores — all use the same campaign setup.
+            </p>
 
-          {emailLists.length === 0 && (
-            <p className="text-sm text-blaster-muted">No saved lists yet. Upload a CSV or scan stores on the Scanner page.</p>
-          )}
+            <div className="flex flex-wrap gap-4">
+              <ScannerTile
+                onClick={() => {
+                  onClose();
+                  navigate('/app/scanner');
+                }}
+              />
+              <CsvUploadTile onFileChange={onFileChange} />
+              <CustomEmailTile onClick={() => setCustomEmailOpen(true)} />
+              {emailLists.map((list) => (
+                <SavedListTile
+                  key={list.id}
+                  list={list}
+                  onClick={() => onOpenList?.(list)}
+                />
+              ))}
+            </div>
 
-          {csvError && <p className="text-xs text-red-600">{csvError}</p>}
+            {emailLists.length === 0 && (
+              <p className="text-sm text-blaster-muted">No saved lists yet. Upload a CSV or scan stores on the Scanner page.</p>
+            )}
+
+            {csvError && <p className="text-xs text-red-600">{csvError}</p>}
+          </div>
         </div>
       </div>
-    </div>
+
+      {customEmailOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-blaster-border shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-blaster-fg mb-4">Add Custom Recipient</h3>
+            <input
+              type="email"
+              value={customEmail}
+              onChange={(e) => setCustomEmail(e.target.value)}
+              placeholder="recipient@example.com"
+              className="w-full px-4 py-2 rounded-lg border border-blaster-border focus:border-blaster-accent focus:outline-none"
+            />
+            {customEmailError && <p className="text-xs text-red-600 mt-2">{customEmailError}</p>}
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomEmailOpen(false);
+                  setCustomEmailError('');
+                  setCustomEmail('');
+                }}
+                className="px-4 py-2 rounded-lg border border-blaster-border text-blaster-fg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCustomEmailSubmit}
+                className="px-4 py-2 rounded-lg bg-black text-white"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

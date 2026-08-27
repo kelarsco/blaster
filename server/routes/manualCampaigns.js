@@ -136,6 +136,22 @@ async function advanceRunAfterSkip(db, row) {
     return { error: 'No more recipients', status: 400 };
   }
 
+  const recipient = queue[idx];
+  const eventId = uuidv4();
+  const trackingToken = uuidv4().replace(/-/g, '');
+
+  await db.query(
+    `INSERT INTO manual_send_events
+      (id, run_id, recipient_email, recipient_store_url, subject, tracking_token)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      eventId, row.id, recipient.email,
+      recipient.storeUrl || recipient.store_url || null,
+      'Skipped',
+      trackingToken,
+    ]
+  );
+
   const nextIndex = idx + 1;
   const completed = nextIndex >= queue.length;
   await db.query(
@@ -171,6 +187,7 @@ async function advanceRunAfterSkip(db, row) {
     ...tracking,
     next,
     prefetch,
+    trackingToken,
   };
 }
 
@@ -385,15 +402,17 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
 
     const recipient = queue[idx];
     const eventId = uuidv4();
+    const trackingToken = uuidv4().replace(/-/g, '');
 
     await db.query(
       `INSERT INTO manual_send_events
         (id, run_id, recipient_email, recipient_store_url, subject, tracking_token)
-       VALUES ($1, $2, $3, $4, $5, NULL)`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         eventId, row.id, recipient.email,
         recipient.storeUrl || recipient.store_url || null,
         subject,
+        trackingToken,
       ]
     );
 
@@ -436,6 +455,7 @@ manualCampaignRoutes.post('/:runId/send', requireAuth, async (req, res) => {
       ...tracking,
       next,
       prefetch,
+      trackingToken,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
