@@ -144,7 +144,7 @@ export function TemplatesPage() {
                     className={`${inputClass} min-h-[140px] resize-y`}
                   />
                   <p className="text-[11px] text-blaster-muted mt-1.5">
-                    Variables: {'{{store_url}}'}, {'{{store_domain}}'}
+                    Variables: {'{{store_url}}'}, {'{{store_domain}}'}, {'{{brand_name}}'}
                   </p>
                 </div>
                 {error ? <p className="text-xs text-red-600">{error}</p> : null}

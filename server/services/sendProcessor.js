@@ -213,10 +213,12 @@ export async function processSendEmail(payload) {
       return storeUrl;
     }
   })();
+  const brandName = storeDomain.split('.')[0] || '';
   const finalBody = (body || '')
     .replace(/\{\{store_url\}\}/g, storeUrl)
-    .replace(/\{\{store_domain\}\}/g, storeDomain);
-  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain);
+    .replace(/\{\{store_domain\}\}/g, storeDomain)
+    .replace(/\{\{brand_name\}\}/g, brandName);
+  const finalSubject = (subject || storeUrl).replace(/\{\{store_url\}\}/g, storeUrl).replace(/\{\{store_domain\}\}/g, storeDomain).replace(/\{\{brand_name\}\}/g, brandName);
 
   // Check if body is HTML and inject tracking pixel
   const isHtml = /<[a-z][\s\S]*>/i.test(finalBody);

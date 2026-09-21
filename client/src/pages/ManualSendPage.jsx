@@ -70,6 +70,8 @@ export function ManualSendPage() {
   const [nextCard, setNextCard] = useState(null);
   const [completed, setCompleted] = useState(false);
   const [stats, setStats] = useState({ totalSent: 0, totalQueued: 0 });
+  const [editableSubject, setEditableSubject] = useState('');
+  const [editableBody, setEditableBody] = useState('');
   const deckRef = useRef([]);
 
   useEffect(() => {
@@ -84,6 +86,10 @@ export function ManualSendPage() {
     setNextCard(view.nextCard);
     setCompleted(view.completed);
     setStats({ totalSent, totalQueued });
+    if (view.card) {
+      setEditableSubject(view.card.subject);
+      setEditableBody(view.card.body);
+    }
   }, [runId]);
 
   const refreshStats = useCallback(async () => {
@@ -175,7 +181,7 @@ export function ManualSendPage() {
     if (!requireActivePlan()) return;
     setError('');
 
-    const sendingCard = card;
+    const sendingCard = { ...card, subject: editableSubject, body: editableBody };
     const mailto = buildMailtoUrl({
       to: sendingCard.recipient.email,
       subject: sendingCard.subject,
@@ -187,8 +193,8 @@ export function ManualSendPage() {
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
       body: JSON.stringify({
-        subject: sendingCard.subject,
-        body: sendingCard.body,
+        subject: editableSubject,
+        body: editableBody,
       }),
     })
       .then(readJsonResponse)
@@ -329,17 +335,23 @@ export function ManualSendPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-blaster-muted uppercase">Message preview</label>
-                <p className="mt-1 text-sm font-medium text-blaster-fg">{card.subject}</p>
-                <div
-                  className="mt-2 rounded-xl border border-blaster-border bg-gray-50/80 px-4 py-3 text-sm text-blaster-muted whitespace-pre-wrap"
-                  aria-readonly="true"
-                >
-                  {templatePreviewLines(card.body).join('\n')}
-                  {String(card.body || '').split(/\r?\n/).length > 3 ? (
-                    <span>{'\n'}…</span>
-                  ) : null}
-                </div>
+                <label className="text-xs font-medium text-blaster-muted uppercase">Subject</label>
+                <input
+                  type="text"
+                  value={editableSubject}
+                  onChange={(e) => setEditableSubject(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-blaster-border bg-white text-blaster-fg text-sm focus:ring-2 focus:ring-blaster-accent/30 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-blaster-muted uppercase">Message body</label>
+                <textarea
+                  value={editableBody}
+                  onChange={(e) => setEditableBody(e.target.value)}
+                  rows={6}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-blaster-border bg-white text-blaster-fg text-sm focus:ring-2 focus:ring-blaster-accent/30 focus:border-transparent resize-y"
+                />
                 <p className="text-[11px] text-blaster-muted mt-1.5">Opens in your email app when you tap Send.</p>
               </div>
 

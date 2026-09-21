@@ -20,9 +20,11 @@ function parseJson(val, fallback) {
 function fillTemplate(text, recipient) {
   const storeUrl = recipient.storeUrl || recipient.store_url || '';
   const domain = storeUrl.replace(/^https?:\/\//, '').split('/')[0] || '';
+  const brandName = domain.split('.')[0] || '';
   return String(text || '')
     .replace(/\{\{store_url\}\}/gi, storeUrl)
     .replace(/\{\{store_domain\}\}/gi, domain)
+    .replace(/\{\{brand_name\}\}/gi, brandName)
     .replace(/\{\{email\}\}/gi, recipient.email || '');
 }
 

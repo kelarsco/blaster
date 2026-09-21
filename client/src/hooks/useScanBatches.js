@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { API } from '../api.js';
 import { mapScanStatus, parseScanResultsPayload } from '../utils/scanStatus.js';
+import { FRIENDLY_ERRORS } from '../utils/friendlyErrors.js';
 import {
   loadScanBatchState,
   saveScanBatchState,
@@ -11,17 +12,52 @@ import { setScanBadgePending } from '../utils/scanBadge.js';
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'processing']);
 const STALE_PENDING_MS = 45_000;
 const STALE_RUNNING_MS = 120_000;
+const POLL_FAIL_BEFORE_ERROR = 3;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function authFetchWithRetry(authFetch, url, attempts = 3) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await authFetch(url);
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await sleep(400 * (i + 1));
+    }
+  }
+  throw lastErr;
+}
 
 async function refreshBatchFromApi(authFetch, batch) {
-  const statusRes = await authFetch(`${API}/scan/status/${batch.scanId}`);
+  let statusRes;
+  try {
+    statusRes = await authFetchWithRetry(authFetch, `${API}/scan/status/${batch.scanId}`);
+  } catch {
+    const failCount = (batch.pollFailCount || 0) + 1;
+    return {
+      ...batch,
+      pollFailCount: failCount,
+      pollError:
+        failCount >= POLL_FAIL_BEFORE_ERROR
+          ? FRIENDLY_ERRORS.network
+          : 'Reconnecting to server…',
+    };
+  }
   if (statusRes.status === 404) {
     return { ...batch, status: 'failed', scanMissing: true, pollError: null };
   }
   if (!statusRes.ok) {
+    const failCount = (batch.pollFailCount || 0) + 1;
     return {
       ...batch,
-      pollError: 'Could not refresh scan status. Check that the API server is running.',
-      pollFailCount: (batch.pollFailCount || 0) + 1,
+      pollFailCount: failCount,
+      pollError:
+        failCount >= POLL_FAIL_BEFORE_ERROR
+          ? FRIENDLY_ERRORS.network
+          : 'Updating scan status…',
     };
   }
 
@@ -186,9 +222,13 @@ export function useScanBatches(authFetch, userId) {
               lastPolledAt: updated.lastPolledAt,
             });
           } catch (err) {
+            const failCount = (batch.pollFailCount || 0) + 1;
             updateBatch(batch.id, {
-              pollError: 'Cannot reach API server. Run npm run dev from the project root (or cd server && npm run dev).',
-              pollFailCount: (batch.pollFailCount || 0) + 1,
+              pollFailCount: failCount,
+              pollError:
+                failCount >= POLL_FAIL_BEFORE_ERROR
+                  ? FRIENDLY_ERRORS.network
+                  : 'Reconnecting to server…',
             });
           }
         })

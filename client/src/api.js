@@ -1,11 +1,34 @@
 /**
- * API base URL. In dev (Vite proxy) use relative '' so /api goes to proxy.
- * In production on Fly (same origin): leave VITE_API_URL unset — the app uses /api on wiblaster.fly.dev.
- * If the client is hosted separately, set VITE_API_URL to your API origin, e.g. https://wiblaster.fly.dev
+ * API base URL.
+ * - Dev: relative /api → Vite proxy → local server
+ * - Vercel (wiblaster.com): always www — apex /api 307-redirects break credentialed scan polling
+ * - Fly monolith (wiblaster.fly.dev): relative /api on same host
+ * - Override anytime with VITE_API_URL (no trailing slash)
  */
-const raw = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '';
-const normalized = raw.trim().replace(/\/+$/, '');
-export const API_BASE = normalized && !/^https?:\/\//i.test(normalized) ? `https://${normalized.replace(/^\/*/, '')}` : normalized;
+function normalizeApiBase(raw) {
+  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/*/, '')}`;
+}
+
+function resolveApiBase() {
+  const fromEnv = normalizeApiBase(
+    typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : ''
+  );
+  if (fromEnv) return fromEnv;
+
+  if (typeof window !== 'undefined' && import.meta.env?.PROD) {
+    const host = window.location.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'wiblaster.com') {
+      return 'https://www.wiblaster.com';
+    }
+  }
+
+  return '';
+}
+
+export const API_BASE = resolveApiBase();
 export const API = `${API_BASE}/api`;
 
 /** Same-origin production deploy (Fly/Railway monolith) uses relative /api — treat as configured. */
