@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { FileText, Trash2 } from 'react-feather';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { FileText, Trash2, MoreVertical, Edit2 } from 'react-feather';
 import { useAuth } from '../context/AuthContext';
 import { usePlanAccess } from '../context/PlanAccessContext.jsx';
 import { API } from '../api.js';
@@ -15,6 +15,19 @@ export function TemplatesPage() {
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('{{store_url}}');
   const [body, setBody] = useState('Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards');
+  const [editingId, setEditingId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchPresets = useCallback(async () => {
     const res = await authFetch(`${API}/automation/presets`);
@@ -37,8 +50,11 @@ export function TemplatesPage() {
     setSaving(true);
     setError('');
     try {
-      const res = await authFetch(`${API}/automation/presets`, {
-        method: 'POST',
+      const isEdit = editingId !== null;
+      const url = isEdit ? `${API}/automation/presets/${editingId}` : `${API}/automation/presets`;
+      const method = isEdit ? 'PUT' : 'POST';
+      const res = await authFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
@@ -53,6 +69,7 @@ export function TemplatesPage() {
       setName('');
       setSubject('{{store_url}}');
       setBody('Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards');
+      setEditingId(null);
       refetchPresets();
     } catch (err) {
       setError(err?.message || 'Failed to save template');
@@ -72,6 +89,7 @@ export function TemplatesPage() {
     });
     if (!ok) return;
     setError('');
+    setMenuOpen(null);
     try {
       const res = await authFetch(`${API}/automation/presets/${preset.id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -82,6 +100,23 @@ export function TemplatesPage() {
     } catch (err) {
       setError(err?.message || 'Failed to delete template');
     }
+  };
+
+  const editTemplate = (preset) => {
+    setEditingId(preset.id);
+    setName(preset.name);
+    const subjectValue = typeof preset.subjects?.[0] === 'string' ? preset.subjects[0] : preset.subjects?.[0]?.value || '{{store_url}}';
+    setSubject(subjectValue);
+    const bodyValue = preset.templates?.[0]?.body || preset.templates?.[0]?.text || 'Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards';
+    setBody(bodyValue);
+    setMenuOpen(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setName('');
+    setSubject('{{store_url}}');
+    setBody('Hi,\n\nI noticed your store: {{store_url}}\n\nBest regards');
   };
 
   const inputClass =
@@ -112,7 +147,9 @@ export function TemplatesPage() {
           <div className={templateSectionInner}>
             <div className={templateSectionGlow} aria-hidden />
             <div className="relative">
-              <h2 className="text-sm font-semibold text-blaster-fg mb-4">Create template</h2>
+              <h2 className="text-sm font-semibold text-blaster-fg mb-4">
+                {editingId ? 'Edit template' : 'Create template'}
+              </h2>
               <form onSubmit={saveTemplate} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-blaster-muted mb-1.5">Template name</label>
@@ -148,13 +185,25 @@ export function TemplatesPage() {
                   </p>
                 </div>
                 {error ? <p className="text-xs text-red-600">{error}</p> : null}
-                <button
-                  type="submit"
-                  disabled={saving || !name.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition disabled:opacity-40"
-                >
-                  {saving ? 'Saving…' : 'Save template'}
-                </button>
+                <div className="flex gap-2">
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      disabled={saving}
+                      className="px-5 py-2.5 rounded-xl border border-blaster-border text-blaster-fg text-sm font-medium hover:bg-gray-50 transition disabled:opacity-40"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={saving || !name.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-black border border-blaster-orange text-[#faf8f5] text-sm font-medium shadow-blaster-cta hover:opacity-90 transition disabled:opacity-40"
+                  >
+                    {saving ? 'Saving…' : editingId ? 'Update template' : 'Save template'}
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -202,14 +251,36 @@ export function TemplatesPage() {
                               <p className="text-xs text-blaster-muted mt-1 line-clamp-2">{bodyPreview}</p>
                             ) : null}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => deleteTemplate(preset)}
-                            className="p-2 rounded-lg text-blaster-muted hover:text-red-600 hover:bg-red-50 transition shrink-0"
-                            aria-label={`Delete ${preset.name}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="relative shrink-0" ref={menuOpen === preset.id ? menuRef : null}>
+                            <button
+                              type="button"
+                              onClick={() => setMenuOpen(menuOpen === preset.id ? null : preset.id)}
+                              className="p-2 rounded-lg text-blaster-muted hover:text-blaster-fg hover:bg-gray-100 transition"
+                              aria-label="Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                            {menuOpen === preset.id && (
+                              <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg border border-blaster-border shadow-lg z-10">
+                                <button
+                                  type="button"
+                                  onClick={() => editTemplate(preset)}
+                                  className="w-full px-3 py-2 text-left text-sm text-blaster-fg hover:bg-gray-50 flex items-center gap-2 rounded-t-lg"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteTemplate(preset)}
+                                  className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 rounded-b-lg"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </li>
                     );
