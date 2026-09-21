@@ -160,14 +160,22 @@ export function ManualSendPage() {
     if (!authFetch || !runId) return;
     const id = setInterval(refreshStats, 10000);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refreshStats();
+      if (document.visibilityState === 'visible') {
+        refreshStats();
+        if (card) {
+          const filledSubject = fillTemplateClient(card.subject, card.recipient);
+          const filledBody = fillTemplateClient(card.body, card.recipient);
+          setEditableSubject(filledSubject);
+          setEditableBody(filledBody);
+        }
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [authFetch, runId, refreshStats]);
+  }, [authFetch, runId, refreshStats, card]);
 
   const advanceLocal = useCallback((sentDelta = 0) => {
     const remaining = deckRef.current.slice(1);
@@ -178,6 +186,12 @@ export function ManualSendPage() {
     setCard(view.card);
     setNextCard(view.nextCard);
     setCompleted(view.completed);
+    if (view.card) {
+      const filledSubject = fillTemplateClient(view.card.subject, view.card.recipient);
+      const filledBody = fillTemplateClient(view.card.body, view.card.recipient);
+      setEditableSubject(filledSubject);
+      setEditableBody(filledBody);
+    }
     if (sentDelta) {
       setStats((prev) => ({
         totalSent: prev.totalSent + sentDelta,
@@ -233,11 +247,26 @@ export function ManualSendPage() {
         setCard(null);
         setNextCard(null);
         clearManualCampaignDeck(runId);
+      } else if (preData.next) {
+        const nextUi = deckCardToUi(preData.next);
+        setCard(nextUi);
+        const filledSubject = fillTemplateClient(nextUi.subject, nextUi.recipient);
+        const filledBody = fillTemplateClient(nextUi.body, nextUi.recipient);
+        setEditableSubject(filledSubject);
+        setEditableBody(filledBody);
       }
     } else {
       sendPromise
         .then((data) => {
           setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+          if (!data.completed && data.next) {
+            const nextUi = deckCardToUi(data.next);
+            setCard(nextUi);
+            const filledSubject = fillTemplateClient(nextUi.subject, nextUi.recipient);
+            const filledBody = fillTemplateClient(nextUi.body, nextUi.recipient);
+            setEditableSubject(filledSubject);
+            setEditableBody(filledBody);
+          }
         })
         .catch((e) => {
           setError(toFriendlyErrorMessage(e, FRIENDLY_ERRORS.send));
@@ -266,6 +295,14 @@ export function ManualSendPage() {
         throw new Error(FRIENDLY_ERRORS.unavailable);
       }
       setStats({ totalSent: data.totalSent, totalQueued: data.totalQueued });
+      if (!data.completed && data.next) {
+        const nextUi = deckCardToUi(data.next);
+        setCard(nextUi);
+        const filledSubject = fillTemplateClient(nextUi.subject, nextUi.recipient);
+        const filledBody = fillTemplateClient(nextUi.body, nextUi.recipient);
+        setEditableSubject(filledSubject);
+        setEditableBody(filledBody);
+      }
     } catch (e) {
       setError(toFriendlyErrorMessage(e, FRIENDLY_ERRORS.send));
     }
