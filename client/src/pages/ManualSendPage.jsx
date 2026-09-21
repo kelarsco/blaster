@@ -14,6 +14,17 @@ import {
 } from '../utils/manualCampaignDeck.js';
 import { FRIENDLY_ERRORS, toFriendlyErrorMessage } from '../utils/friendlyErrors.js';
 
+function fillTemplateClient(text, recipient) {
+  const storeUrl = recipient.storeUrl || recipient.store_url || '';
+  const domain = storeUrl.replace(/^https?:\/\//, '').split('/')[0] || '';
+  const brandName = domain.split('.')[0] || '';
+  return String(text || '')
+    .replace(/\{\{store_url\}\}/gi, storeUrl)
+    .replace(/\{\{store_domain\}\}/gi, domain)
+    .replace(/\{\{brand_name\}\}/gi, brandName)
+    .replace(/\{\{email\}\}/gi, recipient.email || '');
+}
+
 const SEND_LOG_MAX_WAIT_MS = 2000;
 
 async function readJsonResponse(res) {
@@ -87,8 +98,10 @@ export function ManualSendPage() {
     setCompleted(view.completed);
     setStats({ totalSent, totalQueued });
     if (view.card) {
-      setEditableSubject(view.card.subject);
-      setEditableBody(view.card.body);
+      const filledSubject = fillTemplateClient(view.card.subject, view.card.recipient);
+      const filledBody = fillTemplateClient(view.card.body, view.card.recipient);
+      setEditableSubject(filledSubject);
+      setEditableBody(filledBody);
     }
   }, [runId]);
 
